@@ -1,0 +1,9 @@
+/resin-init
+/.idea
+/flasher_img
+*.img
+*.iso
+*.vmdk
+*.vdi
+*.zip
+

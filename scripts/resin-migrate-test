@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+# stage 1 of STEM migration, checkout the env
+# used command swapon -s wants Linux 2.1.25
+
+# TODOS:
+# use command -v to detect availability of commands
+# use grub-reboot to reboot to a configuration once
+# establish required tools sed, grep, fdisk format tools curl
+
+set -e
+
+RESTORE_SWAP=
+RESTORE_PART=
+
+
+# set to true when swap has been reformatted
+
+function inform {
+    echo "[resin-migrate-scripts] INFO: $1"
+}
+
+function clean {
+    echo "[resin-migrate-scripts] Cleanup."
+    # whatever needs to be done
+    restoreSwap
+}
+
+function warn {
+    echo "[resin-migrate-scripts] WARN: $1"
+}
+
+function fail {
+    echo "[resin-migrate-scripts] ERROR: $1"
+    clean
+    exit 1
+}
+
+function simulate {
+    echo "[resin-migrate-scripts] INFO: would execute \"$*\""
+}
+
+##########################################
+# check if list contains string
+##########################################
+# careful how you call it, should be
+# eg.: listContains "$SUPPORTED_OSTYPES" $OSTYPE
+function listContains {
+    for CURR in $1
+    do
+        if [ "$2" == "$CURR" ]; then
+            return 0
+        fi
+    done
+    return -1
+}
+
+##########################################
+# try to establish valid kernel version
+##########################################
+function checkKernel {
+    VER=$(expr match "$1" '\([0-9]*\)')
+
+    if (( VER < KERNEL_MIN_VER )) ; then
+        return -1
+    fi
+
+    if  (( VER > KERNEL_MIN_VER )) ; then
+        return 0
+    fi
+
+    MREV=$(expr match "$1" '[0-9]*.\([0-9]*\)')
+
+    if (( MREV < KERNEL_MIN_MAJ_REV )) ; then
+        return -1
+    fi
+
+    if (( MREV > KERNEL_MIN_MAJ_REV )) ; then
+        return 0
+    fi
+
+    MREV=$(expr match "$1" '[0-9]*.[0-9]*.\([0-9]*\)')
+
+    if (( MREV < KERNEL_MIN_MIN_REV )) ; then
+        return -1
+    else
+        return 0
+    fi
+}
+
+##########################################
+# try to establish OS release
+##########################################
+checkOs() {
+    if [ -f /etc/os-release ]; then
+        local OS_ID=$($GREP -e ^ID= /etc/os-release | $SED "s/^ID=\(.*\)$/\1/")
+        local OS_VERSION=$($GREP -e ^VERSION_ID= /etc/os-release | $SED -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
+        VERSION="$OS_ID-$OS_VERSION"
+    else
+        # other methods for other osses
+        # hostnamectrl
+        # lsb_release -a
+        # add methods as you add osses that need different methods from above
+        VERSION=
+    fi
+
+    echo "$VERSION"
+}
+
+##########################################
+# find suitable swap partition
+##########################################
+getSwapDev() {
+    $SWAPSTAT -s | $SED 1d | while read line ;
+    do
+      # Filename Type Size Used Priority
+      local ARR=(${line})
+      if [ "${ARR[1]}" != "partition" ]; then
+        # echo "${ARR[0]} is not a partition"
+        continue
+      fi
+
+      # echo "${ARR[0]} type is OK: ${ARR[1]}"
+
+      local ACT_SIZE=$((${ARR[2]}))
+
+      if (( ACT_SIZE < MIN_SIZE ));
+      then
+        # echo "${ARR[0]} is too small"
+        continue
+      fi
+
+      #  echo "${ARR[0]} size is OK"
+      echo ${ARR[0]}
+      break;
+    done
+}
+
+function restoreSwap {
+    if [ "$NO_RESTORE" == "TRUE" ] ; then
+        warn "not restoring"
+        return 0
+    fi
+
+    if [ -z "$SWAP_DEV" ] ; then
+        inform "restoreSwap: no swap device given"
+        return -1
+    fi
+
+    if [ "$RESTORE_PART" == "TRUE" ] ; then
+        inform "attempting to restore partition on $SWAP_DEV"
+        # TODO !!
+    else
+        inform "restoreSwap: swapspace does not appear to need repartitioning"
+    fi
+
+    if [ "$RESTORE_SWAP" == "TRUE" ] ; then
+        inform "attempting to restore $SWAP_DEV as swap"
+        $UMOUNT $SWAP_DEV || warn "unmount failed for $SWAP_DEV - device might not have been mounted"
+        $MKSWAP $SWAP_DEV || warn "mkswap failed  for$SWAP_DEV"
+        $SWAPON $SWAP_DEV || warn "swapon failed for $SWAP_DEV"
+    else
+        inform "restoreSwap: swapspace does not appear to need restoring"
+    fi
+}
+
+##########################################
+# setup the migration boot partition
+##########################################
+function setupMigration {
+    MIG_TMP="$RESIN_MIG_MOUNTPOINT/tmp"
+    if [ ! -d $MIG_TMP ] ; then
+        $MKDIR $MIG_TMP || fail "failed to create tmp dir $MIG_TMP"
+    fi
+
+    MIG_IMG="$MIG_TMP/migration.iso"
+
+    if [ -e $MIG_IMG ] ; then
+        inform "not downloading, file exists $MIG_IMG"
+    else
+       if [ -f $RESIN_MIG_IMG_FILE ] ; then
+            inform "copying local image to $MIG_IMG"
+            cp $RESIN_MIG_IMG_FILE $MIG_TMP
+        else
+            inform "downloading image to $MIG_IMG"
+            $CURL -o $MIG_IMG $RESIN_MIG_IMG_URL || fail "failed to download image from $RESIN_MIG_URL"
+        fi
+    fi
+}
+
+##########################################
+# find target partition and recreate
+# parameter type linux-swap | ext4
+##########################################
+function makePartition {
+    if [ -z $SWAP_DEV ] ; then
+        fail "makePartition no device given"
+    fi
+
+    HD_DEV=$(expr match "$SWAP_DEV" '\(.*\)[0-9]')
+    HD_NUM=$(expr match "$SWAP_DEV" '.*\([0-9]\)')
+    inform "device is $HD_DEV partition is $HD_NUM"
+
+    # looking for something like
+    # 5:15.0GB:17.2GB:2145MB:linux-swap(v1)::;
+
+    while read line ;
+    do
+        IFS=':' read -ra PARTS <<< "$line"
+        local CURR_NUM=${PARTS[0]}
+
+        if [[ ! $CURR_NUM =~ [0-9] ]]; then
+            continue
+        fi
+
+        if (( CURR_NUM != HD_NUM )) ; then
+            continue
+        fi
+
+        local PART_START="${PARTS[1]}"
+        local PART_END="${PARTS[2]}"
+        local PART_SIZE="${PARTS[3]}"
+        local PART_TYPE="${PARTS[4]}"
+
+        inform "parameters: No: $HD_NUM start: $PART_START end: $PART_END size: $PART_SIZE type: $PART_TYPE"
+
+        if [ -z $PART_START ] ; then
+            fail "missing parameter partition start"
+        fi
+
+        if [ -z $PART_END ] ; then
+            fail "missing parameter partition end"
+        fi
+
+        RESTORE_PART="TRUE"
+        RESTORE_PART_NUM=$HD_DEV
+        RESTORE_PART_DEV=$HD_NUM
+        RESTORE_PART_START=$PART_START
+        RESTORE_PART_END=$PART_END
+
+        inform "removing partition ${HD_DEV}:${HD_NUM}"
+        $PARTED -s $HD_DEV rm $HD_NUM || fail "failed to remove partition ${HD_DEV}:${HD_NUM}"
+        inform "recreating partition ${HD_DEV}:${HD_NUM} as ext4"
+        $PARTED -s $HD_DEV mkpart logical $1 $PART_START $PART_END || fail "failed to remove partition ${HD_DEV}:${HD_NUM}"
+        # reload partition table ?
+        # echo 1 > /sys/block/sdX/device/rescan (Where X is your device letter)
+        break;
+    done < <($PARTED -ms $HD_DEV unit s print)
+    # parted command explanation
+    # flags: machine readable,  scripted
+    # cmds: uses sector units, print partition table
+
+    if [ ! "$RESTORE_PART" == "TRUE" ] ; then
+        fail "partition not found"
+    else
+        inform "partition $SWAP_DEV set to $1"
+    fi
+}
+
+
+##########################################
+# prepare swap partition for installation
+##########################################
+function prepareSwap {
+    inform "preparing device for installation: $SWAP_DEV"
+    if [ -z "$SWAP_DEV" ] ; then
+        fail "no swap device "
+    fi
+
+    $SWAPOFF $SWAP_DEV || fail "failed to disable swap"
+    RESTORE_SWAP="TRUE"
+
+    makePartition "ext4"
+
+    $MKFS -L $RESIN_MIG_PART_LABEL $SWAP_DEV || fail "failed to make file system on $SWAP_DEV"
+
+    if [ ! -d $RESIN_MIG_MOUNTPOINT ] ; then
+        $MKDIR $RESIN_MIG_MOUNTPOINT || fail "failed to create mountpoint $RESIN_MIG_MOUNTPOINT"
+    fi
+
+    if [ ! -d $RESIN_MIG_MOUNTPOINT ] ; then
+        if [ -z $SIMULATE ] ; then
+            fail "failed to create mountpoint $RESIN_MIG_MOUNTPOINT"
+        fi
+    fi
+
+    $MOUNT $SWAP_DEV $RESIN_MIG_MOUNTPOINT || fail "failed mount $SWAP_DEV on $RESIN_MIG_MOUNTPOINT"
+
+    return 0
+}
+
+##########################################
+#  MAIN
+##########################################
+
+inform "starting"
+
+inform "script path is ${0} PWD ${PWD}"
+
+DIR=$(dirname "${0}")
+CFG_NAME="${DIR}/resin-migrate-stage2.conf"
+
+inform "config file in $CFG_NAME"
+
+if [ ! -f $CFG_NAME ] ; then
+    fail "missing configuration file $CFG_NAME"
+else
+    source  $CFG_NAME || fail "failed to read config"
+fi
+
+SED=$(command -v sed) || fail "could not find required command 'sed'"
+GREP=$(command -v grep) || fail "could not find required command 'grep'"
+CURL=$(command -v curl) || fail "could not find required command 'curl'"
+MKFS=$(command -v mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
+PARTED=$(command -v parted) || fail "could not find required command 'parted'"
+SWAPON=$(command -v swapon) || fail "could not find required command 'swapon'"
+SWAPSTAT=$SWAPON
+SWAPOFF=$(command -v swapoff) || fail "could not find required command 'swapoff'"
+MOUNT=$(command -v mount) || fail "could not find required command 'mount'"
+UMOUNT=$(command -v umount) || fail "could not find required command 'umount'"
+MKDIR=$(command -v mkdir) || fail "could not find required command 'mkdir'"
+MKSWAP=$(command -v mkswap) || fail "could not find required command 'mkswap'"
+
+inform "checked required programs"
+
+# checkout grub
+GRUBINST=$(command -v grub-install) || fail "could not find required command 'grub-install'"
+GRUB_STR=$($GRUBINST -V)
+GRUB_VER=$(expr match "$GRUB_STR" '.*(GRUB).\([0-9]*\).*')
+
+if (( GRUB_VER < GRUB_MIN_VER )) ; then
+    fail "need at least grub verson $GRUB_MIN_VER but found `expr match "$GRUB_STR" '.*(GRUB).\(.*\)'`"
+fi
+
+inform "checked required grub version"
+
+if ! listContains "$SUPPORTED_OSTYPES" $OSTYPE ; then
+    fail "not a supported OS type $OSTYPE"
+fi
+
+ARCH=$(uname -p)
+KERNEL_VER=$(uname -r)
+OS_VERSION=$(checkOs)
+SWAP_DEV=$(getSwapDev)
+
+inform "OSTYPE: $OSTYPE"
+inform "ARCH:   $ARCH"
+inform "KERNEL: $KERNEL_VER"
+inform "OS:     $OS_VERSION"
+
+if ! checkKernel $KERNEL_VER ; then
+    fail "unsupported kernel version $KERNEL_VER"
+fi
+
+if ! listContains "$SUPPORTED_OSSES" $OS_VERSION ; then
+    fail "not a supported OS $OS_VERSION"
+fi
+
+if ! listContains "$SUPPORTED_ARCHS" $ARCH ; then
+    fail "not a supported architecture $ARCH"
+fi
+
+inform "SWAP:   $SWAP_DEV"
+
+if [ -z $SWAP_DEV ]; then
+    fail "no suitable device found for installation"
+else
+    inform "installation device is $SWAP_DEV"
+fi
+
+if [ ${OS_VERSION} == "ubuntu-18.04" ] ; then
+    # !!! REMOVE in release"
+    SIMUMLATE="TRUE"
+fi
+
+if [ -z $SIMULATE ] ; then
+    if [[ $EUID -ne 0 ]]; then
+        fail "This script must be run as root"
+    fi
+else
+    inform "!!!only simulating!!!"
+    SWAPON="simulate swapon "
+    SWAPOFF="simulate swapoff "
+    MKFS="simulate mkfs.ext4 "
+    MOUNT="simulate mount "
+    UMOUNT="simulate umount "
+    MKDIR="simulate mkdir "
+    MKSWAP="simulate mkswap "
+    CURL="simulate curl "
+    PARTED="simulate parted "
+fi
+
+if ! prepareSwap ; then
+    fail "failed to prepare swap partition for installation"
+fi
+
+if ! setupMigration ; then
+    fail "failed to setup migration environment"
+fi
+
+
+fail "all good"
+
+
+# establish grup && grub config
+
+

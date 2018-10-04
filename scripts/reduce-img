@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+
+#############################################
+# reduce resin.os intel-nuc image
+# USAGE reduce-img <source image> <target img>
+#
+# Howto: main problem is that this script does something fairly useless in the end, that we probably should
+# disable. I try to make the image bootable agan for no good reason using grub. This works best if you
+# do the image conversion on the target platform.
+# Side effect is that some images placed in /boot/grub get deleted in the process and I have to replace them.
+#
+# What it does:
+# compress contained resin.os image
+# exchange resini-init-flasher image
+# make bootable
+# replace boot.img, core.img that was removed from /boot/grub by grub
+
+
+REINSTALL_GRUB= # "TRUE"
+
+PARTED=$(command -v parted) || fail "missing command: parted"
+PARTED_READ=${PARTED}
+DD=$(command -v dd) || fail "missing command: dd"
+MOUNT=$(command -v mount) || fail "missing command: mount"
+UMOUNT=$(command -v umount) || fail "missing command: umount"
+MKDIR=$(command -v mkdir) || fail "missing command: mkdir"
+MKFS=$(command -v mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
+RSYNC=$(command -v rsync) || fail "could not find required command 'rsync'"
+TUNE2FS=$(command -v tune2fs) || fail "could not find required command 'tune2fs'"
+LOSETUP=$(command -v losetup) || fail "could not find required command 'losetup'"
+# KPARTX==$(command -v kpartx) || fail "could not find required command 'kpartx'"
+
+function info {
+    echo "[reduce-image] INFO: $1"
+}
+
+function warn {
+    echo "[reduce-image] WARN: $1"
+}
+
+function fail {
+    echo "[reduce-image] ERROR: $1"
+    clean
+    exit -1
+}
+
+function clean {
+    echo "[reduce-image] INFO: cleanup"
+    $UMOUNT ${MOUNT_DIR1}
+    $UMOUNT ${MOUNT_DIR2}
+    if [ -f ./tmp.img ] ; then
+        rm ./tmp.img
+    fi
+}
+
+function simulate {
+    echo "[reduce-image] INFO: would execute \"$*\""
+}
+
+#################################
+# MAIN
+# create a reduced image from resin image
+# create a target setup on DEV_LOOP by
+# setting up partitions & copying data
+#
+# USAGE: reduce-img.sh <source image> <target disk> <target image>
+#
+#################################
+
+set -e
+
+SOURCE_DIR=$(dirname $0)
+CFG_FILE="${SOURCE_DIR}/reduce-img.cfg"
+if [ -f ${CFG_FILE} ] ; then
+    source ${CFG_FILE} || fail "failed to read config file"
+else
+    fail "failed to find config file ${CFG_FILE}"
+fi
+
+SOURCE_IMG=$1
+TARGET_IMG=$2
+
+info "image file:  ${SOURCE_IMG}"
+info "target image: ${TARGET_IMG}"
+
+if [ ! -f $SOURCE_IMG ] ; then
+    fail "image file not found ${SOURCE_IMG}"
+else
+    info "creating copy of source image ${SOURCE_IMG}"
+    cp $SOURCE_IMG ./tmp.img
+    SOURCE_IMG=./tmp.img
+fi
+
+# create a target file as copy of source image
+srcSize=$(du -bs ${SOURCE_IMG})
+srcSize=$(expr match "${srcSize}" '\([0-9]*\)[^0-9]*')
+info "creating target file of size ${srcSize}"
+truncate --size=${srcSize} ${TARGET_IMG}
+
+# cp ${SOURCE_IMG} ${TARGET_IMG}
+
+if [ ! -f ${TARGET_IMG} ] ; then
+    fail "no target image" 
+fi
+
+
+if [ "$SIMULATE" == "TRUE" ] ; then
+     PARTED="simulate parted"
+     DD="simulate dd "
+     MOUNT="simulate mount "
+     UMOUNT="simulate umount "
+     MKDIR="simulate mkdir "
+else
+    if [[ $EUID -ne 0 ]]; then
+        fail "This script must be run as root"
+    fi
+fi
+
+# info "wiping MBR on ${TARGET_IMG}"
+# $DD if=/dev/zero of=${TARGET_IMG} bs=446 count=1
+info "creating new MBR on ${TARGET_IMG}"
+$PARTED -ms ${TARGET_IMG} mklabel ${TARGET_MBR_TYPE} || fail "failed to create partition table on ${TARGET_IMG}"
+
+DEV_LOOP=$($LOSETUP -f) || fail "failed to retrieve free loop device"
+
+
+info "attempting $LOSETUP ${DEV_LOOP} ${TARGET_IMG}"
+
+$LOSETUP ${DEV_LOOP} ${TARGET_IMG}
+if [ ! -b ${DEV_LOOP} ] ; then
+ fail "failed to loopmount ${TARGET_IMG} on ${DEV_LOOP}"
+fi
+
+lineNo=0
+while read line ;
+do
+    case "$lineNo" in
+        "1")
+            IFS=':' read -ra parts <<< "$line"
+            targetSecSize=${parts[3]}
+            break;
+        ;;
+        *)
+        ;;
+    esac
+    lineNo=$(($lineNo + 1))
+done < <($PARTED_READ -ms ${SOURCE_IMG} unit s print) || fail "failed to read partition table on ${SOURCE_IMG}"
+
+if (( targetSecSize < 512 )) ; then
+    fail "got strange sector size for target drive: ${targetSecSize}"
+fi
+
+info "target sector size for target drive: ${targetSecSize}"
+
+#BYT;
+#/home/thomas/develop/resin.io/images/resin-vresinx64-intel-nuc-2.13.6+rev1-dev-v7.14.0.img:5259264s:file:512:512:msdos::;
+#1:8192s:90111s:81920s:fat16::boot, lba;
+#2:90112s:5210111s:5120000s:ext4::;
+#3:5210112s:5218303s:8192s:ext4::;
+#4:5218304s:5259263s:40960s:::lba;
+#5:5226496s:5234687s:8192s:::;
+#6:5242880s:5259263s:16384s:::;
+
+lineNo=0
+currStart=0
+
+while read line ;
+do
+    case "$lineNo" in
+        "0")
+            # info "skipping first line: ${line}"
+        ;;
+        "1")
+            # info "disk info: ${line}"
+            IFS=':' read -ra parts <<< "$line"
+            srcDiskSize=${parts[1]}
+            srcDiskType=${parts[2]}
+            srcSecSize=${parts[3]}
+            srcPartSize=${parts[5]}
+        ;;
+        *)
+            IFS=':' read -ra parts <<< "$line"
+            partNo=${parts[0]}
+            partStart=$(expr match "${parts[1]}" '\([0-9]*\)s') || fail "could not read partition start from ${line}"
+            partEnd=$(expr match "${parts[2]}" '\([0-9]*\)s') || fail "could not read partition end from ${line}"
+            partSize=$(expr match "${parts[3]}" '\([0-9]*\)s') || fail "could not read partition size from ${line}"
+            partType=${parts[4]}
+            partFlags=${parts[6]}
+
+            info "source partition ${partNo}, start: ${partStart}, end: ${partEnd}, size: ${partSize} type: ${partType} flags: ${partFlags}"
+
+            case "$partNo" in
+              "1")
+                   # create & dd boot partion
+                   $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s || fail "failed to create boot partition"
+                   $PARTED -sm ${DEV_LOOP} set 1 boot on || fail "failed to set flags on boot partition"
+                   $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${partStart} count=${partSize}
+                   currStart=$(($partStart + $partSize))
+                   info "1 ${partStart} - ${partEnd}, next ${currStart}"
+              ;;
+              "2")
+                   # mount this partition from image file
+                   # modify the filesystem by removing the embedded image and scripts
+                   # copy some boot images from boot to rootA that will be destroyed by grub otherwise
+                   # determine the remaining size of the file system
+                   # create and format a partition on target image that can contain the file system
+                   # copy the filesystem with rsync
+
+                   info "mounting partition ${partNo} on ${MOUNT_DIR1}"
+                   $MKDIR -p $MOUNT_DIR1
+                   $MKDIR -p $MOUNT_DIR2
+                   if [ ! -d $MOUNT_DIR1 ] ; then
+                        fail "failed to create mount dir ${MOUNT_DIR1}"
+                   fi
+                   if [ ! -d $MOUNT_DIR2 ] ; then
+                        fail "failed to create mount dir ${MOUNT_DIR2}"
+                   fi
+                   $MOUNT -o loop,offset=$((partStart * srcSecSize)) ${SOURCE_IMG} ${MOUNT_DIR1} || fail "failed to mount partition on ${MOUNT_DIR1}"
+
+                   IMG_FILE="${MOUNT_DIR1}${RESIN_IMG}"
+                   IMG_PATH=$(dirname ${IMG_FILE})
+
+
+
+                   # $MOUNT ${DEV_LOOP}p1 ${MOUNT_DIR2} || fail "failed to mount ${DEV_LOOP}p1 on ${MOUNT-DIR2}"
+                   # cp ${MOUNT_DIR2}/grub/*.img ${IMG_PATH} || fail "failed to copy boot images from boot to ${IMG_PATH}"
+                   # ls ${IMG_PATH}
+                   # $UMOUNT ${MOUNT_DIR2}
+
+                    # | tail -n +2
+                   # modifying file system
+
+
+                   sizeInfo=$(df --block-size=$srcSecSize ${IMG_FILE} | grep ${MOUNT_DIR1})
+                   tmp=($sizeInfo)
+                   info "size info before: ${tmp[2]}"
+
+                   if [ -f $IMG_FILE ] ; then
+                        info "gzipping $IMG_FILE"
+                        gzip $IMG_FILE
+                        ls -l ${IMG_PATH}
+                   else
+                        # fail "image not found: ${DEL_PATH}"
+                        warn "image not found: ${IMG_FILE}"
+                   fi
+
+                   # backup flasher script and replace with migrate script
+                   if [ -f ${MIGRATE_SCRIPT} ] ; then
+                       if [ -f ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} ] ; then
+                           info "backup ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}.bak"
+                           cp ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}.bak
+                       fi
+                       info "copy ${MIGRATE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}"
+                       cp ${MIGRATE_SCRIPT} ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}
+                       if [ -f ${MIGRATE_CFG} ] ; then
+                            info "copy ${MIGRATE_CFG} to ${MOUNT_DIR1}${REPLACE_PATH}/"
+                            cp ${MIGRATE_CFG} ${MOUNT_DIR1}${REPLACE_PATH}/
+                       fi
+                   else
+                        warn "no migrate script found"
+                   fi
+
+                   sizeInfo=$(df --block-size=$srcSecSize ${IMG_FILE}.gz | grep ${MOUNT_DIR1})
+                   tmp=($sizeInfo)
+                   fsSize=${tmp[2]}
+                   info "size info after: ${fsSize}"
+                   # computing required partition size
+                   # duTemp=$(du --block-size ${targetSecSize} -d 0 ${MOUNT_DIR1})
+                   # fsSize=$(expr match "$duTemp" '\([0-9]*\)[^0-9]*') || fail "failed to parse du size from ${duTemp}"
+                   # info "du size <${duTemp}> -> <${fsSize}>"
+                   fsSize=$(($fsSize + $ADD_BLOCKS))
+                   fsSize=$(($fsSize / $PART_ALIGN + 1))
+                   fsSize=$(($fsSize * $PART_ALIGN))
+                   info "fs size <${fsSize}>"
+
+                   # creating partition
+                   partStart=$currStart
+                   partEnd=$(($currStart + $fsSize - 1))
+                   currStart=$(($currStart + $fsSize))
+
+                   info "create partition resin-rootA with: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s"
+
+                   $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s || fail "failed to create resin-rootA partition"
+
+                   # make ext4 fs on partition and mount it
+                   $MKFS ${DEV_LOOP}p${partNo} || fail "failed to create fs on ${DEV_LOOP}p${partNo}"
+                   $TUNE2FS -L flash-rootA ${DEV_LOOP}p${partNo}  || fail "failed to label flash-rootA"
+
+                   $MOUNT ${DEV_LOOP}p${partNo} ${MOUNT_DIR2} || fail "failed to mount ${DEV_LOOP}p${partNo} on ${MOUNT-DIR2}"
+
+                   # copy data to partition
+                   info "writing data to resin-rootA"
+                   $RSYNC -a ${MOUNT_DIR1}/* ${MOUNT_DIR2} || fail "failed to sync ${MOUNT_DIR1} to ${MOUNT_DIR2}"
+                   # ls -l ${MOUNT_DIR2}
+
+                   # unmount everything
+                   sync
+                   $UMOUNT ${MOUNT_DIR1}
+                   $UMOUNT ${MOUNT_DIR2}
+
+                   info "done preparing resin-rootA"
+              ;;
+              "3")
+                   # create resin-rootB
+                   partEnd=$(($currStart + $partSize - 1))
+                   info "create resin-rootB: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${currStart}s ${partEnd}s"
+                   $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${currStart}s ${partEnd}s || fail "failed to create resin-rootB partition"
+                   $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
+                   currStart=$(($currStart + $partSize))
+                   ;;
+              "4")
+                   # create extended
+                   partEnd=$(($currStart + $partSize - 1))
+                   info "create extended: parted -sm ${DEV_LOOP} mkpart extended ${partType} ${currStart}s ${partEnd}s"
+                   $PARTED -sm ${DEV_LOOP} mkpart extended ${partType} ${currStart}s ${partEnd}s || fail "failed to create resin-rootB partition"
+                   # $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
+                   currStart=$(($currStart + $PART_ALIGN))
+
+                   ;;
+              *)
+                   # create state & data
+                   partEnd=$(($currStart + $partSize - 1))
+                   info "create state/data: parted -sm ${DEV_LOOP} mkpart logical ${partType} ${currStart}s ${partEnd}s"
+                   $PARTED -sm ${DEV_LOOP} mkpart logical ${partType} ${currStart}s ${partEnd}s || fail "failed to create state/data partition"
+                   $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
+                   currStart=$(($currStart + $partSize + $PART_ALIGN))
+                   ;;
+            esac
+        ;;
+    esac
+
+    lineNo=$(($lineNo + 1))
+done < <($PARTED_READ -sm $SOURCE_IMG unit s print)
+
+## TODO: install grub
+
+if [ "${REINSTALL_GRUB}" == "TRUE" ] ; then
+
+    # mount root partition
+                       # $MOUNT ${DEV_LOOP}p1 ${MOUNT_DIR2} || fail "failed to mount ${DEV_LOOP}p1 on ${MOUNT-DIR2}"
+                       #
+                       # ls ${IMG_PATH}
+                       # $UMOUNT ${MOUNT_DIR2}
+
+    $MOUNT ${DEV_LOOP}p1 ${MOUNT_DIR1} || fail "failed to mount ${DEV_LOOP}p1 on ${MOUNT_DIR1}"
+
+    cp ${MOUNT_DIR1}/grub/boot.img ${MOUNT_DIR1}/grub/core.img /var/tmp || fail "failed to copy boot images from boot to /var/tmp"
+
+    echo "(hd0) /dev/loop0" > device.map
+    # Use grub2-install to actually install Grub. The options are:
+    #   * No floppy polling.
+    #   * Use the device map we generated in the previous step.
+    #   * Include the basic set of modules we need in the Grub image.
+    #   * Install grub into the filesystem at our loopback mountpoint.
+    #   * Install the MBR to the loopback device itself.
+
+    grub-install --no-floppy \
+                  --grub-mkdevicemap=./device.map \
+                  --modules="biosdisk part_msdos ext2 configfile normal multiboot" \
+                  --boot-directory=${MOUNT_DIR1} \
+                  ${DEV_LOOP}
+
+    # unmount loop device
+
+
+    cp /var/tmp/boot.img /var/tmp/core.img ${MOUNT_DIR1}/grub/ || fail "failed to copy boot images back to /boot/grub"
+    sync
+
+    $UMOUNT ${MOUNT_DIR1}
+fi
+
+$LOSETUP -d ${DEV_LOOP}
+
+info "create image from resized partition, last block ${currStart}"
+### resulting image to reduced size
+truncate --size=$(($currStart * $srcSecSize)) ${TARGET_IMG}
+
