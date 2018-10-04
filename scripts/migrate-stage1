@@ -556,6 +556,10 @@ function initPartitions {
         fail "flash image name is not set"
     fi
 
+    if [ ! -d ${MOUNT_DIR1} ] ; then
+        $MKDIR -p  ${MOUNT_DIR1}
+    fi
+
     inform "attempting $MOUNT -t ${FLASH_DATA_FS_TYPE}  ${hdNameBase}${FLASH_DATA_PART_NO} ${MOUNT_DIR1}"
     $MOUNT -t ${FLASH_DATA_FS_TYPE}  ${hdNameBase}${FLASH_DATA_PART_NO} ${MOUNT_DIR1} || fail "failed to mount flash-data on ${hdBaseName}${partNo}"
 
