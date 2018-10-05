@@ -159,15 +159,6 @@ fi
 
 info "target sector size for target drive: ${targetSecSize}"
 
-#BYT;
-#/home/thomas/develop/resin.io/images/resin-vresinx64-intel-nuc-2.13.6+rev1-dev-v7.14.0.img:5259264s:file:512:512:msdos::;
-#1:8192s:90111s:81920s:fat16::boot, lba;
-#2:90112s:5210111s:5120000s:ext4::;
-#3:5210112s:5218303s:8192s:ext4::;
-#4:5218304s:5259263s:40960s:::lba;
-#5:5226496s:5234687s:8192s:::;
-#6:5242880s:5259263s:16384s:::;
-
 lineNo=0
 currStart=0
 
@@ -199,11 +190,20 @@ do
             case "$partNo" in
               "1")
                    # create & dd boot partion
-                   $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s || fail "failed to create boot partition"
-                   $PARTED -sm ${DEV_LOOP} set 1 boot on || fail "failed to set flags on boot partition"
-                   $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${partStart} count=${partSize}
-                   currStart=$(($partStart + $partSize))
-                   info "1 ${partStart} - ${partEnd}, next ${currStart}"
+
+                  # replace config.json in boot partition
+                  if [ -n "${RESIN_CFG_SRC}" ] && [ -f "${RESIN_CFG_SRC}" ] ; then
+                      $MKDIR -p $MOUNT_DIR1
+                      $MOUNT -o loop,offset=$((partStart * srcSecSize)) ${SOURCE_IMG} ${MOUNT_DIR1} || fail "failed to mount image boot partition on ${MOUNT_DIR1}"
+                      cp ${RESIN_CFG_SRC} ${MOUNT_DIR1}/${RESIN_CFG_TGT}
+                      $UMOUNT ${MOUNT_DIR1}
+                  fi
+
+                  $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s || fail "failed to create boot partition"
+                  $PARTED -sm ${DEV_LOOP} set 1 boot on || fail "failed to set flags on boot partition"
+                  $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${partStart} count=${partSize}
+                  currStart=$(($partStart + $partSize))
+                  info "1 ${partStart} - ${partEnd}, next ${currStart}"
               ;;
               "2")
                    # mount this partition from image file
@@ -226,16 +226,6 @@ do
 
                    IMG_FILE="${MOUNT_DIR1}${RESIN_IMG}"
                    IMG_PATH=$(dirname ${IMG_FILE})
-
-
-
-                   # $MOUNT ${DEV_LOOP}p1 ${MOUNT_DIR2} || fail "failed to mount ${DEV_LOOP}p1 on ${MOUNT-DIR2}"
-                   # cp ${MOUNT_DIR2}/grub/*.img ${IMG_PATH} || fail "failed to copy boot images from boot to ${IMG_PATH}"
-                   # ls ${IMG_PATH}
-                   # $UMOUNT ${MOUNT_DIR2}
-
-                    # | tail -n +2
-                   # modifying file system
 
 
                    sizeInfo=$(df --block-size=$srcSecSize ${IMG_FILE} | grep ${MOUNT_DIR1})
