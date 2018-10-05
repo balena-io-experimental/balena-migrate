@@ -18,17 +18,17 @@
 
 REINSTALL_GRUB= # "TRUE"
 
-PARTED=$(command -v parted) || fail "missing command: parted"
+PARTED=$(which parted) || fail "missing command: parted"
 PARTED_READ=${PARTED}
-DD=$(command -v dd) || fail "missing command: dd"
-MOUNT=$(command -v mount) || fail "missing command: mount"
-UMOUNT=$(command -v umount) || fail "missing command: umount"
-MKDIR=$(command -v mkdir) || fail "missing command: mkdir"
-MKFS=$(command -v mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
-RSYNC=$(command -v rsync) || fail "could not find required command 'rsync'"
-TUNE2FS=$(command -v tune2fs) || fail "could not find required command 'tune2fs'"
-LOSETUP=$(command -v losetup) || fail "could not find required command 'losetup'"
-# KPARTX==$(command -v kpartx) || fail "could not find required command 'kpartx'"
+DD=$(which  dd) || fail "missing command: dd"
+MOUNT=$(which  mount) || fail "missing command: mount"
+UMOUNT=$(which  umount) || fail "missing command: umount"
+MKDIR=$(which  mkdir) || fail "missing command: mkdir"
+MKFS=$(which  mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
+RSYNC=$(which  rsync) || fail "could not find required command 'rsync'"
+TUNE2FS=$(which  tune2fs) || fail "could not find required command 'tune2fs'"
+LOSETUP=$(which  losetup) || fail "could not find required command 'losetup'"
+
 
 function info {
     echo "[reduce-image] INFO: $1"
@@ -82,7 +82,7 @@ fi
 
 
 SOURCE_DIR=$(dirname $0)
-CFG_FILE="${SOURCE_DIR}/reduce-img.cfg"
+CFG_FILE="${SOURCE_DIR}/reduce-img.conf"
 if [ -f ${CFG_FILE} ] ; then
     source ${CFG_FILE} || fail "failed to read config file"
 else
