@@ -249,10 +249,6 @@ do
                        fi
                        info "copy ${MIGRATE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}"
                        cp ${MIGRATE_SCRIPT} ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}
-                       if [ -f ${MIGRATE_CFG} ] ; then
-                            info "copy ${MIGRATE_CFG} to ${MOUNT_DIR1}${REPLACE_PATH}/"
-                            cp ${MIGRATE_CFG} ${MOUNT_DIR1}${REPLACE_PATH}/
-                       fi
                    else
                         warn "no migrate script found"
                    fi
