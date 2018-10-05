@@ -208,7 +208,6 @@ do
               "2")
                    # mount this partition from image file
                    # modify the filesystem by removing the embedded image and scripts
-                   # copy some boot images from boot to rootA that will be destroyed by grub otherwise
                    # determine the remaining size of the file system
                    # create and format a partition on target image that can contain the file system
                    # copy the filesystem with rsync

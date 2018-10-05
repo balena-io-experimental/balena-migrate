@@ -82,6 +82,68 @@ sudo ./reduce-img resin-vresinx64-intel-nuc-2.13.6+rev1-dev-v7.14.0.img reduced-
  - reduced-full-devmap.txt - a partition map of the image used by stage1 to partition the target drive if the provided 
  image is compressed.  
  
+## Preparing Migration
+
+To migrate a device 4 files need to be present in the target systems:
+- The migrate-stage1 script 
+- The migrate-stage1.conf file
+- The modified image 
+- The devmap for the modified image if it is compressed. 
+   
+The migrate-stage1.conf file contains sevveral settings that can modify the behaviour of the script:
+```bash
+#!/bin/bash
+
+# temporary mount points
+MOUNT_DIR1="/mnt/resin-tmp1"
+MOUNT_DIR2="/mnt/resin-tmp2"
+
+# partition alignment in blocks
+PART_ALIGN=4096
+
+# The flasher image file to use
+FLASH_IMG_FILE="./reduced-full.img.gz"
+# A URLto download the flasher image file from (not tested)
+FLASH_IMG_URL=
+# the devmap file supplying the partition offsets of the image
+FLASH_IMG_GEOMETRY_FILE=./reduced-full-devmap.txt
+
+# check file systems (fsck) if set to TRUE
+CHECK_FS="TRUE"
+
+# Support lists
+# Supported OS types
+SUPPORTED_OSTYPES="linux-gnu"
+# Supported OS versions
+SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04"
+# Supported platforms
+SUPPORTED_ARCHS="x86_64 x86_32"
+# require kernel version and major rev
+KERNEL_MIN_VER=2
+KERNEL_MIN_MAJ_REV=1
+KERNEL_MIN_MIN_REV=25
+
+# required grub version
+GRUB_MIN_VER=2
+
+# path to resinOS image
+RESIN_OS_IMG="/opt/resin-image-genericx86-64.resinos-img.gz"
+
+# do not try to restore anything if set to TRUE
+NO_RESTORE=
+# NO_RESTORE="TRUE"
+
+# minimum required size of swap partition
+PART_MIN_SIZE=$((2048000))     # 2G
+```
+
+## Invoking Migration Stage 1
+
+The ```migrate-stage1``` needs to be called with root permission. It does not take any parameters.
+
+On success the script will prepare the swap partition for booting the flasher image, modify the boot configuration and reboot. 
+The flasher image will boot and execute the stage2 script in the background. It should reboot after a short period of time 
+(less than a minute on a virtual intel-nuc) into a working resinOS installation.   
  
  
  

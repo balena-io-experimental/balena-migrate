@@ -840,31 +840,8 @@ SWAP_PART_PAD=${TMP[3]}
 
 inform "swap part: ${SWAP_PART}, swap dev: ${SWAP_DEV}, swap part no: ${SWAP_PART_NO}, swap part pad: ${SWAP_PART_PAD}"
 
-if [ ${OS_VERSION} == "ubuntu-18.04" ] ; then
-    # TODO: !!! REMOVE in release"
-    inform "setting SIMULATE to true on ${OS_VERSION}"
-    SIMUMLATE="TRUE"
-fi
-
-
-# TODO: remove in release
-inform "simulate <${SIMULATE}>"
-if [ -z "${SIMULATE}" ] ; then
-    if [[ $EUID -ne 0 ]]; then
-        fail "This script must be run as root"
-    fi
-else
-    inform "!!!only simulating!!!"
-    SWAPON="simulate swapon "
-    SWAPOFF="simulate swapoff "
-    MKFS="simulate mkfs.ext4 "
-    MOUNT="simulate mount "
-    UMOUNT="simulate umount "
-    MKDIR="simulate mkdir "
-    MKSWAP="simulate mkswap "
-    CURL="simulate curl "
-    PARTED="simulate parted "
-    DD="simulate dd "
+if [[ $EUID -ne 0 ]]; then
+    fail "This script must be run as root"
 fi
 
 if [ -z "$FLASH_IMG_FILE" ] ; then
