@@ -30,7 +30,7 @@ TUNE2FS=$(which  tune2fs) || fail "could not find required command 'tune2fs'"
 LOSETUP=$(which  losetup) || fail "could not find required command 'losetup'"
 
 
-function info {
+function inform {
     echo "[reduce-image] INFO: $1"
 }
 
@@ -47,7 +47,7 @@ function fail {
 function clean {
     echo "[reduce-image] INFO: cleanup"
     if [ -n "${MOUNT_DIR1}"  ] && [ -d ${MOUNT_DIR1}  ] && [ -b ${MOUNT_DIR1} ] ; then
-        info "attempting $UMOUNT ${MOUNT_DIR1}"
+        inform "attempting $UMOUNT ${MOUNT_DIR1}"
         # $UMOUNT ${MOUNT_DIR1}
     fi
 
@@ -97,14 +97,14 @@ TARGET_IMG=$2
 TARGET_MAP="${TARGET_IMG%.*}-devmap.txt"
 
 
-info "image file:  ${SOURCE_IMG}"
-info "target image: ${TARGET_IMG}"
-info "target devmap: ${TARGET_MAP}"
+inform "image file:  ${SOURCE_IMG}"
+inform "target image: ${TARGET_IMG}"
+inform "target devmap: ${TARGET_MAP}"
 
 if [ ! -f $SOURCE_IMG ] ; then
     fail "image file not found ${SOURCE_IMG}"
 else
-    info "creating copy of source image ${SOURCE_IMG}"
+    inform "creating copy of source image ${SOURCE_IMG}"
     cp $SOURCE_IMG ./tmp.img
     SOURCE_IMG=./tmp.img
 fi
@@ -112,7 +112,7 @@ fi
 # create a target file as copy of source image
 srcSize=$(du -bs ${SOURCE_IMG})
 srcSize=$(expr match "${srcSize}" '\([0-9]*\)[^0-9]*')
-info "creating target file of size ${srcSize}"
+inform "creating target file of size ${srcSize}"
 truncate --size=${srcSize} ${TARGET_IMG}
 
 # cp ${SOURCE_IMG} ${TARGET_IMG}
@@ -123,15 +123,15 @@ fi
 
 
 
-# info "wiping MBR on ${TARGET_IMG}"
+# inform "wiping MBR on ${TARGET_IMG}"
 # $DD if=/dev/zero of=${TARGET_IMG} bs=446 count=1
-info "creating new MBR on ${TARGET_IMG}"
+inform "creating new MBR on ${TARGET_IMG}"
 $PARTED -ms ${TARGET_IMG} mklabel ${TARGET_MBR_TYPE} || fail "failed to create partition table on ${TARGET_IMG}"
 
 DEV_LOOP=$($LOSETUP -f) || fail "failed to retrieve free loop device"
 
 
-info "attempting $LOSETUP ${DEV_LOOP} ${TARGET_IMG}"
+inform "attempting $LOSETUP ${DEV_LOOP} ${TARGET_IMG}"
 
 $LOSETUP ${DEV_LOOP} ${TARGET_IMG}
 if [ ! -b ${DEV_LOOP} ] ; then
@@ -157,7 +157,7 @@ if (( targetSecSize < 512 )) ; then
     fail "got strange sector size for target drive: ${targetSecSize}"
 fi
 
-info "target sector size for target drive: ${targetSecSize}"
+inform "target sector size for target drive: ${targetSecSize}"
 
 lineNo=0
 currStart=0
@@ -166,10 +166,10 @@ while read line ;
 do
     case "$lineNo" in
         "0")
-            # info "skipping first line: ${line}"
+            # inform "skipping first line: ${line}"
         ;;
         "1")
-            # info "disk info: ${line}"
+            # inform "disk info: ${line}"
             IFS=':' read -ra parts <<< "$line"
             srcDiskSize=${parts[1]}
             srcDiskType=${parts[2]}
@@ -185,7 +185,7 @@ do
             partType=${parts[4]}
             partFlags=${parts[6]}
 
-            info "source partition ${partNo}, start: ${partStart}, end: ${partEnd}, size: ${partSize} type: ${partType} flags: ${partFlags}"
+            inform "source partition ${partNo}, start: ${partStart}, end: ${partEnd}, size: ${partSize} type: ${partType} flags: ${partFlags}"
 
             case "$partNo" in
               "1")
@@ -203,7 +203,7 @@ do
                   $PARTED -sm ${DEV_LOOP} set 1 boot on || fail "failed to set flags on boot partition"
                   $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${partStart} count=${partSize}
                   currStart=$(($partStart + $partSize))
-                  info "1 ${partStart} - ${partEnd}, next ${currStart}"
+                  inform "1 ${partStart} - ${partEnd}, next ${currStart}"
               ;;
               "2")
                    # mount this partition from image file
@@ -212,7 +212,7 @@ do
                    # create and format a partition on target image that can contain the file system
                    # copy the filesystem with rsync
 
-                   info "mounting partition ${partNo} on ${MOUNT_DIR1}"
+                   inform "mounting partition ${partNo} on ${MOUNT_DIR1}"
                    $MKDIR -p $MOUNT_DIR1
                    $MKDIR -p $MOUNT_DIR2
                    if [ ! -d $MOUNT_DIR1 ] ; then
@@ -229,10 +229,10 @@ do
 
                    sizeInfo=$(df --block-size=$srcSecSize ${IMG_FILE} | grep ${MOUNT_DIR1})
                    tmp=($sizeInfo)
-                   info "size info before: ${tmp[2]}"
+                   inform "size info before: ${tmp[2]}"
 
                    if [ -f $IMG_FILE ] ; then
-                        info "gzipping $IMG_FILE"
+                        inform "gzipping $IMG_FILE"
                         gzip $IMG_FILE
                         ls -l ${IMG_PATH}
                    else
@@ -243,10 +243,10 @@ do
                    # backup flasher script and replace with migrate script
                    if [ -f ${MIGRATE_SCRIPT} ] ; then
                        if [ -f ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} ] ; then
-                           info "backup ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}.bak"
+                           inform "backup ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}.bak"
                            cp ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT} ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}.bak
                        fi
-                       info "copy ${MIGRATE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}"
+                       inform "copy ${MIGRATE_SCRIPT} to ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}"
                        cp ${MIGRATE_SCRIPT} ${MOUNT_DIR1}${REPLACE_PATH}/${REPLACE_SCRIPT}
                    else
                         warn "no migrate script found"
@@ -255,22 +255,22 @@ do
                    sizeInfo=$(df --block-size=$srcSecSize ${IMG_FILE}.gz | grep ${MOUNT_DIR1})
                    tmp=($sizeInfo)
                    fsSize=${tmp[2]}
-                   info "size info after: ${fsSize}"
+                   inform "size info after: ${fsSize}"
                    # computing required partition size
                    # duTemp=$(du --block-size ${targetSecSize} -d 0 ${MOUNT_DIR1})
                    # fsSize=$(expr match "$duTemp" '\([0-9]*\)[^0-9]*') || fail "failed to parse du size from ${duTemp}"
-                   # info "du size <${duTemp}> -> <${fsSize}>"
+                   # inform "du size <${duTemp}> -> <${fsSize}>"
                    fsSize=$(($fsSize + $ADD_BLOCKS))
                    fsSize=$(($fsSize / $PART_ALIGN + 1))
                    fsSize=$(($fsSize * $PART_ALIGN))
-                   info "fs size <${fsSize}>"
+                   inform "fs size <${fsSize}>"
 
                    # creating partition
                    partStart=$currStart
                    partEnd=$(($currStart + $fsSize - 1))
                    currStart=$(($currStart + $fsSize))
 
-                   info "create partition resin-rootA with: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s"
+                   inform "create partition resin-rootA with: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s"
 
                    $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${partStart}s ${partEnd}s || fail "failed to create resin-rootA partition"
 
@@ -281,7 +281,7 @@ do
                    $MOUNT ${DEV_LOOP}p${partNo} ${MOUNT_DIR2} || fail "failed to mount ${DEV_LOOP}p${partNo} on ${MOUNT-DIR2}"
 
                    # copy data to partition
-                   info "writing data to resin-rootA"
+                   inform "writing data to resin-rootA"
                    $RSYNC -a ${MOUNT_DIR1}/* ${MOUNT_DIR2} || fail "failed to sync ${MOUNT_DIR1} to ${MOUNT_DIR2}"
                    # ls -l ${MOUNT_DIR2}
 
@@ -290,12 +290,12 @@ do
                    $UMOUNT ${MOUNT_DIR1}
                    $UMOUNT ${MOUNT_DIR2}
 
-                   info "done preparing resin-rootA"
+                   inform "done preparing resin-rootA"
               ;;
               "3")
                    # create resin-rootB
                    partEnd=$(($currStart + $partSize - 1))
-                   info "create resin-rootB: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${currStart}s ${partEnd}s"
+                   inform "create resin-rootB: parted -sm ${DEV_LOOP} mkpart primary ${partType} ${currStart}s ${partEnd}s"
                    $PARTED -sm ${DEV_LOOP} mkpart primary ${partType} ${currStart}s ${partEnd}s || fail "failed to create resin-rootB partition"
                    $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
                    currStart=$(($currStart + $partSize))
@@ -303,7 +303,7 @@ do
               "4")
                    # create extended
                    partEnd=$(($currStart + $partSize - 1))
-                   info "create extended: parted -sm ${DEV_LOOP} mkpart extended ${partType} ${currStart}s ${partEnd}s"
+                   inform "create extended: parted -sm ${DEV_LOOP} mkpart extended ${partType} ${currStart}s ${partEnd}s"
                    $PARTED -sm ${DEV_LOOP} mkpart extended ${partType} ${currStart}s ${partEnd}s || fail "failed to create resin-rootB partition"
                    # $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
                    currStart=$(($currStart + $PART_ALIGN))
@@ -312,7 +312,7 @@ do
               *)
                    # create state & data
                    partEnd=$(($currStart + $partSize - 1))
-                   info "create state/data: parted -sm ${DEV_LOOP} mkpart logical ${partType} ${currStart}s ${partEnd}s"
+                   inform "create state/data: parted -sm ${DEV_LOOP} mkpart logical ${partType} ${currStart}s ${partEnd}s"
                    $PARTED -sm ${DEV_LOOP} mkpart logical ${partType} ${currStart}s ${partEnd}s || fail "failed to create state/data partition"
                    $DD if=${SOURCE_IMG} of=${DEV_LOOP} bs=${srcSecSize} skip=${partStart} seek=${currStart} count=${partSize}
                    currStart=$(($currStart + $partSize + $PART_ALIGN))
@@ -363,13 +363,13 @@ fi
 
 $LOSETUP -d ${DEV_LOOP}
 
-info "create image from resized partition, last block ${currStart}"
+inform "create image from resized partition, last block ${currStart}"
 ### resulting image to reduced size
 truncate --size=$(($currStart * $srcSecSize)) ${TARGET_IMG}
 
-info "removing temporary source image"
+inform "removing temporary source image"
 rm ${SOURCE_IMG}
-info "writing devmap to ${TARGET_MAP}"
+inform "writing devmap to ${TARGET_MAP}"
 ${PARTED_READ} -sm ${TARGET_IMG} unit s print > ${TARGET_MAP}
 
 
