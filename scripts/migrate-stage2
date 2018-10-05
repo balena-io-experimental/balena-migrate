@@ -156,6 +156,24 @@ function getDeviceName {
     done < <(fdisk -l) || fail "failed to enumerate drives"
 }
 
+##########################################
+# split partition name into parts
+# /dev/nvme0n1p1 -> "/dev/ nvme0n1 1 p"
+##########################################
+
+function splitPartName {
+    local partName=$1
+    local pathName=$(dirname "${partName}")
+    local tmpName1=$(lsblk -no kname ${partName})
+    local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
+    local devName=$(basename "${tmpName2}")
+    local tmp=${tmpName1:${#devName}}
+    local pad=$(expr match "${tmp}" '\([^0-9]*\)[0-9]\+')
+    local no=$(expr match "${tmp}" '[^0-9]*\([0-9]\+\)')
+    echo "${pathName} ${devName} ${no} ${pad}"
+}
+
+
 
 ########
 # MAIN #
@@ -219,8 +237,14 @@ else
 fi
 
 # need to mount this now, won't work any more after flashing
+
+FLASH_ROOT_PART=$(findmnt --noheadings --canonicalize --output SOURCE /)
+TMP=($(splitPartName ${FLASH_ROOT_PART}))
+FLASH_DATA_PART="${TMP[0]}/${TMP[1]}${TMP[3]}${FLASH_DATA_PART_NO}"
+inform  "mounting flasher-data on ${FLASH_DATA_PART}"
+
 mkdir -p ${FLASH_DATA_MOUNTPOINT}
-mount ${ORIG_BOOT_DEV}9 ${FLASH_DATA_MOUNTPOINT} || fail "failed to mount flash-data"
+mount ${FLASH_DATA_PART} ${FLASH_DATA_MOUNTPOINT} || fail "failed to mount flash-data"
 
 
 inform "flashing resinOS image to ${ORIG_BOOT_DEV}"
