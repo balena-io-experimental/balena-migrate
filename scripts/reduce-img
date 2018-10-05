@@ -46,8 +46,15 @@ function fail {
 
 function clean {
     echo "[reduce-image] INFO: cleanup"
-    $UMOUNT ${MOUNT_DIR1}
-    $UMOUNT ${MOUNT_DIR2}
+    if [ -n "${MOUNT_DIR1}"  ] && [ -d ${MOUNT_DIR1}  ] && [ -b ${MOUNT_DIR1} ] ; then
+        info "attempting $UMOUNT ${MOUNT_DIR1}"
+        # $UMOUNT ${MOUNT_DIR1}
+    fi
+
+    if [ -n "${MOUNT_DIR2}"  ] && [ -d ${MOUNT_DIR2}  ] && [ -b ${MOUNT_DIR2} ] ; then
+        $UMOUNT ${MOUNT_DIR2}
+    fi
+
     if [ -f ./tmp.img ] ; then
         rm ./tmp.img
     fi
@@ -69,6 +76,11 @@ function simulate {
 
 set -e
 
+if [[ $EUID -ne 0 ]] ; then
+    fail "This script must be run as root"
+fi
+
+
 SOURCE_DIR=$(dirname $0)
 CFG_FILE="${SOURCE_DIR}/reduce-img.cfg"
 if [ -f ${CFG_FILE} ] ; then
@@ -80,8 +92,14 @@ fi
 SOURCE_IMG=$1
 TARGET_IMG=$2
 
+# filename=$(basename -- "$fullfile")
+# extension="${filename##*.}"
+TARGET_MAP="${TARGET_IMG%.*}-devmap.txt"
+
+
 info "image file:  ${SOURCE_IMG}"
 info "target image: ${TARGET_IMG}"
+info "target devmap: ${TARGET_MAP}"
 
 if [ ! -f $SOURCE_IMG ] ; then
     fail "image file not found ${SOURCE_IMG}"
@@ -104,17 +122,6 @@ if [ ! -f ${TARGET_IMG} ] ; then
 fi
 
 
-if [ "$SIMULATE" == "TRUE" ] ; then
-     PARTED="simulate parted"
-     DD="simulate dd "
-     MOUNT="simulate mount "
-     UMOUNT="simulate umount "
-     MKDIR="simulate mkdir "
-else
-    if [[ $EUID -ne 0 ]]; then
-        fail "This script must be run as root"
-    fi
-fi
 
 # info "wiping MBR on ${TARGET_IMG}"
 # $DD if=/dev/zero of=${TARGET_IMG} bs=446 count=1
@@ -374,4 +381,10 @@ $LOSETUP -d ${DEV_LOOP}
 info "create image from resized partition, last block ${currStart}"
 ### resulting image to reduced size
 truncate --size=$(($currStart * $srcSecSize)) ${TARGET_IMG}
+
+info "removing temporary source image"
+rm ${SOURCE_IMG}
+info "writing devmap to ${TARGET_MAP}"
+${PARTED_READ} -sm ${TARGET_IMG} unit s print > ${TARGET_MAP}
+
 

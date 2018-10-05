@@ -69,35 +69,36 @@ fi
 
 inform "establishing required programs"
 
-CURL=$(command -v curl) || fail "could not find required command 'curl'"
-DD=$(command -v dd) || fail "missing command: dd"
-GREP=$(command -v grep) || fail "could not find required command 'grep'"
-LOSETUP=$(command -v losetup) || fail "could not find required command 'losetup'"
-MKDIR=$(command -v mkdir) || fail "missing command: mkdir"
-MKFSE4=$(command -v mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
-MKSWAP=$(command -v mkswap) || fail "could not find required command 'mkswap'"
-MOUNT=$(command -v mount) || fail "missing command: mount"
-PARTED=$(command -v parted) || fail "missing command: parted"
+CURL=$(which curl) || fail "could not find required command 'curl'"
+DD=$(which dd) || fail "missing command: dd"
+GREP=$(which grep) || fail "could not find required command 'grep'"
+LOSETUP=$(which losetup) || fail "could not find required command 'losetup'"
+MKDIR=$(which mkdir) || fail "missing command: mkdir"
+MKFSE4=$(which mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
+MKSWAP=$(which mkswap) || fail "could not find required command 'mkswap'"
+MOUNT=$(which mount) || fail "missing command: mount"
+PARTED=$(which parted) || fail "missing command: parted"
 PARTED_READ=${PARTED}
-RSYNC=$(command -v rsync) || fail "could not find required command 'rsync'"
-SED=$(command -v sed) || fail "could not find required command 'sed'"
-SWAPOFF=$(command -v swapoff) || fail "could not find required command 'swapoff'"
-SWAPON=$(command -v swapon) || fail "could not find required command 'swapon'"
+RSYNC=$(which rsync) || fail "could not find required command 'rsync'"
+SED=$(which sed) || fail "could not find required command 'sed'"
+SWAPOFF=$(which swapoff) || fail "could not find required command 'swapoff'"
+SWAPON=$(which swapon) || fail "could not find required command 'swapon'"
 SWAPSTAT=$SWAPON
-TUNE2FS=$(command -v tune2fs) || fail "could not find required command 'tune2fs'"
-UMOUNT=$(command -v umount) || fail "missing command: umount"
-GUNZIP=$(command -v gunzip) || fail "missing command: gunzip"
-GZIP=$(command -v gzip) || fail "missing command: gzip"
-FINDMNT=$(command -v findmnt) || fail "missing command: findmnt"
-LSBLK=$(command -v lsblk) || fail "missing command: lsblk"
-READLINK=$(command -v readlink) || fail "missing command: readlink"
-FSCK=$(command -v fsck) || fail "missing command: fsck"
-CHMOD=$(command -v chmod) || fail "missing command: chmod"
-
+TUNE2FS=$(which tune2fs) || fail "could not find required command 'tune2fs'"
+UMOUNT=$(which umount) || fail "missing command: umount"
+GUNZIP=$(which gunzip) || fail "missing command: gunzip"
+GZIP=$(which gzip) || fail "missing command: gzip"
+FINDMNT=$(which findmnt) || fail "missing command: findmnt"
+LSBLK=$(which lsblk) || fail "missing command: lsblk"
+READLINK=$(which readlink) || fail "missing command: readlink"
+FSCK=$(which fsck) || fail "missing command: fsck"
+CHMOD=$(which chmod) || fail "missing command: chmod"
+FDISK=$(which fdisk) || fail "missing command: fdisk"
+TAR=$(which tar) || fail "missing command: tar"
 # checkout grub
-GRUBUPDT=$(command -v update-grub) || fail "could not find required command 'update-grub'"
-GRUBREBOOT=$(command -v grub-reboot) || fail "could not find required command 'grub-reboot'"
-GRUBINST=$(command -v grub-install) || fail "could not find required command 'grub-install'"
+GRUBUPDT=$(which update-grub) || fail "could not find required command 'update-grub'"
+GRUBREBOOT=$(which grub-reboot) || fail "could not find required command 'grub-reboot'"
+GRUBINST=$(which grub-install) || fail "could not find required command 'grub-install'"
 GRUB_STR=$($GRUBINST -V)
 GRUB_VER=$(expr match "$GRUB_STR" '.*(GRUB).\([0-9]*\).*')
 if (( GRUB_VER < GRUB_MIN_VER )) ; then
@@ -697,6 +698,17 @@ EOT
     $GRUBREBOOT resin-migration
 }
 
+##########################################
+# getDiskId
+##########################################
+function getDiskId {
+    local disk=$1
+    local idLine=$(${FDISK} -l ${disk} | grep "Disk identifier:")
+    local id=$(expr match "${idLine}" 'Disk identifier: \(.*\)')
+    echo ${id}
+}
+
+
 
 
 ##########################################
@@ -724,20 +736,34 @@ function setupMigration {
 
     # save information for stage 2
 
+    # TODO: need to find a new way to identify drives
+    # eg. enumerrate them like grub does
+
     inform "creating migrate-stage2.conf"
 
-    $MOUNT "${SWAP_DEV}${SWAP_PART_PAD}${FLASH_ROOTA_PART_NO}" ${MOUNT_DIR1} || fail "failed to mount ${SWAP_DEV}${SWAP_PART_PAD}${FLASH_BOOT_PART_NO} as ${MOUNT_DIR1}"
+    $MOUNT "${SWAP_DEV}${SWAP_PART_PAD}${FLASH_ROOTA_PART_NO}" ${MOUNT_DIR1} || fail "failed to mount ${SWAP_DEV}${SWAP_PART_PAD}${FLASH_ROOTA_PART_NO} as ${MOUNT_DIR1}"
     inform "writing migrate conf to ${MOUNT_DIR1}/etc/migrate-stage2.conf"
     echo "#!/bin/sh " > ${MOUNT_DIR1}/etc/migrate-stage2.conf || fail "failed to write migrate-stage2.conf"
-    echo "ORIG_BOOT_DEV=${ORIG_ROOT_DEV}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
-    echo "ORIG_ROOT_PART=${ORIG_ROOT_PART}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    # echo "ORIG_BOOT_DEV=${ORIG_ROOT_DEV}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    echo "ORIG_BOOT_DEV_ID=$(getDiskId ${ORIG_ROOT_DEV})" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    echo "ORIG_ROOT_PART_NO=${ORIG_ROOT_PART_NO}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    echo "FLASH_DATA_PART_NO=${FLASH_DATA_PART_NO}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
     # somehow flash-data label does not show up in stage 2
-    echo "FLASH_DATA_PART=${FLASH_DATA_PART}" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
     # TODO: add links to customer provided delete & backup files here
-    echo "CUSTOMER_BACKUP_SCRIPT=" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
-    echo "CUSTOMER_DELETE_SCRIPT=" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    # echo "CUSTOMER_BACKUP_SCRIPT=" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+    # echo "CUSTOMER_DELETE_SCRIPT=" >> ${MOUNT_DIR1}/etc/migrate-stage2.conf
+
+    cat ${MOUNT_DIR1}/etc/migrate-stage2.conf
 
     $CHMOD +x ${MOUNT_DIR1}/etc/migrate-stage2.conf
+
+    $UMOUNT ${MOUNT_DIR1}
+
+
+
+    # TODO: create backup here
+    $MOUNT "${SWAP_DEV}${SWAP_PART_PAD}${FLASH_DATA_PART_NO}" ${MOUNT_DIR1} || fail "failed to mount ${SWAP_DEV}${SWAP_PART_PAD}${FLASH_DATA_PART_NO} as ${MOUNT_DIR1}"
+    $TAR -czf ${MOUNT_DIR1}/backup_etc.tgz /etc/* || fail "failed to save backup on flasher-data"
     $UMOUNT ${MOUNT_DIR1}
 
     setupGrub ${SWAP_DEV} ${FLASH_BOOT_PART_NO}
@@ -760,7 +786,7 @@ function setupMigration {
 if [ -z ${FLASH_IMG_GEOMETRY_FILE} ] ; then
     fail "FLASH_IMG_GEOMETRY_FILE is not defined"
 else
-    if [! -f ${FLASH_IMG_GEOMETRY_FILE} ] ; then
+    if [ ! -f ${FLASH_IMG_GEOMETRY_FILE} ] ; then
         fail "config file not found: ${FLASH_IMG_GEOMETRY_FILE}"
     fi
 fi
