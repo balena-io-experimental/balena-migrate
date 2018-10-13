@@ -1,0 +1,46 @@
+#!/bin/sh
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+
+MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate"
+MEM_MIN_AVAIL=600000
+MEM_TMPFS_SIZE=512M
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+log_success_msg "local-premount resin-stage2 started"
+
+if [ -f /etc/resin-migrate.conf ] ; then
+    . /etc/resin-migrate.conf
+else
+    # TODO: try to rebuild former boot config
+    # where is boot mounted
+    panic "resin-migrate.conf not found"
+fi
+
+if [ -z "${RESIZE_FS}" ] ; then
+    log_success_msg "local-premount resin-stage2 disabled"
+    exit 0
+fi
+
+_log_msg "resizing fs ${RESIZE_FS} to ${RESIZE_TO}"
+e2fsck -f -p "${RESIZE_FS}" || panic "failed: e2fsck ${RESIZE_FS}"
+resize2fs -f "${RESIZE_FS}" ${RESIZE_TO}s || panic "failed: resize2fs ${RESIZE_FS} ${RESIZE_TO}s"
+parted --script "${RESIZE_DEV}" rm ${RESIZE_PART_NO} || panic "failed: parted --script ${RESIZE_DEV} rm ${RESIZE_PART_NO}"
+parted --script "${RESIZE_DEV}" mkpart "${RESIZE_PART_TYPE}" "${RESIZE_PART_FS}" ${RESIZE_PART_START}s ${RESIZE_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${RESIZE_PART_TYPE} ${RESIZE_PART_FS} ${RESIZE_PART_START}s ${RESIZE_PART_TO}s"
+parted --script "${RESIZE_DEV}" mkpart "${NEW_PART_TYPE}" "${NEW_PART_FS}" ${NEW_PART_START}s ${NEW_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${NEW_PART_TYPE} ${NEW_PART_FS} ${NEW_PART_START}s ${NEW_PART_TO}s"
+mke2fs -t "${NEW_PART_FS}" "${NEW_PART_NAME}" || panic "failed: mke2fs -t ${NEW_PART_FS} ${NEW_PART_NAME}"

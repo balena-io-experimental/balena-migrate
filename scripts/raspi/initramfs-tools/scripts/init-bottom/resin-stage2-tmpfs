@@ -1,0 +1,82 @@
+#!/bin/sh
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+
+MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate-tmp"
+MEM_MIN_AVAIL=600000
+MEM_TMPFS_SIZE=512M
+
+
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+if [ -f /scripts/local ] ; then
+    . /scripts/local
+fi
+
+log_success_msg "init-bottom resin-stage2-tmpfs started"
+
+
+if [ -f ${rootmnt}/etc/resin-migrate.conf ] ; then
+    . ${rootmnt}/etc/resin-migrate.conf
+else
+    # TODO: try to rebuild former boot config
+    # where is boot mounted
+    panic "resin-migrate.conf not found"
+fi
+
+if [ -z "${USE_TMPFS}" ] ; then
+    _log_msg "init-bottom resin-stage2-tmpfs disabled"
+    exit 0
+fi
+
+# exit 0
+# _log_msg "free $(free)"
+
+# printf "$(ls -l /dev | grep ram)\n"
+# printf "$(df)"
+
+log_begin_msg "checking available memory"
+
+MEM_INFO="$(free | grep "Mem:" | awk '{ print $4}')"
+
+if [ ${MEM_INFO} -lt $MEM_MIN_AVAIL ] ; then
+    panic "not enough memory available for tmpfs: ${MEM_INFO}"
+fi
+
+log_end_msg
+
+log_begin_msg "creating mountpoint on ${MIGRATEFS_MOUNT_POINT}"
+mkdir -p ${MIGRATEFS_MOUNT_POINT}
+if [ ! -d ${MIGRATEFS_MOUNT_POINT} ] ; then
+     panic "failed to create mount directory in ${MIGRATEFS_MOUNT_POINT}"
+fi
+log_end_msg
+
+log_begin_msg "mounting tmpfs on ${MIGRATEFS_MOUNT_POINT}"
+
+# mount -t tmpfs -o size=512M tmpfs  "${MIGRATEFS_MOUNT_POINT}"
+
+local_mount_fs "${MIGRATEFS_MOUNT_POINT}" || panic "failed to mount ${MIGRATEFS_MOUNT_POINT}"
+
+log_end_msg
+
+_log_ms "$(df)"
+
+
+exit 0
+

@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+# create a list of required tools
+# determine and copy all libs needed by tools
+
+set -e
+
+MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate"
+DATA_MOUNT_POINT="/mnt/resin-data"
+NO_STOP_SERVICES="dbus dnsmasq getty@tty1 hciuart ssh systemd-journald systemd-logind systemd-udevd user@1000 rsyslog"
+NO_RELOAD_SERVICES="rsyslog systemd-journald systemd-logind systemd-udevd getty@tty1 hciuart"
+# "rsyslogd dbus dnsmasq" # NO_RELOAD instead ?
+MEM_MIN_AVAIL=600000
+MEM_TMPFS_SIZE=512000000
+SYSTEM_SHUTDOWN_DIR="/lib/systemd/system-shutdown/"
+
+STAGE2_SOURCE_FILE="raspi-stage2"
+STAGE2_INST_PATH="/sbin/resin-migrate-stage2"
+STAGE2_SERVICE_PATH="/etc/systemd/system/resin-migrate.service"
+
+IMAGE_FILE="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
+# IMAGE_FILE="resin-image-genericx86-64-mod.resinos-img.gz"
+
+STAGE2_CONFIG="/etc/resin-migrate.conf"
+
+# MIGRATEFS_MOUNT_POINT="/tmp/migrateFs"
+
+SCRIPT_NAME="raspi-migrate-stage1"
+
+##########################################
+# log functions
+##########################################
+
+function inform {
+    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: $1"
+}
+
+function warn {
+    echo "[$(date +%T) ${SCRIPT_NAME}] WARN: $1"
+}
+
+function simulate {
+    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: would execute \"$*\""
+}
+
+##########################################
+# fail : try to restore
+##########################################
+
+# TODO: plenty - try to restore swap
+# delete partitions in CREATED_PARTITIONS
+# then use layout file created earlier with parted -sm /dev/?? unit s print to recreate
+
+function clean {
+    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: cleanup"
+    $UMOUNT ${MOUNT_DIR1}
+    $UMOUNT ${MOUNT_DIR2}
+    if [ -f ./tmp.img ] ; then
+        rm ./tmp.img
+    fi
+}
+
+##########################################
+# fail : try to resotore & reboot
+##########################################
+
+function fail {
+    echo "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
+    clean
+    # reboot
+    exit -1
+}
+
+##########################################
+# split partition name into parts
+# /dev/nvme0n1p1 -> "/dev/ nvme0n1 1 p"
+##########################################
+
+function splitPartName {
+    local partName=$1
+    local pathName=$(dirname "${partName}")
+    local tmpName1=$(lsblk -no kname ${partName})
+    local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
+    local devName=$(basename "${tmpName2}")
+    local tmp=${tmpName1:${#devName}}
+    local pad=$(expr match "${tmp}" '\([^0-9]*\)[0-9]\+')
+    local no=$(expr match "${tmp}" '[^0-9]*\([0-9]\+\)')
+    echo "${pathName} ${devName} ${no} ${pad}"
+}
+
+
+##########################################
+# main:
+##########################################
+
+
+# TODO: ensure tools whereis,
+
+if [[ $EUID -ne 0 ]]; then
+    fail "This script must be run as root"
+fi
+
+inform "creating mountpoint ${MIGRATEFS_MOUNT_POINT}"
+mkdir -p ${MIGRATEFS_MOUNT_POINT} || fail "failed to create mountpoint: ${MIGRATEFS_MOUNT_POINT}"
+if [ ! -d "${MIGRATEFS_MOUNT_POINT}" ] ; then
+    fail "failed to create mountpoint: ${MIGRATEFS_MOUNT_POINT}"
+fi
+inform "creating mountpoint ${DATA_MOUNT_POINT}"
+mkdir -p ${DATA_MOUNT_POINT} || fail "failed to create mountpoint: ${DATA_MOUNT_POINT}"
+if [ ! -d "${DATA_MOUNT_POINT}" ] ; then
+    fail "failed to create mountpoint: ${DATA_MOUNT_POINT}"
+fi
+
+inform "writing stage2 config"
+echo "#!/bin/sh" > ${STAGE2_CONFIG} || fail "failed to write stage2 config to ${STAGE2_CONFIG}"
+echo "DATA_MOUNT_POINT=${DATA_MOUNT_POINT}"  >> ${STAGE2_CONFIG}
+echo "MIGRATEFS_MOUNT_POINT=${MIGRATEFS_MOUNT_POINT}"  >> ${STAGE2_CONFIG}
+echo "IMAGE_FILE=\"$(pwd -P)/${IMAGE_FILE}\"" >> ${STAGE2_CONFIG}
+TMP=$(findmnt --noheadings --canonicalize --output SOURCE /)
+TMP=($(splitPartName ${TMP}))
+echo "ORIG_ROOT_DEV=${TMP[0]}/${TMP[1]}" >> ${STAGE2_CONFIG}
+
+cp ${STAGE2_SOURCE_FILE} ${STAGE2_INST_PATH} ||  fail "could write stage2 to /sbin"
+
+if [ -n "${STAGE2_SERVICE_PATH}" ] ; then
+    cat <<EOT > ${STAGE2_SERVICE_PATH}
+[Unit]
+Description=Run Scripts at Start and Stop
+DefaultDependencies=no
+After=multi-user.target
+Before=umount.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+# ExecStart=/sbin/raspi-stage2  #your paths and filenames
+ExecStart=${STAGE2_INST_PATH}
+
+[Install]
+WantedBy=reboot.target halt.target poweroff.target
+EOT
+    systemctl enable resin-migrate.service
+fi
+
+inform "all done"
+# reboot -f

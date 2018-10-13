@@ -1,0 +1,101 @@
+#!/bin/bash
+
+ROOT_DIR="."
+CONFIG_TXT="./config.txt"   # /boot/config.txt
+CMDLINE_TXT="./cmdline.txt" # /boot/cmdline.txt
+INITRAMFS_NAME="resin-migrate-initramfs-$(uname -r)"
+BOOT_DIR="/tmp" # "/boot"
+MK_INITRAMFS="TRUE"
+SCRIPT_NAME="raspi-migrate-stage1"
+
+##########################################
+# log functions
+##########################################
+
+function inform {
+    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: $1"
+}
+
+function warn {
+    echo "[$(date +%T) ${SCRIPT_NAME}] WARN: $1"
+}
+
+function simulate {
+    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: would execute \"$*\""
+}
+
+function clean {
+    if [ -n "${CONFIG_TXT_BACKUP}" ] ; then
+        cp ${CONFIG_TXT_BACKUP} ${CONFIG_TXT}
+    fi
+}
+
+##########################################
+# fail : try to resotore & reboot
+##########################################
+
+function fail {
+    echo "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
+    clean
+    exit -1
+}
+
+##########################################
+# main : create initramfs & install it
+##########################################
+
+
+if [[ $EUID -ne 0 ]]; then
+    fail "This script must be run as root"
+fi
+
+if [ "${MK_INITRAMFS}" == TRUE ] ; then
+
+    inform "creating initramfs: mkinitramfs -k -v -d ${ROOT_DIR}/initramfs-tools -o ${ROOT_DIR}/${INITRAMFS_NAME}"
+    mkinitramfs -k -v -d ${ROOT_DIR}/initramfs-tools -o ${ROOT_DIR}/${INITRAMFS_NAME} || fail "failed to crete initramfs in ${ROOT_DIR}/${INITRAMFS_NAME}"
+
+    inform "copying initramfs"
+    cp ${ROOT_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${ROOT_DIR}/${INITRAMFS_NAME} to /boot"
+fi
+
+## add to /boot/config.txt
+# initramfs init.gz followkernel
+# or
+# initramfs init.gz 0x00800000
+
+
+inform "making backup of config.txt"
+CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+cp ${CONFIG_TXT}  ${CONFIG_TXT_BACKUP}
+if grep -q "^[^#]*initramfs.*" ${CONFIG_TXT} ; then
+    inform "modifying ${CONFIG_TXT}"
+    sed -i "s/^[^#]*initramfs.*\$/initramfs ${INITRAMFS_NAME} followkernel/" ${CONFIG_TXT}
+else
+    inform "appending to ${CONFIG_TXT}"
+    echo "initramfs ${INITRAMFS_NAME} followkernel" >> ${CONFIG_TXT}
+fi
+
+## add to /boot/cmdline.txt
+# nosplash quiet=n (or delete quiet) debug=y
+
+inform "making backup of config.txt"
+CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
+
+while read line
+do
+     if [[ $line =~ nosplash ]]; then
+           line=${line/BILL_NO/NA}
+     fi
+done < "${CMDLINE_TXT}"
+
+
+if ! grep -q "nosplash" ${CMDLINE_TXT} ; then
+    inform "modifying ${CMDLINE_TXT}"
+    sed -i "s/^[^#]*initramfs.*\$/initramfs ${INITRAMFS_NAME} followkernel/" ${CONFIG_TXT}
+else
+    inform "appending to ${CONFIG_TXT}"
+    echo "initramfs ${INITRAMFS_NAME} followkernel" >> ${CONFIG_TXT}
+fi
+
+

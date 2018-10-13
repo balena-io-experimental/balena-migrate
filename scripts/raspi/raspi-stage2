@@ -1,0 +1,327 @@
+#!/bin/bash
+
+MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate"
+LOG_FILE="/var/log/resin-migrate.log" #/dev/stdout
+MEM_MIN_AVAIL=600000
+MEM_TMPFS_SIZE=512000000
+SCRIPT_NAME="raspi-migrate-stage2"
+BACKUP_FILE="/backup_etc.tgz"
+
+CONFIG_FILE="/etc/resin-migrate.conf"
+
+IMAGE_FILE="/backup_etc.tgz"
+LOG_STRING=
+
+TOOLS_REQUIRED="ls dd mount umount parted fuser systemctl grep expr kill sh bash whereis sleep tar gzip mkdir sync date"
+
+set -e
+
+function write {
+    if [ -z "${LOG_STRING}" ] ; then
+        LOG_STRING="${1}"
+    else
+        LOG_STRING="${LOG_STRING}\n${1}"
+    fi
+
+    if [ -w "${LOG_FILE}" ] && $(echo ${LOG_STRING} >> ${LOG_FILE}) ; then
+        LOG_STRING=""
+    fi
+}
+
+function inform {
+    write "[$(date +%T) ${SCRIPT_NAME}] INFO: $1"
+}
+
+function warn {
+    write "[$(date +%T) ${SCRIPT_NAME}] WARN: $1"
+}
+
+function simulate {
+    write "[$(date +%T) ${SCRIPT_NAME}] INFO: would execute \"$*\""
+}
+
+##########################################
+# fail : try to restore
+##########################################
+
+# TODO: plenty - try to restore swap
+# delete partitions in CREATED_PARTITIONS
+# then use layout file created earlier with parted -sm /dev/?? unit s print to recreate
+
+function clean {
+    write "[$(date +%T) ${SCRIPT_NAME}] INFO: cleanup"
+    $UMOUNT ${MOUNT_DIR1}
+    $UMOUNT ${MOUNT_DIR2}
+    if [ -f ./tmp.img ] ; then
+        rm ./tmp.img
+    fi
+}
+
+##########################################
+# fail : try to resotore & reboot
+##########################################
+
+function fail {
+    write "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
+    exit -1
+}
+
+##########################################
+# copyPgm copy program and libraries required
+##########################################
+
+function copyPgm {
+    pgmName=$1
+
+    inform "copyPgm ${pgmName}"
+
+    if [ -z "${2}" ] ; then
+        target=${target}
+    else
+        target=$2
+    fi
+
+    local tmp=($(whereis -b ${pgmName})) || fail "required program not found ${pgmName}"
+    inform "whereis reports: ${tmp[1]}"
+
+    local idx=1
+    inform "got ${#tmp[@]} results"
+    while [ $idx -lt ${#tmp[@]} ] ;
+    do
+        inform "$idx : ${tmp[$idx]}"
+        local pgmPath=${tmp[$idx]}
+        if [ ! -d "$pgmPath" ] && [ -x "$pgmPath" ] ; then
+            inform "$pgmPath is executable"
+            break;
+        fi
+        idx=$(($idx + 1))
+    done
+
+    if [ -d "$pgmPath" ] || [ ! -x "$pgmPath" ] ; then
+        fail "failed to find executable for ${pgmName}"
+    fi
+
+    inform "copying pgm name: ${pgmName} : ${pgmPath}"
+
+    dirPath=$(dirname ${pgmPath})
+
+    if [ ! -z "${dirPath}" ] && [ ! -d dirPath ] ; then
+        local tgtPath="${target}${dirPath}"
+        mkdir -p ${tgtPath}
+    fi
+
+    cp ${pgmPath}  ${tgtPath}/ 2>>${LOG_FILE}
+
+    while read line ;
+    do
+        # inform "process: $line"
+
+        if [[ ${line} =~ ^not\ a\ dynamic\ executable.*$ ]]  ; then
+          break;
+        fi
+
+        if [[ ${line} =~ ^linux-vdso.*$ ]] ; then
+            continue
+        fi
+
+        if [[ ${line} =~ ^.*\ =\>\ .*$ ]] ; then
+            local tmp=$(expr match "${line}" '.* => \(.*\)')
+        else
+            local tmp=${line}
+        fi
+
+        # inform "tmp: ${tmp}"
+        parts=(${tmp})
+
+        libPath=${parts[0]}
+
+        # inform "attempting to copy ${libPath}"
+        dirPath=$(dirname ${libPath})
+        if [ ! -z "${dirPath}" ] && [ ! -d dirPath ] ; then
+            tgtPath="${target}${dirPath}"
+            mkdir -p ${tgtPath}
+        fi
+
+        if [ ! -f "${target}${libPath}" ] ; then
+            cp ${libPath}  ${tgtPath}/ 2>>${LOG_FILE}
+            inform "${libPath} copied to ${tgtPath}/"
+        fi
+
+    done < <(ldd ${pgmPath})
+}
+
+##########################################
+# get partition number by offset
+# params
+#   device
+#   startOffse
+#   endOffse
+##########################################
+function getPartStartOffset {
+    local hdDev=$1
+    local partNo=$2
+
+    while read line ;
+    do
+        if [[ $line =~ ^[^:]+.$ ]] ; then
+             continue
+        fi
+
+        IFS=':' read -ra parts <<< "${line}"
+
+        if [[ ! ${line} =~ ^[0-9]+:.*$ ]] ; then
+            local sectorSize=${parts[3]}
+            continue
+        fi
+
+        if (( ${parts[0]} != $partNo )) ; then
+             continue
+        fi
+
+        local partStart=$(expr match "${parts[1]}" '\([0-9]\+\)s')
+        partStart=$(($partStart * $sectorSize))
+        echo ${partStart}
+        break;
+    done < <(parted -ms ${hdDev} unit s print) || fail "failed to read ${hdDev} image partitions"
+}
+
+
+
+
+##########################################
+# main:
+##########################################
+
+inform "-------------------- started ------------------------"
+
+# wait for root to be mounted readonly, then remount readwrite
+#DURATION=0
+#while [[ ${DURATION} -lt  20 ]]
+#do
+#    # inform "loop start"
+#    ROOT_RO=$(grep "\s/\s.*\sro[\s,]" /proc/mounts) || inform "still mounted RW"
+#    if [ -n "${ROOT_RO}" ] ; then
+#        # inform "attempt remount rw"
+#        mount -oremount,rw / || fail "failed to remount root"
+#        ROOT_RW="TRUE"
+#        break;
+#    fi
+#    inform "sleep"
+#	sleep 1 >> ${LOG_FILE} 2>&1
+	# inform "inc"
+#	DURATION=$((${DURATION} + 1))
+#done
+# inform "remounted root rw"
+
+
+if [ -n "${CONFIG_FILE}" ] && [ -f ${CONFIG_FILE} ] ; then
+    source ${CONFIG_FILE} || fail "failed to read config file"
+else
+    fail "config file not found ${CONFIG_FILE}"
+fi
+
+MEM_INFO=($(free | grep "Mem:")) || fail "failed to retrieve free mem"
+inform "mem available: ${MEM_INFO[6]}"
+if (( ${MEM_INFO[6]} < $MEM_MIN_AVAIL )) ; then
+    fail "not enough memory available for tmpfs"
+fi
+
+inform "systemctl dump:"
+inform "$(systemctl)"
+
+inform "creating tmpfs"
+
+mkdir -p ${MIGRATEFS_MOUNT_POINT} || fail "failed to create mount directory in ${MIGRATEFS_MOUNT_POINT}"
+if [ ! -d ${MIGRATEFS_MOUNT_POINT} ] ; then
+     fail "failed to create mount directory in ${MIGRATEFS_MOUNT_POINT}"
+fi
+
+mount -t tmpfs -o size=${MEM_TMPFS_SIZE} tmpfs ${MIGRATEFS_MOUNT_POINT} || fail "failed to create migration tmpfs"
+
+mkdir ${MIGRATEFS_MOUNT_POINT}/{proc,sys,dev,run,usr,var,tmp,oldroot}
+cp -ax /{etc,mnt} ${MIGRATEFS_MOUNT_POINT}/ || fail "failed to copy /etc /mnt"
+
+inform "copying required programs"
+
+for pgmName in ${TOOLS_REQUIRED}
+do
+    copyPgm ${pgmName} ${MIGRATEFS_MOUNT_POINT}
+done
+
+cp -ax /var/{log,local,lock,run,tmp} ${MIGRATEFS_MOUNT_POINT}/var/ || fail "failed to copy /var to  "
+
+# mkdir -p ${MIGRATEFS_MOUNT_POINT}//usr/share/dbus-1
+# cp -rax /usr/share/dbus-1/* ${MIGRATEFS_MOUNT_POINT}/usr/share/dbus-1/
+cp -rax /lib/systemd/* ${MIGRATEFS_MOUNT_POINT}/lib/systemd/
+
+inform "copying image file ${IMAGE_FILE}"
+cp ${IMAGE_FILE} ${MIGRATEFS_MOUNT_POINT}/resin-os.img.gz
+
+inform "copied vital components"
+
+sync || fail "failed to sync"
+
+cd ${MIGRATEFS_MOUNT_POINT}
+mount --make-rprivate / || fail "mount --make-rprivate / failed"
+inform "changing to new root"
+
+pivot_root ${MIGRATEFS_MOUNT_POINT} ${MIGRATEFS_MOUNT_POINT}/oldroot || fail "failed to change to new root"
+
+# cp  "/oldroot${LOG_FILE}" ${LOG_FILE}
+LOG_FILE="/oldroot${LOG_FILE}"
+
+inform "remounting dev, proc, sys, run"
+for i in dev proc sys run; do mount --move /oldroot/$i /$i; done
+
+inform "creating  backup of /oldroot/etc in ${BACKUP_FILE}"
+tar -czf ${BACKUP_FILE} /oldroot/etc >> ${LOG_FILE} 2>&1
+
+ls -l / >> ${LOG_FILE} 2>&1
+
+systemctl daemon-reexec  || fail "failed to restart systemctl deamon"
+
+inform "attempting gzip -d -c /resin-os.img.gz | dd of=${ORIG_ROOT_DEV} bs=4M"
+
+fail "OK"
+
+inform "flashing image /resin-os.img.gz to ${ORIG_ROOT_DEV}"
+gzip -d -c /resin-os.img.gz | dd of=${ORIG_ROOT_DEV} bs=4M >> ${LOG_FILE} 2>&1 || fail "failed to flash resinOS image to ${ORIG_ROOT_DEV}"
+inform "done flashing image"
+sync
+
+inform "reading data partition start offset"
+DATA_START=$(getPartStartOffset ${ORIG_ROOT_DEV} 6)
+
+inform "creating mountpoint ${DATA_MOUNT_POINT}"
+mkdir -p ${DATA_MOUNT_POINT} >> ${LOG_FILE} 2>&1 || fail "failed to create directory ${DATA_MOUNT_POINT}"
+
+inform "mounting resin data partition at ${ORIG_BOOT_DEV} offset ${DATA_START} on ${DATA_MOUNT_POINT}"
+mount -o loop,offset=${DATA_START} ${ORIG_BOOT_DEV} ${DATA_MOUNT_POINT} || fail "failed to mount resin-data partition"
+
+inform "saving backup ${BACKUP_FILE} to ${DATA_MOUNT_POINT}/"
+cp ${BACKUP_FILE} ${DATA_MOUNT_POINT}/
+
+inform "unmounting ${DATA_MOUNT_POINT}"
+cp ${LOG_FILE} ${DATA_MOUNT_POINT}
+sync
+
+umount  ${DATA_MOUNT_POINT}
+
+ROOT_RO=$(grep "\s/old_root\s.*\sro[\s,]" /proc/mounts) || warn "OK"
+
+if [ -n "${ROOT_RO}" ] ; then
+    mount -oremount,rw /old_root || exit -1
+    ROOT_RW="TRUE"
+fi
+
+
+
+# mount -oremount,ro /
+# ROOT_RW="FALSE"
+
+# systemctl daemon-reexec  || fail "failed to restart systemctl deamon"
+
+inform "all good"
+
+# sleep 10
+

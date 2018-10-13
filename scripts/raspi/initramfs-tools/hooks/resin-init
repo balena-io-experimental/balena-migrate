@@ -1,0 +1,59 @@
+#!/bin/sh
+
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+# Begin real processing below this line
+
+
+copyPgm() {
+    local pgm="$1"
+
+    local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+
+    # echo "$pgm: -> $pgmPath" 
+    if [ -z "${pgmPath}" ] ; then
+        echo "could not find ${pgmPath}"
+    fi
+
+    echo "[resin-init] copy ${pgmPath}"
+
+    copy_exec ${pgmPath}
+}
+
+##############################
+# main                       #
+##############################
+
+REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk  mke2fs resize2fs e2fsck"
+
+
+if [ -f /etc/resin-migrate.conf ] ; then
+    . /etc/resin-migrate.conf
+fi
+
+for pgmName in ${REQUIRED_PGMS}
+do
+    copyPgm ${pgmName}
+done
+
+echo "[resin-init] dest dir ${DESTDIR}"
+
+# cp "$IMAGE_FILE" "${DESTDIR}/"
+# cp "$BACKUP_FILE" "${DESTDIR}/"
+# mkdir -p "${DESTDIR}/etc"
+cp /etc/resin-migrate.conf "${DESTDIR}/etc/"
+
+exit 0
+

@@ -1,0 +1,58 @@
+#!/bin/sh
+
+#!/bin/sh
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+
+MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate"
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+if [ -f /scripts/local ] ; then
+    . /scripts/local
+fi
+
+log_success_msg "init-bottom resin-stage2-resized started"
+
+if [ -f /etc/resin-migrate.conf ] ; then
+    . /etc/resin-migrate.conf
+else
+    # TODO: try to rebuild former boot config
+    # where is boot mounted
+    panic "resin-migrate.conf not found"
+fi
+
+if [ -z "${RESIZE_FS}" ] ; then
+    log_success_msg "local-premount resin-stage2-resized disabled"
+    exit 0
+fi
+
+log_begin_msg "creating mountpoint on ${MIGRATEFS_MOUNT_POINT}"
+mkdir -p ${MIGRATEFS_MOUNT_POINT}
+if [ ! -d ${MIGRATEFS_MOUNT_POINT} ] ; then
+     panic "failed to create mount directory in ${MIGRATEFS_MOUNT_POINT}"
+fi
+log_end_msg
+
+_log_msg "would attempt: mount -t  ${NEW_PART_FS} ${NEW_PART_NAME} ${MIGRATEFS_MOUNT_POINT}"
+
+_log_msg "$(df)"
+
+local_mount_fs "${MIGRATEFS_MOUNT_POINT}" || panic "failed to mount ${MIGRATEFS_MOUNT_POINT}"
+# mount -t  "${NEW_PART_FS}" "${NEW_PART_NAME}" "${MIGRATEFS_MOUNT_POINT}" || panic "failed: mount -t  ${NEW_PART_FS} ${NEW_PART_NAME} ${MIGRATEFS_MOUNT_POINT}"
+
+# log_success_msg "mounted ${NEW_PART_NAME}"
