@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ROOT_DIR="."
+HOME_DIR="."
 CONFIG_TXT="./config.txt"   # /boot/config.txt
 CMDLINE_TXT="./cmdline.txt" # /boot/cmdline.txt
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
@@ -8,7 +8,7 @@ BOOT_DIR="/tmp" # "/boot"
 MK_INITRAMFS="TRUE"
 SCRIPT_NAME="make-rpi-initramfs"
 IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
-USE_TMPFS="TRUE"
+USE_TMPFS= # "TRUE"
 MIGRATE_CONF=/etc/balena-migrate.conf
 
 
@@ -115,15 +115,18 @@ READLINK=$(which readlink) || fail "missing command: readlink"
 inform "checked required programs"
 
 
-ROOT_DIR=$(pwd)
+HOME_DIR=$(pwd)
 
 cat <<EOI > ${MIGRATE_CONF}
 #!/bin/sh
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
 
-IMAGE_FILE=${ROOT_DIR}/${IMAGE_NAME}
-BACKUP_FILE=${ROOT_DIR}/backup.tgz
-MIGRATEFS_MOUNT_POINT=/mnt/balena-migrate
+HOME_DIR=${HOME_DIR}
+IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
+BACKUP_FILE=backup.tgz
+MIGRATE_TMP=/balena-tmp
+# TODO: probably superfluous
+MIGRATEFS_MOUNT_POINT=${MIGRATE_TMP}
 EOI
 
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
@@ -144,15 +147,30 @@ else
     cat <<EOI >> ${MIGRATE_CONF}
 USE_TMPFS=
 RESIZE_FS="${ROOT_FS}"
+RESIZE_DEV=${ROOT_DEV}
+RESIZE_PART_NO=${TMP[2]}
+# TODO: actually calculate this
+RESIZE_PART_START=94208
+RESIZE_PART_END=31116287
+RESIZE_PART_TYPE=primary
+RESIZE_PART_FS=ext4
+RESIZE_PART_TO=26921984
+RESIZE_PART_SIZE=26827777
+
+NEW_PART_TYPE="primary"
+NEW_PART_FS="ext2"
+NEW_PART_START=26926080
+NEW_PART_TO=31022087
+NEW_PART_NAME=/dev/mmcblk0p3
 EOI
 fi
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
-    inform "creating initramfs: mkinitramfs -k -v -d ${ROOT_DIR}/initramfs-tools -o ${ROOT_DIR}/${INITRAMFS_NAME}"
-    mkinitramfs -k -v -d ${ROOT_DIR}/initramfs-tools -o ${ROOT_DIR}/${INITRAMFS_NAME} || fail "failed to crete initramfs in ${ROOT_DIR}/${INITRAMFS_NAME}"
+    inform "creating initramfs: mkinitramfs -k -v -d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
+    mkinitramfs -k -v -d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME} || fail "failed to crete initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
     inform "copying initramfs"
-    cp ${ROOT_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${ROOT_DIR}/${INITRAMFS_NAME} to /boot"
+    cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
 fi
 
 ## add to /boot/config.txt

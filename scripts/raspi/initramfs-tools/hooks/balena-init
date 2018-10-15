@@ -38,23 +38,19 @@ copyPgm() {
 
 REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk  mke2fs resize2fs e2fsck partprobe"
 
-if [ -f /etc/resin-migrate.conf ] ; then
+if [ -f /etc/balena-migrate.conf ] ; then
     # TODO: move ?
-    . /etc/resin-migrate.conf
+    . /etc/balena-migrate.conf
 else
-    echo "could not find /etc/resin-migrate.conf"
+    echo "could not find /etc/balena-migrate.conf"
     exit -1
 fi
 
-if [ -n "${RESIZE_FS}" ] ; then
-    REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk mke2fs resize2fs e2fsck partprobe"
+
+if [ -z "${USE_TMPFS}" ] ; then
+    REQUIRED_PGMS="tar parted dd gzip mkdir free grep awk mke2fs resize2fs e2fsck partprobe"
 else
-    if [ -n "${USE_TMPFS}" ] ; then
-        REQUIRED_PGMS="parted dd gzip mkdir free grep awk"
-    else
-        echo "could not determine migration strategy"
-        exit -1
-    fi
+    REQUIRED_PGMS="tar parted dd gzip mkdir free grep awk"
 fi
 
 for pgmName in ${REQUIRED_PGMS}

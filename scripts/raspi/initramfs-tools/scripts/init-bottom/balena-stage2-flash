@@ -27,11 +27,32 @@ else
     panic "balena-migrate.conf not found"
 fi
 
-log_begin_msg "copying image from ${rootmnt}/${IMAGE_FILE} to ${MIGRATEFS_MOUNT_POINT}"
-cp "${rootmnt}/${IMAGE_FILE}" "${MIGRATEFS_MOUNT_POINT}" || panic "failed to copy ${rootmnt}/${IMAGE_FILE} to ${MIGRATEFS_MOUNT_POINT}"
+log_begin_msg "creating mountpoint on ${MIGRATE_TMP}"
+mkdir -p ${MIGRATE_TMP}
+if [ ! -d ${MIGRATE_TMP} ] ; then
+     panic "failed to create mount directory in ${MIGRATE_TMP}"
+fi
 log_end_msg
 
-log_begin_msg "copying backup from ${rootmnt}/${IMAGE_FILE} to ${MIGRATEFS_MOUNT_POINT}"
-cp "${rootmnt}/${IMAGE_FILE}" "${MIGRATEFS_MOUNT_POINT}" || panic "failed to copy ${rootmnt}/${IMAGE_FILE} to ${MIGRATEFS_MOUNT_POINT}"
+
+log_begin_msg "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}"
+cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}" || panic "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}"
 log_end_msg
 
+log_begin_msg "creating backup on ${MIGRATE_TMP}"
+tar -czf "${MIGRATE_TMP}/${BACKUP_FILE}" "${rootmnt}/etc/"  || panic "failed to backup using tar -czf ${MIGRATE_TMP}/backup.tgz ${rootmnt}/etc/ "
+log_end_msg
+
+# _log_msg "df: $(df)\n"
+
+_log_msg "ls: ${MIGRATE_TMP} $(ls -l $MIGRATE_TMP)\n"
+
+# umount ${rootmnt} || panic "failed to umount ${rootmnt}"
+
+_log_msg "mem: $(free)"
+
+_log_msg "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M\n"
+
+gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M || panic "failed with gzip -d ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M"
+
+reboot -f || panic "failed to reboot"

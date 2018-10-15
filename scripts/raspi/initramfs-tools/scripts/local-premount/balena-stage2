@@ -14,6 +14,8 @@ esac
 
 set -e
 
+exit 0
+
 MIGRATEFS_MOUNT_POINT="/mnt/balena-migrate"
 MEM_MIN_AVAIL=600000
 MEM_TMPFS_SIZE=512M
@@ -39,9 +41,9 @@ if [ -z "${RESIZE_FS}" ] ; then
     exit 0
 fi
 
-_log_msg "resizing fs ${RESIZE_FS} to ${RESIZE_TO}"
+_log_msg "resizing fs ${RESIZE_FS} to ${RESIZE_PART_TO}"
 e2fsck -f -p "${RESIZE_FS}" || panic "failed: e2fsck ${RESIZE_FS}"
-resize2fs -f "${RESIZE_FS}" ${RESIZE_TO}s || panic "failed: resize2fs ${RESIZE_FS} ${RESIZE_TO}s"
+resize2fs -f "${RESIZE_FS}" ${RESIZE_PART_SIZE}s || panic "failed: resize2fs ${RESIZE_FS} ${RESIZE_PART_SIZE}s"
 parted --script "${RESIZE_DEV}" rm ${RESIZE_PART_NO} || panic "failed: parted --script ${RESIZE_DEV} rm ${RESIZE_PART_NO}"
 parted --script "${RESIZE_DEV}" mkpart "${RESIZE_PART_TYPE}" "${RESIZE_PART_FS}" ${RESIZE_PART_START}s ${RESIZE_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${RESIZE_PART_TYPE} ${RESIZE_PART_FS} ${RESIZE_PART_START}s ${RESIZE_PART_TO}s"
 parted --script "${RESIZE_DEV}" mkpart "${NEW_PART_TYPE}" "${NEW_PART_FS}" ${NEW_PART_START}s ${NEW_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${NEW_PART_TYPE} ${NEW_PART_FS} ${NEW_PART_START}s ${NEW_PART_TO}s"

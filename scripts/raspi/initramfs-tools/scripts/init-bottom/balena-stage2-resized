@@ -15,6 +15,8 @@ esac
 
 set -e
 
+exit 0
+
 # MIGRATEFS_MOUNT_POINT="/mnt/balena-migrate"
 
 if [ -f /scripts/functions ] ; then
@@ -42,7 +44,7 @@ fi
 
 log_begin_msg "creating mountpoint on ${MIGRATEFS_MOUNT_POINT}"
 
-echo "${NEW_PART_NAME} ${MIGRATEFS_MOUNT_POINT} ${NEW_PART_FS}	defaults	0   2" >> /etc/fstab
+# echo "${NEW_PART_NAME} ${MIGRATEFS_MOUNT_POINT} ${NEW_PART_FS}	defaults	0   2" >> /etc/fstab
 
 mkdir -p ${MIGRATEFS_MOUNT_POINT}
 if [ ! -d ${MIGRATEFS_MOUNT_POINT} ] ; then
