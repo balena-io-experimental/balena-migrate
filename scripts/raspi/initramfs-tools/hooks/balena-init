@@ -27,7 +27,7 @@ copyPgm() {
         echo "could not find ${pgmPath}"
     fi
 
-    echo "[resin-init] copy ${pgmPath}"
+    echo "[balena-init] copy ${pgmPath}"
 
     copy_exec ${pgmPath}
 }
@@ -36,11 +36,25 @@ copyPgm() {
 # main                       #
 ##############################
 
-REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk  mke2fs resize2fs e2fsck"
-
+REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk  mke2fs resize2fs e2fsck partprobe"
 
 if [ -f /etc/resin-migrate.conf ] ; then
+    # TODO: move ?
     . /etc/resin-migrate.conf
+else
+    echo "could not find /etc/resin-migrate.conf"
+    exit -1
+fi
+
+if [ -n "${RESIZE_FS}" ] ; then
+    REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk mke2fs resize2fs e2fsck partprobe"
+else
+    if [ -n "${USE_TMPFS}" ] ; then
+        REQUIRED_PGMS="parted dd gzip mkdir free grep awk"
+    else
+        echo "could not determine migration strategy"
+        exit -1
+    fi
 fi
 
 for pgmName in ${REQUIRED_PGMS}
@@ -48,12 +62,12 @@ do
     copyPgm ${pgmName}
 done
 
-echo "[resin-init] dest dir ${DESTDIR}"
+echo "[balena-init] dest dir ${DESTDIR}"
 
 # cp "$IMAGE_FILE" "${DESTDIR}/"
 # cp "$BACKUP_FILE" "${DESTDIR}/"
 # mkdir -p "${DESTDIR}/etc"
-cp /etc/resin-migrate.conf "${DESTDIR}/etc/"
+cp /etc/balena-migrate.conf "${DESTDIR}/etc/"
 
 exit 0
 

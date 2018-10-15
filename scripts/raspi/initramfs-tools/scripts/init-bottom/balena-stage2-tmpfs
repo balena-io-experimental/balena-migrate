@@ -1,0 +1,126 @@
+#!/bin/sh
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+
+# MIGRATEFS_MOUNT_POINT="/mnt/balena-migrate-tmp"
+
+
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+if [ -f /scripts/local ] ; then
+    . /scripts/local
+fi
+
+
+mount_tmpfs()
+{
+        _log_msg "mount_tmpfs $1\n"
+
+        MNT_FSNAME="tmpfs"
+        MNT_DIR=${MIGRATEFS_MOUNT_POINT}
+        MNT_TYPE="tmpfs"
+        MNT_OPTS="defaults,size=${MEM_TMPFS_SIZE}"
+        MNT_FREQ=0
+        MNT_PASS=0
+        MNT_JUNK=
+
+        _log_msg "mount_tmpfs: attempting local_device_setup $MNT_FSNAME $1 file system"
+        local_device_setup "$MNT_FSNAME" "$1 file system"
+
+        _log_msg "mount_tmpfs: DEV ${DEV}"
+        MNT_FSNAME="${DEV}"
+
+        local_premount
+
+        roflag=-w
+
+        # FIXME This has no error checking
+        _log_msg "mount_tmpfs mntType: $MNT_TYPE \n"
+
+        modprobe "${MNT_TYPE}"
+
+        _log_msg "mount_tmpfs mntPass: $MNT_PASS \n"
+        if [ "$MNT_PASS" != 0 ]; then
+                checkfs "$MNT_FSNAME" "$MNT_DIR" "${MNT_TYPE}"
+        fi
+
+        # FIXME This has no error checking
+        # Mount filesystem
+
+        _log_msg "mount_tmpfs attempt: mount ${roflag} -t ${MNT_TYPE} -o ${MNT_OPTS} $MNT_FSNAME ${MNT_DIR}\n"
+        mount ${roflag} -t "${MNT_TYPE}" -o "${MNT_OPTS}" "$MNT_FSNAME" "${MNT_DIR}"
+        _log_msg "mount_tmpfs done\n"
+        return 0
+}
+
+
+log_success_msg "init-bottom balena-stage2-tmpfs started"
+
+
+if [ -f /etc/balena-migrate.conf ] ; then
+    . /etc/balena-migrate.conf
+else
+    # TODO: try to rebuild former boot config
+    # where is boot mounted
+    panic "balena-migrate.conf not found"
+fi
+
+if [ -z "${USE_TMPFS}" ] ; then
+    _log_msg "init-bottom balena-stage2-tmpfs disabled"
+    exit 0
+fi
+
+# exit 0
+# _log_msg "free $(free)"
+
+# printf "$(ls -l /dev | grep ram)\n"
+# printf "$(df)"
+
+log_begin_msg "checking available memory"
+
+MEM_INFO="$(free | grep "Mem:" | awk '{ print $4}')"
+
+if [ ${MEM_INFO} -lt $MEM_MIN_AVAIL ] ; then
+    panic "not enough memory available for tmpfs: ${MEM_INFO}"
+fi
+
+log_end_msg
+
+log_begin_msg "creating mountpoint on ${MIGRATEFS_MOUNT_POINT}"
+mkdir -p ${MIGRATEFS_MOUNT_POINT}
+if [ ! -d ${MIGRATEFS_MOUNT_POINT} ] ; then
+     panic "failed to create mount directory in ${MIGRATEFS_MOUNT_POINT}"
+fi
+log_end_msg
+
+log_begin_msg "mounting tmpfs on ${MIGRATEFS_MOUNT_POINT}\n"
+
+
+# mount -t tmpfs -o size=${MEM_TMPFS_SIZE} tmpfs ${MIGRATEFS_MOUNT_POINT}
+
+# mount_tmpfs "${MIGRATEFS_MOUNT_POINT}" || panic "failed to mount ${MIGRATEFS_MOUNT_POINT}"
+
+# echo "tmpfs ${MIGRATEFS_MOUNT_POINT} tmpfs	defaults,size=${MEM_TMPFS_SIZE}	0	0" >> "${rootmnt}/etc/fstab"
+local_mount_fs "${MIGRATEFS_MOUNT_POINT}" || panic "failed to mount ${MIGRATEFS_MOUNT_POINT}"
+log_end_msg
+
+_log_msg "$(df)"
+
+
+exit 0
+

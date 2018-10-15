@@ -14,7 +14,7 @@ esac
 
 set -e
 
-MIGRATEFS_MOUNT_POINT="/mnt/resin-migrate"
+MIGRATEFS_MOUNT_POINT="/mnt/balena-migrate"
 MEM_MIN_AVAIL=600000
 MEM_TMPFS_SIZE=512M
 
@@ -22,18 +22,20 @@ if [ -f /scripts/functions ] ; then
     . /scripts/functions
 fi
 
-log_success_msg "local-premount resin-stage2 started"
+_log_msg ""
 
-if [ -f /etc/resin-migrate.conf ] ; then
-    . /etc/resin-migrate.conf
+log_success_msg "local-premount balena-stage2 started params: $1 $2 $3"
+
+if [ -f /etc/balena-migrate.conf ] ; then
+    . /etc/balena-migrate.conf
 else
     # TODO: try to rebuild former boot config
     # where is boot mounted
-    panic "resin-migrate.conf not found"
+    panic "balena-migrate.conf not found"
 fi
 
 if [ -z "${RESIZE_FS}" ] ; then
-    log_success_msg "local-premount resin-stage2 disabled"
+    log_success_msg "local-premount balena-stage2 disabled"
     exit 0
 fi
 
