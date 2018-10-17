@@ -1,0 +1,94 @@
+#!/bin/sh
+
+PREREQ="balena-stage2-resized balena-stage2-tmpfs"
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+# TODO: reenable or remove
+exit 0
+
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+if [ -f /scripts/local ] ; then
+    . /scripts/local
+fi
+
+if [ -f /etc/balena-migrate.conf ] ; then
+    . /etc/balena-migrate.conf
+else
+    # TODO: try to rebuild former boot config
+    # where is boot mounted
+    panic "balena-migrate.conf not found"
+fi
+
+log_begin_msg "creating mountpoint on ${MIGRATE_TMP}"
+mkdir -p ${MIGRATE_TMP}
+if [ ! -d ${MIGRATE_TMP} ] ; then
+     panic "failed to create mount directory in ${MIGRATE_TMP}"
+fi
+log_end_msg
+
+
+log_begin_msg "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}"
+cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}" || panic "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}"
+log_end_msg
+
+# log_begin_msg "creating backup on ${MIGRATE_TMP}"
+# tar -czf "${MIGRATE_TMP}/${BACKUP_FILE}" "${rootmnt}/etc/"  || panic "failed to backup using tar -czf ${MIGRATE_TMP}/backup.tgz ${rootmnt}/etc/ "
+# log_end_msg
+
+#if [ -d "${rootmnt}/dev" ] ; then
+#	rm /dev || panic "failed to delete /dev"
+#	mkdir -p /dev || panic "failed to create /dev"
+#	mount -n -o move ${rootmnt}/dev /dev || mount -n --move ${rootmnt}/dev /dev  || panic "failed to move /dev"
+#fi
+
+umount ${rootmnt} || panic "failed to unmount ${rootmnt}"
+
+# _log_msg "df: $(df) \n"
+
+reboot -f || panic "failed to reboot"
+
+# _log_msg "ls: ${MIGRATE_TMP} $(ls -l $MIGRATE_TMP)\n"
+
+# umount ${rootmnt} || panic "failed to umount ${rootmnt}"
+
+# _log_msg "mem: $(free)"
+
+_log_msg "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M\n"
+
+# gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M || panic "failed with gzip -d ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M"
+
+log_begin_msg "creating mountpoint on ${DATA_TMP}"
+mkdir -p ${DATA_TMP}
+if [ ! -d ${DATA_TMP} ] ; then
+     panic "failed to create mount directory in ${DATA_TMP}"
+fi
+log_end_msg
+
+echo "df: $(df)"
+echo "fuser /root/ : $(fuser /root)"
+
+# mount_newfs
+
+# Usage: mount [-r] [-w] [-o options] [-t type] [-f] [-i] [-n] device directory
+# _log_msg "attempting mount -w -o loop,offset=${IMG_DATA_OFFSET} -t $IMG_DATA_TYPE ${rootmnt}$ROOT_DEV ${DATA_TMP}\n"
+mount -w -o loop,offset=${IMG_DATA_OFFSET} -t "$IMG_DATA_TYPE" "${rootmnt}$ROOT_DEV" "${DATA_TMP}" || panic "failed to mount resin-data partition"
+# _log_msg "devs: $(ls /dev/) \n"
+
+
+
+# reboot -f || panic "failed to reboot"

@@ -37,8 +37,8 @@ else
     panic "balena-migrate.conf not found"
 fi
 
-if [ -z "${RESIZE_FS}" ] ; then
-    log_success_msg "local-premount balena-stage2-resized disabled"
+if [  "$STRATEGY" != "RESIZE" ] ; then
+    log_success_msg "local-premount balena-stage2-resized not enabled"
     exit 0
 fi
 

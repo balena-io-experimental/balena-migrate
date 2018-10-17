@@ -115,37 +115,50 @@ READLINK=$(which readlink) || fail "missing command: readlink"
 inform "checked required programs"
 
 
+
+
 HOME_DIR=$(pwd)
-
-cat <<EOI > ${MIGRATE_CONF}
-#!/bin/sh
-# DO NOT EDIT ! This file is supposed to be created by stage1 script
-
-HOME_DIR=${HOME_DIR}
-IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
-BACKUP_FILE=backup.tgz
-MIGRATE_TMP=/balena-tmp
-# TODO: probably superfluous
-MIGRATEFS_MOUNT_POINT=${MIGRATE_TMP}
-EOI
-
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
 TMP=($(splitPartName ${ROOT_FS}))
 
 ROOT_DEV=${TMP[0]}${TMP[1]}
 
 inform "ROOT_DEV=${ROOT_DEV}"
-echo "ROOT_DEV=${ROOT_DEV}" >> /etc/balena-migrate.conf
 
-if [ "${USE_TMPFS}" == "TRUE" ] ; then
+cat <<EOI > ${MIGRATE_CONF}
+#!/bin/sh
+# DO NOT EDIT ! This file is supposed to be created by stage1 script
+
+STRATEGY=     # "RESIZE" "TMPFS" or empty for none
+ROOT_DEV=${ROOT_DEV}
+HOME_DIR=${HOME_DIR}
+IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
+BACKUP_FILE=backup.tgz
+DATA_TMP=/balena-data
+MIGRATE_TMP=/balena-migrate
+
+# IMG_DATA_OFFSET=4194304       # raspian boot
+# IMG_DATA_TYPE=fat32            # raspian boot
+
+IMG_DATA_OFFSET=48234496      # raspian root
+IMG_DATA_TYPE=ext4            # raspian root
+# IMG_DATA_OFFSET=729808896   # resinOS-data
+# IMG_DATA_TYPE=ext4          # resinOS-data
+# TODO: probably superfluous
+MIGRATEFS_MOUNT_POINT=/balena-migrate
+
+EOI
+
+if [ "$STRATEGY" == "TMPFS" ] ; then
     cat <<EOI >> ${MIGRATE_CONF}
-USE_TMPFS="TRUE"
 MEM_MIN_AVAIL=600000
 MEM_TMPFS_SIZE=512M
 EOI
 else
+  if [ "$STRATEGY" == "RESIZE" ] ; then
     cat <<EOI >> ${MIGRATE_CONF}
-USE_TMPFS=
+MEM_MIN_AVAIL=600000
+MEM_TMPFS_SIZE=512M
 RESIZE_FS="${ROOT_FS}"
 RESIZE_DEV=${ROOT_DEV}
 RESIZE_PART_NO=${TMP[2]}
@@ -163,6 +176,7 @@ NEW_PART_START=26926080
 NEW_PART_TO=31022087
 NEW_PART_NAME=/dev/mmcblk0p3
 EOI
+  fi
 fi
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
@@ -209,5 +223,3 @@ else
     inform "appending to ${CONFIG_TXT}"
     echo "initramfs ${INITRAMFS_NAME} followkernel" >> ${CONFIG_TXT}
 fi
-
-

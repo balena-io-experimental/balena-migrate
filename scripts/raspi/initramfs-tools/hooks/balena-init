@@ -16,13 +16,12 @@ esac
 . /usr/share/initramfs-tools/hook-functions
 # Begin real processing below this line
 
-
 copyPgm() {
     local pgm="$1"
 
     local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
 
-    # echo "$pgm: -> $pgmPath" 
+    # echo "$pgm: -> $pgmPath"
     if [ -z "${pgmPath}" ] ; then
         echo "could not find ${pgmPath}"
     fi
@@ -36,21 +35,23 @@ copyPgm() {
 # main                       #
 ##############################
 
-REQUIRED_PGMS="parted mount dd gzip mkdir free grep awk  mke2fs resize2fs e2fsck partprobe"
+
+REQUIRED_PGMS="mkdir dd gzip grep awk tar cp fuser df echo rm reboot sleep umount"
 
 if [ -f /etc/balena-migrate.conf ] ; then
     # TODO: move ?
     . /etc/balena-migrate.conf
 else
     echo "could not find /etc/balena-migrate.conf"
-    exit -1
+    exit 1
 fi
 
+if [ "$STRATEGY" = "RESIZE" ] ; then
+   REQUIRED_PGMS="$REQUIRED_PGMS parted mke2fs resize2fs e2fsck partprobe"
+fi
 
-if [ -z "${USE_TMPFS}" ] ; then
-    REQUIRED_PGMS="tar parted dd gzip mkdir free grep awk mke2fs resize2fs e2fsck partprobe"
-else
-    REQUIRED_PGMS="tar parted dd gzip mkdir free grep awk"
+if [ "$STRATEGY" = "TMPFS" ] ; then
+    REQUIRED_PGMS="$REQUIRED_PGMS parted free"
 fi
 
 for pgmName in ${REQUIRED_PGMS}
@@ -66,4 +67,3 @@ echo "[balena-init] dest dir ${DESTDIR}"
 cp /etc/balena-migrate.conf "${DESTDIR}/etc/"
 
 exit 0
-
