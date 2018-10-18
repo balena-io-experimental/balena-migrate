@@ -115,8 +115,6 @@ READLINK=$(which readlink) || fail "missing command: readlink"
 inform "checked required programs"
 
 
-
-
 HOME_DIR=$(pwd)
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
 TMP=($(splitPartName ${ROOT_FS}))
@@ -129,21 +127,22 @@ cat <<EOI > ${MIGRATE_CONF}
 #!/bin/sh
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
 
+LOG_DRIVE=/dev/sda1
+LOG_FS_TYPE=ext2
+LOG_MOUNT_DIR=/mnt/log
+LOG_FILE=migrate.log
+
 STRATEGY=     # "RESIZE" "TMPFS" or empty for none
 ROOT_DEV=${ROOT_DEV}
 HOME_DIR=${HOME_DIR}
 IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
-BACKUP_FILE=backup.tgz
-DATA_TMP=/balena-data
+BACKUP_FILE=backup.gz
+DATA_TMP=/balena-tmp
 MIGRATE_TMP=/balena-migrate
 
-# IMG_DATA_OFFSET=4194304       # raspian boot
-# IMG_DATA_TYPE=fat32            # raspian boot
-
-IMG_DATA_OFFSET=48234496      # raspian root
-IMG_DATA_TYPE=ext4            # raspian root
+IMG_DATA_NAME=/dev/mmcblk0p6          # resinOS-data
 # IMG_DATA_OFFSET=729808896   # resinOS-data
-# IMG_DATA_TYPE=ext4          # resinOS-data
+IMG_DATA_TYPE=ext4          # resinOS-data
 # TODO: probably superfluous
 MIGRATEFS_MOUNT_POINT=/balena-migrate
 

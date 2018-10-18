@@ -36,7 +36,7 @@ copyPgm() {
 ##############################
 
 
-REQUIRED_PGMS="mkdir dd gzip grep awk tar cp fuser df echo rm reboot sleep umount"
+REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
 
 if [ -f /etc/balena-migrate.conf ] ; then
     # TODO: move ?
