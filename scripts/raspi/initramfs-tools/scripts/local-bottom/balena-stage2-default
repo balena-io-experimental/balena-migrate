@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PREREQ="balena-stage2-resized balena-stage2-tmpfs"
+PREREQ=""
 prereqs()
 {
 	echo "$PREREQ"
@@ -115,6 +115,11 @@ else
     # TODO: try to rebuild former boot config
     # where is boot mounted
     panic  "balena-migrate.conf not found"
+fi
+
+if [  "$STRATEGY" != "DEFAULT" ] ; then
+    log_success_msg "local-premount balena-stage2-resized not enabled"
+    exit 0
 fi
 
 FAIL_EXIT="EXIT"

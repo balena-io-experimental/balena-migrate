@@ -1,17 +1,19 @@
 #!/bin/bash
 
+STRATEGY="DEFAULT"
 HOME_DIR="."
-CONFIG_TXT="./config.txt"   # /boot/config.txt
-CMDLINE_TXT="./cmdline.txt" # /boot/cmdline.txt
+CONFIG_TXT="/boot/config.txt"   # /boot/config.txt
+CMDLINE_TXT="/boot/cmdline.txt" # /boot/cmdline.txt
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
-BOOT_DIR="/tmp" # "/boot"
 MK_INITRAMFS="TRUE"
+DO_REBOOT="FALSE"
 SCRIPT_NAME="make-rpi-initramfs"
 IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 USE_TMPFS= # "TRUE"
 MIGRATE_CONF=/etc/balena-migrate.conf
-
-
+DEBUG="TRUE"
+TMP_FILE=tmpfile.txt
+BACKUP_FILE=backup.gz
 
 ##########################################
 # log functions
@@ -53,8 +55,8 @@ function fail {
 function splitPartName {
     local partName=$1
     local pathName=$(expr match "${partName}" '\(.*/\)[^/]\+')
-    local tmpName1=$(${LSBLK} -no kname ${partName})
-    local tmpName2=$(${READLINK} -f "/sys/class/block/${tmpName1}/..")
+    local tmpName1=$(lsblk -no kname ${partName})
+    local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
     local devName=$(basename "${tmpName2}")
     local tmp=${tmpName1:${#devName}}
     local pad=$(expr match "${tmp}" '\([^0-9]*\)[0-9]\+')
@@ -76,44 +78,19 @@ fi
 
 inform "establishing required programs"
 
-#CURL=$(which curl) || fail "could not find required command 'curl'"
-#DD=$(which dd) || fail "missing command: dd"
-#GREP=$(which grep) || fail "could not find required command 'grep'"
-#LOSETUP=$(which losetup) || fail "could not find required command 'losetup'"
-#MKDIR=$(which mkdir) || fail "missing command: mkdir"
-#MKFSE4=$(which mkfs.ext4) || fail "could not find required command 'mkfs.ext4'"
-#MKSWAP=$(which mkswap) || fail "could not find required command 'mkswap'"
-#MOUNT=$(which mount) || fail "missing command: mount"
-#PARTED=$(which parted) || fail "missing command: parted"
-#PARTED_READ=${PARTED}
-#RSYNC=$(which rsync) || fail "could not find required command 'rsync'"
-#SED=$(which sed) || fail "could not find required command 'sed'"
-#SWAPOFF=$(which swapoff) || fail "could not find required command 'swapoff'"
-#SWAPON=$(which swapon) || fail "could not find required command 'swapon'"
-#SWAPSTAT=$SWAPON
-#TUNE2FS=$(which tune2fs) || fail "could not find required command 'tune2fs'"
-#UMOUNT=$(which umount) || fail "missing command: umount"
-#GUNZIP=$(which gunzip) || fail "missing command: gunzip"
-#GZIP=$(which gzip) || fail "missing command: gzip"
-#FINDMNT=$(which findmnt) || fail "missing command: findmnt"
-LSBLK=$(which lsblk) || fail "missing command: lsblk"
-READLINK=$(which readlink) || fail "missing command: readlink"
-#FSCK=$(which fsck) || fail "missing command: fsck"
-#CHMOD=$(which chmod) || fail "missing command: chmod"
-#FDISK=$(which fdisk) || fail "missing command: fdisk"
-#TAR=$(which tar) || fail "missing command: tar"
-# checkout grub
-#GRUBUPDT=$(which update-grub) || fail "could not find required command 'update-grub'"
-#GRUBREBOOT=$(which grub-reboot) || fail "could not find required command 'grub-reboot'"
-#GRUBINST=$(which grub-install) || fail "could not find required command 'grub-install'"
-#GRUB_STR=$($GRUBINST -V)
-#GRUB_VER=$(expr match "$GRUB_STR" '.*(GRUB).\([0-9]*\).*')
-#if (( GRUB_VER < GRUB_MIN_VER )) ; then
-#    fail "need at least grub verson $GRUB_MIN_VER but found `expr match "$GRUB_STR" '.*(GRUB).\(.*\)'`"
-#fi
+# TODO: Check / install tools needed for initramfs too
+INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
+REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink" #  gzip
+
+for PGM in $REQUIRED_PGMS
+do
+    PGM_PATH="$(whereis -b $PGM | awk '{ print $2}')"
+    if [ -z "$PGM_PATH" ] ; then
+      fail "cannot find required program: $PGM"
+   fi
+done
 
 inform "checked required programs"
-
 
 HOME_DIR=$(pwd)
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
@@ -123,20 +100,25 @@ ROOT_DEV=${TMP[0]}${TMP[1]}
 
 inform "ROOT_DEV=${ROOT_DEV}"
 
+###########################
+## write /etc/migrate.conf
+###########################
+
 cat <<EOI > ${MIGRATE_CONF}
 #!/bin/sh
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
 
+REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 LOG_DRIVE=/dev/sda1
 LOG_FS_TYPE=ext2
 LOG_MOUNT_DIR=/mnt/log
 LOG_FILE=migrate.log
 
-STRATEGY=     # "RESIZE" "TMPFS" or empty for none
+STRATEGY=$STRATEGY     # "DEFAULT" "RESIZE"
 ROOT_DEV=${ROOT_DEV}
 HOME_DIR=${HOME_DIR}
 IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
-BACKUP_FILE=backup.gz
+BACKUP_FILE=$BACKUP_FILE
 DATA_TMP=/balena-tmp
 MIGRATE_TMP=/balena-migrate
 
@@ -148,14 +130,12 @@ MIGRATEFS_MOUNT_POINT=/balena-migrate
 
 EOI
 
-if [ "$STRATEGY" == "TMPFS" ] ; then
-    cat <<EOI >> ${MIGRATE_CONF}
-MEM_MIN_AVAIL=600000
-MEM_TMPFS_SIZE=512M
-EOI
-else
-  if [ "$STRATEGY" == "RESIZE" ] ; then
-    cat <<EOI >> ${MIGRATE_CONF}
+#####################################
+## USE: resize strategy - unfinished
+#####################################
+
+if [ "$STRATEGY" == "RESIZE" ] ; then
+  cat <<EOI >> ${MIGRATE_CONF}
 MEM_MIN_AVAIL=600000
 MEM_TMPFS_SIZE=512M
 RESIZE_FS="${ROOT_FS}"
@@ -174,8 +154,8 @@ NEW_PART_FS="ext2"
 NEW_PART_START=26926080
 NEW_PART_TO=31022087
 NEW_PART_NAME=/dev/mmcblk0p3
+REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
-  fi
 fi
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
@@ -186,39 +166,59 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
 fi
 
-## add to /boot/config.txt
-# initramfs init.gz followkernel
-# TODO: identify other options that need to be modified
-
+##########################
+## Modify /boot/config.txt
+##########################
 inform "making backup of config.txt"
 CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-cp ${CONFIG_TXT}  ${CONFIG_TXT_BACKUP}
-if grep -q "^[^#]*initramfs.*" ${CONFIG_TXT} ; then
-    inform "modifying ${CONFIG_TXT}"
-    sed -i "s/^[^#]*initramfs.*\$/initramfs ${INITRAMFS_NAME} followkernel/" ${CONFIG_TXT}
-else
-    inform "appending to ${CONFIG_TXT}"
-    echo "initramfs ${INITRAMFS_NAME} followkernel" >> ${CONFIG_TXT}
+
+INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
+if [ -f "$TMP_FILE" ] ; then
+  rm $TMP_FILE
 fi
 
-## add to /boot/cmdline.txt
-# nosplash quiet=n (or delete quiet) debug=y
-
-inform "making backup of config.txt"
-CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
-
-while read line
+while read -r line
 do
-     if [[ $line =~ nosplash ]]; then
-           line=${line/BILL_NO/NA}
-     fi
-done < "${CMDLINE_TXT}"
+  if [[ $line =~ ^\s*\# ]] ; then
+    echo $line >> $TMP_FILE
+    continue
+  fi
 
-if ! grep -q "nosplash" ${CMDLINE_TXT} ; then
-    inform "modifying ${CMDLINE_TXT}"
-    sed -i "s/^[^#]*initramfs.*\$/initramfs ${INITRAMFS_NAME} followkernel/" ${CONFIG_TXT}
-else
-    inform "appending to ${CONFIG_TXT}"
-    echo "initramfs ${INITRAMFS_NAME} followkernel" >> ${CONFIG_TXT}
+  if [[ $line =~ ^\s*initramfs ]] ; then
+    if [ "$line" != "$INITRAM_CMD" ] ; then
+      echo "# $line" >> $TMP_FILE
+    fi
+  else
+    echo $line >> $TMP_FILE
+  fi
+done < "${CONFIG_TXT}"
+echo $INITRAM_CMD >> $TMP_FILE
+cp $TMP_FILE $CONFIG_TXT
+rm $TMP_FILE
+
+###########################
+## Modify /boot/cmdline.txt
+###########################
+
+if [ "$DEBUG" == "TRUE" ] ; then
+  CMD_LINE=$(cat ${CMDLINE_TXT})
+  if [[ ! $CMD_LINE =~ debug ]] ; then
+    inform "making backup of ${CMDLINE_TXT}"
+    CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+    cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
+  	CMD_LINE="${CMD_LINE} debug"
+  	echo $CMD_LINE > cmdline.txt
+  fi
+fi
+
+###########################
+## create backup
+###########################
+
+inform "creating backup in ./$BACKUP_FILE"
+gzip -c -r /etc/ > "./$BACKUP_FILE"
+
+if [ "$DO_REBOOT" == "TRUE" ] ; then
+  inform "rebooting"
+  reboot
 fi

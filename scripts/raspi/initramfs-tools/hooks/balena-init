@@ -36,7 +36,7 @@ copyPgm() {
 ##############################
 
 
-REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
+# REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
 
 if [ -f /etc/balena-migrate.conf ] ; then
     # TODO: move ?
@@ -46,14 +46,6 @@ else
     exit 1
 fi
 
-if [ "$STRATEGY" = "RESIZE" ] ; then
-   REQUIRED_PGMS="$REQUIRED_PGMS parted mke2fs resize2fs e2fsck partprobe"
-fi
-
-if [ "$STRATEGY" = "TMPFS" ] ; then
-    REQUIRED_PGMS="$REQUIRED_PGMS parted free"
-fi
-
 for pgmName in ${REQUIRED_PGMS}
 do
     copyPgm ${pgmName}
@@ -61,9 +53,6 @@ done
 
 echo "[balena-init] dest dir ${DESTDIR}"
 
-# cp "$IMAGE_FILE" "${DESTDIR}/"
-# cp "$BACKUP_FILE" "${DESTDIR}/"
-# mkdir -p "${DESTDIR}/etc"
 cp /etc/balena-migrate.conf "${DESTDIR}/etc/"
 
 exit 0
