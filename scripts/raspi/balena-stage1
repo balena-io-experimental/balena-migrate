@@ -7,12 +7,10 @@ CMDLINE_TXT="/boot/cmdline.txt" # /boot/cmdline.txt
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 MK_INITRAMFS="TRUE"
 DO_REBOOT="FALSE"
-SCRIPT_NAME="make-rpi-initramfs"
+SCRIPT_NAME="balena-stage1"
 IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
-USE_TMPFS= # "TRUE"
 MIGRATE_CONF=/etc/balena-migrate.conf
 DEBUG="TRUE"
-TMP_FILE=tmpfile.txt
 BACKUP_FILE=backup.gz
 
 ##########################################
@@ -109,7 +107,7 @@ cat <<EOI > ${MIGRATE_CONF}
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
 
 REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
-LOG_DRIVE=/dev/sda1
+# LOG_DRIVE=/dev/sda1
 LOG_FS_TYPE=ext2
 LOG_MOUNT_DIR=/mnt/log
 LOG_FILE=migrate.log
@@ -171,11 +169,8 @@ fi
 ##########################
 inform "making backup of config.txt"
 CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-
+TMP_FILE=$(mktemp)
 INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
-if [ -f "$TMP_FILE" ] ; then
-  rm $TMP_FILE
-fi
 
 while read -r line
 do
@@ -217,6 +212,8 @@ fi
 
 inform "creating backup in ./$BACKUP_FILE"
 gzip -c -r /etc/ > "./$BACKUP_FILE"
+
+# TODO: check / restrict size of backup file
 
 if [ "$DO_REBOOT" == "TRUE" ] ; then
   inform "rebooting"

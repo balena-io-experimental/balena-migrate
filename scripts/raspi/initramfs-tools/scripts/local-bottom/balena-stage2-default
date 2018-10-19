@@ -13,92 +13,6 @@ prereqs)
 	;;
 esac
 
-logMsg() {
-	if [ ! -d ${MIGRATE_TMP} ] ; then
-		mkdir -p ${MIGRATE_TMP}	|| fail  "failed to create directory ${MIGRATE_TMP}"
-	fi
-	echo $1 >> "${MIGRATE_TMP}/${LOG_FILE}"
-}
-
-saveLog() {
-	if [ ! -f "${MIGRATE_TMP}/${LOG_FILE}" ] ; then
-		_log_msg "nothing to save \n"
-  fi
-
-	if [ -d "${LOG_MOUNT_DIR}" ] ; then
-		cp ${MIGRATE_TMP}/${LOG_FILE}	${LOG_MOUNT_DIR}/ || true
-	fi
-
-	if [ -d "${rootmnt}${HOME_DIR}" ] ; then
-		# _log_msg "saving to ${rootmnt}${HOME_DIR}/${LOG_FILE} \n"
-		#	cp ${MIGRATE_TMP}/${LOG_FILE}	${rootmnt}${HOME_DIR}/
-		cat "${MIGRATE_TMP}/${LOG_FILE}"
-	else
-		if [ -d "${DATA_TMP}" ] ; then
-			_log_msg "saving to ${DATA_TMP}/${LOG_FILE} \n"
-			cp ${MIGRATE_TMP}/${LOG_FILE}	${DATA_TMP}/
-		else
-			_log_msg "nothing to save to /n"
-		fi
-	fi
-}
-
-log() {
-	logMsg "LOG: $1"
-}
-
-fail() {
-	logMsg "ERROR: $1"
-	saveLog || true
-	if [ "$FAIL_EXIT" = "EXIT" ] ; then
-		panic  $1
-  else
-		reboot -f
-	fi
-}
-
-log_mount()
-{
-        read_fstab_entry "$LOG_MOUNT_DIR"
-
-				MNT_FSNAME=$LOG_DRIVE
-				MNT_DIR=$LOG_MOUNT_DIR
-				MNT_TYPE=$LOG_FS_TYPE
-				MNT_OPTS=
-				MNT_FREQ=0
-				MNT_PASS=0
-				MNT_JUNK=
-
-				log "device setup: $MNT_FSNAME"
-        local_device_setup "$MNT_FSNAME" "$LOG_MOUNT_DIR file system"
-        MNT_FSNAME="${DEV}"
-				log "device setup now: $MNT_FSNAME"
-
-        # local_premount
-
-        #  FIXME This has no error checking
-        modprobe "${MNT_TYPE}"
-
-				log "MNT_PASS = $MNT_PASS"
-        if [ "$MNT_PASS" != 0 ]; then
-                checkfs "$MNT_FSNAME" "$MNT_DIR" "${MNT_TYPE}"
-        fi
-
-				log "creating log mount point ${LOG_MOUNT_DIR}"
-				mkdir -p "${LOG_MOUNT_DIR}" || fail "failed to create log mount point ${LOG_MOUNT_DIR}"
-				if [ ! -d "${LOG_MOUNT_DIR}" ] ; then
-				     fail  "failed to create directory in ${LOG_MOUNT_DIR}"
-				fi
-				log "...done"
-
-        # FIXME This has no error checking
-        # Mount filesystem
-				log "attempt: mount -w -t ${MNT_TYPE} -o ${MNT_OPTS} $MNT_FSNAME ${LOG_MOUNT_DIR}"
-				mount -w -t "${MNT_TYPE}" -o "${MNT_OPTS}" "$MNT_FSNAME" "${LOG_MOUNT_DIR}"
-}
-
-
-
 set -e
 
 if [ -f /scripts/functions ] ; then
@@ -109,12 +23,17 @@ if [ -f /scripts/local ] ; then
     . /scripts/local
 fi
 
+
 if [ -f /etc/balena-migrate.conf ] ; then
     . /etc/balena-migrate.conf
 else
-    # TODO: try to rebuild former boot config
-    # where is boot mounted
     panic  "balena-migrate.conf not found"
+fi
+
+if [ -f /scripts/balena-common ] ; then
+    . /scripts/balena-common
+else
+		panic  "/scripts/balena-common not found"
 fi
 
 if [  "$STRATEGY" != "DEFAULT" ] ; then
@@ -150,19 +69,10 @@ if [ ! -d ${DATA_TMP} ] ; then
 fi
 log "..done"
 
-# log "$(losetup -f)" || true
+log "terminating "
+saveLog
+exit 0
 
-# log "mount -w -o loop,offset=${IMG_DATA_OFFSET} -t $IMG_DATA_TYPE $ROOT_DEV ${DATA_TMP}"
-# saveLog
-# exit 0
-
-# log "will attempt: mount -w -t $IMG_DATA_TYPE $IMG_DATA_NAME $DATA_TMP"
-
-# udevadm trigger || fail  "failed with udevadm trigger"
-# udevadm settle -t 10 || fail  "failed with udevadm settle"
-
-# saveLog
-# exit 0
 
 log "unmounting root"
 umount ${rootmnt} || fail  "failed umount ${rootmnt}"

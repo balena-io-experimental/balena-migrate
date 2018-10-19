@@ -1,0 +1,4 @@
+#!/bin/sh
+TEST1=/dev/bla
+TEST2=10
+TEST3="string"
