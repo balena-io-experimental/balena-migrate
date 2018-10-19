@@ -69,10 +69,12 @@ if [ ! -d ${DATA_TMP} ] ; then
 fi
 log "..done"
 
-log "terminating "
-saveLog
-exit 0
 
+if [ "$NO_FLASH" = "TRUE" ] ; then
+	log "terminating prematurely"
+	saveLog
+	exit 0
+fi
 
 log "unmounting root"
 umount ${rootmnt} || fail  "failed umount ${rootmnt}"

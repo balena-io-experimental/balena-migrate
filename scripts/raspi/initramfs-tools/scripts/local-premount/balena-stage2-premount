@@ -29,9 +29,13 @@ log_success_msg "local-premount balena-stage2 started params: $1 $2 $3"
 if [ -f /etc/balena-migrate.conf ] ; then
     . /etc/balena-migrate.conf
 else
-    # TODO: try to rebuild former boot config
-    # where is boot mounted
     panic "balena-migrate.conf not found"
+fi
+
+if [ -f /scripts/balena-common ] ; then
+    . /scripts/balena-common
+else
+		panic  "/scripts/balena-common not found"
 fi
 
 if [  "$STRATEGY" = "RESIZE" ] ; then

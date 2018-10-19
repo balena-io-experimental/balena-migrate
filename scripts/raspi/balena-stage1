@@ -1,17 +1,42 @@
 #!/bin/bash
-
+####################################################################
+# strategy
+# DEFAULT: copy os image & backup to initramfs, unmount root, reflash drive,
+#          partprobe and mount resin-data to copy backup, reboot
+# RESIZE:  unfinished - resize root file system & partition in local-premount
+#          use the space to store balenaOS image & backup
+####################################################################
 STRATEGY="DEFAULT"
+# where everything is
 HOME_DIR="."
-CONFIG_TXT="/boot/config.txt"   # /boot/config.txt
-CMDLINE_TXT="/boot/cmdline.txt" # /boot/cmdline.txt
-INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
-MK_INITRAMFS="TRUE"
+# raspi config.txt to modify
+CONFIG_TXT="/boot/config.txt"
+# raspi cmdline.txt to modify
+CMDLINE_TXT="/boot/cmdline.txt"
+# reboot automatically after script has finished by setting to "TRUE"
 DO_REBOOT="FALSE"
-SCRIPT_NAME="balena-stage1"
+# name of the balenaOS image to flash (expected in $HOMEDIR)
 IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
+# where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
 MIGRATE_CONF=/etc/balena-migrate.conf
+# switch on initramfs / kernel debug mode by seting to "TRUE"
 DEBUG="TRUE"
+# name of backup file to create/transfer to balena-data
 BACKUP_FILE=backup.gz
+# TODO: customer defined backup script to call
+
+# DEBUG end initramfs scripts before unmounting root / flashing the image
+NO_FLASH="FALSE"
+# create initramfs in contrast to using an initramfs supplied
+MK_INITRAMFS="TRUE"
+# name of initramfs to be created/used expected in $HOMEDIR
+INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
+# DEBUG verbose build process
+MK_INITRAM_VERBOSE="TRUE"
+# DEBUG keep initramfs layout
+MK_INITRAM_RETAIN="FALSE"
+# script namme for logging
+SCRIPT_NAME="balena-stage1"
 
 ##########################################
 # log functions
@@ -61,9 +86,6 @@ function splitPartName {
     local no=$(expr match "${tmp}" '[^0-9]*\([0-9]\+\)')
     echo "${pathName} ${devName} ${no} ${pad}"
 }
-
-
-
 
 ##########################################
 # main : create initramfs & install it
@@ -125,7 +147,7 @@ IMG_DATA_NAME=/dev/mmcblk0p6          # resinOS-data
 IMG_DATA_TYPE=ext4          # resinOS-data
 # TODO: probably superfluous
 MIGRATEFS_MOUNT_POINT=/balena-migrate
-
+NO_FLASH="${NO_FLASH}"
 EOI
 
 #####################################
@@ -157,8 +179,17 @@ EOI
 fi
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
-    inform "creating initramfs: mkinitramfs -k -v -d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
-    mkinitramfs -k -v -d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME} || fail "failed to crete initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
+    OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
+    if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
+      OPTS="-v $OPTS"
+    fi
+
+    if [ "$MK_INITRAM_RETAIN" == "TRUE" ] ; then
+      OPTS="-k $OPTS"
+    fi
+
+    inform "creating initramfs: mkinitramfs $OPTS"
+    mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
     inform "copying initramfs"
     cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
@@ -212,10 +243,12 @@ fi
 
 inform "creating backup in ./$BACKUP_FILE"
 gzip -c -r /etc/ > "./$BACKUP_FILE"
+inform "done creating backup"
 
 # TODO: check / restrict size of backup file
 
 if [ "$DO_REBOOT" == "TRUE" ] ; then
-  inform "rebooting"
+  inform "rebooting system in 5 seconds"
+  sleep 5
   reboot
 fi
