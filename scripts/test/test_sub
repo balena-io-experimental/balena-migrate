@@ -1,7 +1,0 @@
-#!/bin/sh
-
-test_it() {
-  echo "TEST1 is $TEST1"
-  echo "TEST2 is $TEST2"
-  echo "TEST3 is $TEST3"
-}

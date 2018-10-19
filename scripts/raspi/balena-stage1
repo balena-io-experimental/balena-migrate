@@ -8,6 +8,8 @@
 ####################################################################
 STRATEGY="DEFAULT"
 # where everything is
+# TODO: establish & use an absolute path to a set home directory that is not
+#       necessarily PWD
 HOME_DIR="."
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
@@ -22,9 +24,10 @@ MIGRATE_CONF=/etc/balena-migrate.conf
 # switch on initramfs / kernel debug mode by seting to "TRUE"
 DEBUG="TRUE"
 # name of backup file to create/transfer to balena-data
-BACKUP_FILE=backup.gz
+BACKUP_FILE=backup.tgz
 # TODO: customer defined backup script to call
-
+BACKUP_SCRIPT=
+BACKUP_DIRECTORIES="/etc"
 # DEBUG end initramfs scripts before unmounting root / flashing the image
 NO_FLASH="FALSE"
 # create initramfs in contrast to using an initramfs supplied
@@ -32,11 +35,13 @@ MK_INITRAMFS="TRUE"
 # name of initramfs to be created/used expected in $HOMEDIR
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 # DEBUG verbose build process
-MK_INITRAM_VERBOSE="TRUE"
+MK_INITRAM_VERBOSE="FALSE"
 # DEBUG keep initramfs layout
 MK_INITRAM_RETAIN="FALSE"
 # script namme for logging
 SCRIPT_NAME="balena-stage1"
+
+MIGRATE_WIFI= # "list of wifi networks to migrate"
 
 ##########################################
 # log functions
@@ -77,7 +82,7 @@ function fail {
 
 function splitPartName {
     local partName=$1
-    local pathName=$(expr match "${partName}" '\(.*/\)[^/]\+')
+    local pathName=$(dirname "${partName}")
     local tmpName1=$(lsblk -no kname ${partName})
     local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
     local devName=$(basename "${tmpName2}")
@@ -105,18 +110,37 @@ REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink" #  gzip
 for PGM in $REQUIRED_PGMS
 do
     PGM_PATH="$(whereis -b $PGM | awk '{ print $2}')"
-    if [ -z "$PGM_PATH" ] ; then
-      fail "cannot find required program: $PGM"
+    if [ -z "$PGM_PATH" ] || [ ! -f "$PGM_PATH" ] ; then
+      fail "cannot find required program: $PGM as $PGM_PATH"
    fi
 done
 
 inform "checked required programs"
 
+inform "checking required files"
+if [[ ! $HOME_DIR =~ ^/.* ]] ; then
+  CURR_DIR=$(pwd)
+  cd $HOME_DIR || fail "invalid/non existant HOME_DIR: $HOME_DIR"
+  HOME_DIR=$(pwd)
+  cd $CURR_DIR
+fi
+
+inform "HOME_DIR=$HOME_DIR"
+
+if [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
+  fail "missing image file: ${HOME_DIR}/$IMAGE_NAME"
+fi
+
+if [ "$MK_INITRAMFS"=="TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
+  fail "missing image directory: ${HOME_DIR}/initramfs-tools"
+fi
+
+
 HOME_DIR=$(pwd)
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
 TMP=($(splitPartName ${ROOT_FS}))
 
-ROOT_DEV=${TMP[0]}${TMP[1]}
+ROOT_DEV=${TMP[0]}/${TMP[1]}
 
 inform "ROOT_DEV=${ROOT_DEV}"
 
@@ -148,6 +172,8 @@ IMG_DATA_TYPE=ext4          # resinOS-data
 # TODO: probably superfluous
 MIGRATEFS_MOUNT_POINT=/balena-migrate
 NO_FLASH="${NO_FLASH}"
+# TODO: find the right target name
+WIFI_CONFIG=wifi_1
 EOI
 
 #####################################
@@ -241,11 +267,27 @@ fi
 ## create backup
 ###########################
 
-inform "creating backup in ./$BACKUP_FILE"
-gzip -c -r /etc/ > "./$BACKUP_FILE"
-inform "done creating backup"
+if [ -n "$BACKUP_DIRECTORIES" ] ; then
+  inform "creating backup in ${HOME_DIR}/$BACKUP_FILE"
+  rm ${HOME_DIR}/$BACKUP_FILE
+  tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
+  inform "done creating backup"
+  # TODO: check / restrict size of backup file
 
-# TODO: check / restrict size of backup file
+fi
+
+###########################
+## migrate network config
+###########################
+
+if [ -n "$MIGRATE_WIFI" ] ; then
+  # TODO: migrate wifi config
+fi
+
+###########################
+## create backup
+###########################
+
 
 if [ "$DO_REBOOT" == "TRUE" ] ; then
   inform "rebooting system in 5 seconds"

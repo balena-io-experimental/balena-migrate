@@ -1,6 +1,7 @@
 /resin-init
 /.idea
 /flasher_img
+/script/test
 *.img
 *.iso
 *.vmdk
