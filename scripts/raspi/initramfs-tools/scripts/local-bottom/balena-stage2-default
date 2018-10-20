@@ -41,6 +41,8 @@ if [  "$STRATEGY" != "DEFAULT" ] ; then
     exit 0
 fi
 
+# TODO: make sure required programs are actually present
+
 FAIL_EXIT="EXIT"
 
 log "local-premount balena-stage2 started params: $1 $2 $3"

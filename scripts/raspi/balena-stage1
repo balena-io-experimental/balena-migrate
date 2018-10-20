@@ -41,6 +41,8 @@ MK_INITRAM_RETAIN="FALSE"
 # script namme for logging
 SCRIPT_NAME="balena-stage1"
 
+# set to "TRUE" if a wifi config is provided in image
+HAS_WIFI_CFG="FALSE" #
 MIGRATE_WIFI= # "list of wifi networks to migrate"
 
 ##########################################
@@ -73,6 +75,94 @@ function fail {
     echo "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
     clean
     exit -1
+}
+
+function create_nmgr_file {
+  local WIFI_NO=$1
+  local WIFI_SSID=$2
+  local WIFI_PSK=$3
+  local FILE_NAME="resin-wifi-`printf %02d $WIFI_NO`"
+
+  cat << EOI > ${FILE_NAME}
+  [connection]
+  id=$FILE_NAME
+  type=wifi
+
+  [wifi]
+  hidden=true
+  mode=infrastructure
+  ssid=${WIFI_SSID}
+
+  [wifi-security]
+  auth-alg=open
+  key-mgmt=wpa-psk
+  psk=${WIFI_PSK}
+
+  [ipv4]
+  method=auto
+
+  [ipv6]
+  addr-gen-mode=stable-privacy
+  method=auto
+EOI
+}
+
+function scan_wpa {
+  local cfgNo=1
+  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
+    cfgNo=2
+  fi
+
+  while read line ;
+  do
+      # echo "line:    $line"
+      if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
+        local network="TRUE"
+        local ssid=
+        local psk=
+      else
+        if [ "$network" == "TRUE" ] ; then
+          if [[ $line =~ ^\s*} ]] ; then
+            if [ -n "$ssid" ] && [ -n "$psk" ] ; then
+                inform "writing wifi config for $ssid"
+                create_nmgr_file $cfgNo "$ssid" "$psk"
+                cfgNo=$((cfgNo + 1))
+                ssid=
+                psk=
+            fi
+            continue
+          fi
+
+          if [[ $line =~ ^\s*ssid\s*= ]] ; then
+            # ssid=$(echo "$line" | sed 's/\s*ssid\s*=\(.*\)/\1/')
+            local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
+            if [ -z "$tmpSsid" ] ; then
+              tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
+            fi
+
+            if [ "$MIGRATE_WIFI" == "ALL" ] || [[ "$MIGRATE_WIFI" == *"$tmpSsid"* ]]; then
+              ssid=$tmpSsid
+            fi
+            continue
+          fi
+
+          if [[ $line =~ ^\s*psk\s*= ]] ; then
+            # ssid=$(echo "$line" | sed 's/\s*ssid\s*=\(.*\)/\1/')
+            psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
+            if [ -z "$psk" ] ; then
+              psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
+            fi
+            echo "psk: $line -> $psk"
+            continue
+          fi
+        fi
+      fi
+  done < /etc/wpa_supplicant/wpa_supplicant.conf
+}
+
+
+function wificfg_from_nmgr {
+
 }
 
 ##########################################
@@ -273,7 +363,6 @@ if [ -n "$BACKUP_DIRECTORIES" ] ; then
   tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
   inform "done creating backup"
   # TODO: check / restrict size of backup file
-
 fi
 
 ###########################
@@ -281,13 +370,21 @@ fi
 ###########################
 
 if [ -n "$MIGRATE_WIFI" ] ; then
+  if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
+    wificfg_from_wpa
+  else
+    if [ -d /etc/NetworkManager/system-connections/ ] ; then
+      wificfg_from_nmgr
+    else
+      warn "no supported wifi config found"
+    fi
+  fi
   # TODO: migrate wifi config
 fi
 
 ###########################
 ## create backup
 ###########################
-
 
 if [ "$DO_REBOOT" == "TRUE" ] ; then
   inform "rebooting system in 5 seconds"
