@@ -30,8 +30,10 @@ BACKUP_SCRIPT=
 BACKUP_DIRECTORIES="/etc"
 # DEBUG end initramfs scripts before unmounting root / flashing the image
 NO_FLASH="FALSE"
+# DEBUG: do not modify config.txt if set to "TRUE"
+NO_SETUP="TRUE"
 # create initramfs in contrast to using an initramfs supplied
-MK_INITRAMFS="TRUE"
+MK_INITRAMFS="FALSE" # "TRUE"
 # name of initramfs to be created/used expected in $HOMEDIR
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 # DEBUG verbose build process
@@ -43,7 +45,8 @@ SCRIPT_NAME="balena-stage1"
 
 # set to "TRUE" if a wifi config is provided in image
 HAS_WIFI_CFG="FALSE" #
-MIGRATE_WIFI= # "list of wifi networks to migrate"
+MIGRATE_ALL_WIFIS="FALSE" # "list of wifi networks to migrate"
+MIGRATE_WIFI_CFG="migrate-wifis" # "list of wifi networks to migrate, one per line"
 
 ##########################################
 # log functions
@@ -77,6 +80,10 @@ function fail {
     exit -1
 }
 
+##########################################
+# create a network manager wifi file
+##########################################
+
 function create_nmgr_file {
   local WIFI_NO=$1
   local WIFI_SSID=$2
@@ -107,7 +114,31 @@ function create_nmgr_file {
 EOI
 }
 
-function scan_wpa {
+####################################################################################
+# wether to migrate a ssid
+####################################################################################
+
+function migrate_this_wifi {
+  local ssid="$*"
+  local res="FALSE"
+  if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] ; then
+    res="TRUE"
+  else
+      if [ -f "$MIGRATE_WIFI_CFG" ] ; then
+        local found=$(grep -E "$ssid" "$MIGRATE_WIFI_CFG")
+        if [ -n "$found" ] && [ "$found" == "$ssid" ] ; then
+          res="TRUE"
+        fi
+      fi
+  fi
+  echo $res
+}
+
+####################################################################################
+# extract wifi network config from wpa_supplicant.conf
+####################################################################################
+
+function wificfg_from_wpa {
   local cfgNo=1
   if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
     cfgNo=2
@@ -115,7 +146,6 @@ function scan_wpa {
 
   while read line ;
   do
-      # echo "line:    $line"
       if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
         local network="TRUE"
         local ssid=
@@ -134,7 +164,6 @@ function scan_wpa {
           fi
 
           if [[ $line =~ ^\s*ssid\s*= ]] ; then
-            # ssid=$(echo "$line" | sed 's/\s*ssid\s*=\(.*\)/\1/')
             local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
             if [ -z "$tmpSsid" ] ; then
               tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
@@ -147,12 +176,10 @@ function scan_wpa {
           fi
 
           if [[ $line =~ ^\s*psk\s*= ]] ; then
-            # ssid=$(echo "$line" | sed 's/\s*ssid\s*=\(.*\)/\1/')
             psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
             if [ -z "$psk" ] ; then
               psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
             fi
-            echo "psk: $line -> $psk"
             continue
           fi
         fi
@@ -160,9 +187,34 @@ function scan_wpa {
   done < /etc/wpa_supplicant/wpa_supplicant.conf
 }
 
+##########################################
+# migrate/copy NetworkManager files
+##########################################
 
 function wificfg_from_nmgr {
+  local cfgNo=1
+  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
+    cfgNo=2
+  fi
 
+  for file in /etc/NetworkManager/system-connections/*; do
+    local grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
+    if [ -z "$grepRes" ] ; then
+      continue
+    fi
+    grepRes=$(grep -E "^\s*ssid\s*=.*" "$file")
+    local currSsid=$(expr match "$grepRes" 'ssid\s*=\s*\(.*\)')
+
+    local res="$(migrate_this_wifi $currSsid)"
+
+    if [ "$res" == "TRUE" ] ; then
+      inform "migrating wifi config for $currSsid"
+      # TODO: only extract certain params or copy the whole thing ?
+      local fileName="resin-wifi-`printf %02d $cfgNo`"
+      cp "$file" "$fileName"
+      cfgNo=$((cfgNo + 1))
+    fi
+  done
 }
 
 ##########################################
@@ -311,45 +363,49 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
 fi
 
-##########################
-## Modify /boot/config.txt
-##########################
-inform "making backup of config.txt"
-CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-TMP_FILE=$(mktemp)
-INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
 
-while read -r line
-do
-  if [[ $line =~ ^\s*\# ]] ; then
-    echo $line >> $TMP_FILE
-    continue
-  fi
+if [ "$NO_SETUP" != "TRUE" ] ; then
+  ##########################
+  ## Modify /boot/config.txt
+  ##########################
 
-  if [[ $line =~ ^\s*initramfs ]] ; then
-    if [ "$line" != "$INITRAM_CMD" ] ; then
-      echo "# $line" >> $TMP_FILE
+  inform "making backup of config.txt"
+  CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+  TMP_FILE=$(mktemp)
+  INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
+
+  while read -r line
+  do
+    if [[ $line =~ ^\s*\# ]] ; then
+      echo $line >> $TMP_FILE
+      continue
     fi
-  else
-    echo $line >> $TMP_FILE
-  fi
-done < "${CONFIG_TXT}"
-echo $INITRAM_CMD >> $TMP_FILE
-cp $TMP_FILE $CONFIG_TXT
-rm $TMP_FILE
 
-###########################
-## Modify /boot/cmdline.txt
-###########################
+    if [[ $line =~ ^\s*initramfs ]] ; then
+      if [ "$line" != "$INITRAM_CMD" ] ; then
+        echo "# $line" >> $TMP_FILE
+      fi
+    else
+      echo $line >> $TMP_FILE
+    fi
+  done < "${CONFIG_TXT}"
+  echo $INITRAM_CMD >> $TMP_FILE
+  cp $TMP_FILE $CONFIG_TXT
+  rm $TMP_FILE
 
-if [ "$DEBUG" == "TRUE" ] ; then
-  CMD_LINE=$(cat ${CMDLINE_TXT})
-  if [[ ! $CMD_LINE =~ debug ]] ; then
-    inform "making backup of ${CMDLINE_TXT}"
-    CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-    cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
-  	CMD_LINE="${CMD_LINE} debug"
-  	echo $CMD_LINE > cmdline.txt
+  ###########################
+  ## Modify /boot/cmdline.txt
+  ###########################
+
+  if [ "$DEBUG" == "TRUE" ] ; then
+    CMD_LINE=$(cat ${CMDLINE_TXT})
+    if [[ ! $CMD_LINE =~ debug ]] ; then
+      inform "making backup of ${CMDLINE_TXT}"
+      CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+      cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
+    	CMD_LINE="${CMD_LINE} debug"
+    	echo $CMD_LINE > cmdline.txt
+    fi
   fi
 fi
 
@@ -359,7 +415,7 @@ fi
 
 if [ -n "$BACKUP_DIRECTORIES" ] ; then
   inform "creating backup in ${HOME_DIR}/$BACKUP_FILE"
-  rm ${HOME_DIR}/$BACKUP_FILE
+  rm ${HOME_DIR}/$BACKUP_FILE || true
   tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
   inform "done creating backup"
   # TODO: check / restrict size of backup file
@@ -369,7 +425,7 @@ fi
 ## migrate network config
 ###########################
 
-if [ -n "$MIGRATE_WIFI" ] ; then
+if [ "$MIGRATE_ALL_WIFIS"=="TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
   if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
     wificfg_from_wpa
   else
