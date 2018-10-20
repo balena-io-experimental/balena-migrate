@@ -45,8 +45,8 @@ SCRIPT_NAME="balena-stage1"
 
 # set to "TRUE" if a wifi config is provided in image
 HAS_WIFI_CFG="FALSE" #
-MIGRATE_ALL_WIFIS="FALSE" # "list of wifi networks to migrate"
-MIGRATE_WIFI_CFG="migrate-wifis" # "list of wifi networks to migrate, one per line"
+MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
+MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
 
 ##########################################
 # log functions
@@ -169,7 +169,9 @@ function wificfg_from_wpa {
               tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
             fi
 
-            if [ "$MIGRATE_WIFI" == "ALL" ] || [[ "$MIGRATE_WIFI" == *"$tmpSsid"* ]]; then
+            local res="$(migrate_this_wifi $tmpSsid)"
+            # inform "wificfg_from_wpa found $tmpSsid, migrate: $res"
+            if [ "$res" == "TRUE" ] ; then
               ssid=$tmpSsid
             fi
             continue
@@ -282,6 +284,7 @@ HOME_DIR=$(pwd)
 ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
 TMP=($(splitPartName ${ROOT_FS}))
 
+PAD=${TMP[3]}
 ROOT_DEV=${TMP[0]}/${TMP[1]}
 
 inform "ROOT_DEV=${ROOT_DEV}"
@@ -300,22 +303,18 @@ LOG_FS_TYPE=ext2
 LOG_MOUNT_DIR=/mnt/log
 LOG_FILE=migrate.log
 
-STRATEGY=$STRATEGY     # "DEFAULT" "RESIZE"
+STRATEGY=${STRATEGY}
 ROOT_DEV=${ROOT_DEV}
 HOME_DIR=${HOME_DIR}
 IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
-BACKUP_FILE=$BACKUP_FILE
+BACKUP_FILE=${BACKUP_FILE}
 DATA_TMP=/balena-tmp
 MIGRATE_TMP=/balena-migrate
 
-IMG_DATA_NAME=/dev/mmcblk0p6          # resinOS-data
+IMG_DATA_NAME=${ROOT_DEV}${PAD}6          # resinOS-data
 # IMG_DATA_OFFSET=729808896   # resinOS-data
 IMG_DATA_TYPE=ext4          # resinOS-data
-# TODO: probably superfluous
-MIGRATEFS_MOUNT_POINT=/balena-migrate
 NO_FLASH="${NO_FLASH}"
-# TODO: find the right target name
-WIFI_CONFIG=wifi_1
 EOI
 
 #####################################
@@ -415,7 +414,10 @@ fi
 
 if [ -n "$BACKUP_DIRECTORIES" ] ; then
   inform "creating backup in ${HOME_DIR}/$BACKUP_FILE"
-  rm ${HOME_DIR}/$BACKUP_FILE || true
+  if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
+    rm ${HOME_DIR}/$BACKUP_FILE || true
+  fi
+
   tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
   inform "done creating backup"
   # TODO: check / restrict size of backup file
@@ -435,7 +437,6 @@ if [ "$MIGRATE_ALL_WIFIS"=="TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
       warn "no supported wifi config found"
     fi
   fi
-  # TODO: migrate wifi config
 fi
 
 ###########################
