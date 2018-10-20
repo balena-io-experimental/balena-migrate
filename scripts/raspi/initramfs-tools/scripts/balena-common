@@ -61,9 +61,9 @@ saveLog() {
 		#	cp ${MIGRATE_TMP}/${LOG_FILE}	${rootmnt}${HOME_DIR}/
 		cat "${MIGRATE_TMP}/${LOG_FILE}"
 	else
-		if [ -d "${DATA_TMP}" ] ; then
-			_log_msg "saving to ${DATA_TMP}/${LOG_FILE} \n"
-			cp ${MIGRATE_TMP}/${LOG_FILE}	${DATA_TMP}/
+		if [ -d "${ROOTA_MNT_DIR}" ] ; then
+			_log_msg "saving to ${ROOTA_MNT_DIR}/${LOG_FILE} \n"
+			cp ${MIGRATE_TMP}/${LOG_FILE}	${ROOTA_MNT_DIR}/
 		else
 			_log_msg "nothing to save to /n"
 		fi

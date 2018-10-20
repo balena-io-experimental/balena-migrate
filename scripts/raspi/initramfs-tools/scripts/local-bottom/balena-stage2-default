@@ -64,13 +64,25 @@ if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "..done"
 fi
 
-log "creating mountpoint on ${DATA_TMP}"
-mkdir -p ${DATA_TMP}
-if [ ! -d ${DATA_TMP} ] ; then
-     fail  "failed to create mount directory in ${DATA_TMP}"
+log "copying network config files"
+for file in "${rootmnt}${HOME_DIR}/resin-wifi-*"; do
+	cp "$file" "${MIGRATE_TMP}/" || fail  "failed to copy ${file to ${MIGRATE_TMP}/"
+done
+log "..done"
+
+log "creating mountpoint on ${ROOTA_MNT_DIR}"
+mkdir -p ${ROOTA_MNT_DIR}
+if [ ! -d ${ROOTA_MNT_DIR} ] ; then
+     fail  "failed to create mount directory in ${ROOTA_MNT_DIR}"
 fi
 log "..done"
 
+log "creating mountpoint on ${DATA_MNT_DIR}"
+mkdir -p ${DATA_MNT_DIR}
+if [ ! -d ${DATA_MNT_DIR} ] ; then
+     fail  "failed to create mount directory in ${DATA_MNT_DIR}"
+fi
+log "..done"
 
 if [ "$NO_FLASH" = "TRUE" ] ; then
 	log "terminating prematurely"
@@ -93,18 +105,23 @@ log "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4
 gzip -d -c "${MIGRATE_TMP}/${IMAGE_FILE}" | dd of=${ROOT_DEV} bs=4194304 || fail  "failed with gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4194304"
 log "..done"
 
-# udevadm trigger || fail  "failed with udevadm trigger"
-# udevadm settle -t 10 || fail  "failed with udevadm settle"
 partprobe $ROOT_DEV >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
 
-log_begin_msg "mounting resin-data on"
-# mount ${roflag} -t "${MNT_TYPE}" -o "${MNT_OPTS}" "$MNT_FSNAME" "${rootmnt}${MNT_DIR}"
-mount -w -t "$IMG_DATA_TYPE" "$IMG_DATA_NAME" "$DATA_TMP" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to mount resin-data partition"
+log_begin_msg "mounting resin-rootA on $DATA_MNT_DIR"
+mount -w -t "$IMG_ROOTA_TYPE" "$IMG_ROOTA_NAME" "$ROOTA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to mount resin-rootA partition"
+log "..done"
+
+# copy networking config
+cp "${MIGRATE_TMP}/resin-wifi-*" "$ROOTA_MNT_DIR/etc/NetworkManager/system_connections/" || fail "failed to copy network config"
+
+log_begin_msg "mounting resin-data on $DATA_MNT_DIR"
+mount -w -t "$IMG_DATA_TYPE" "$IMG_DATA_NAME" "$DATA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to mount resin-data partition"
 log "..done"
 
 if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
 	log "copying backup to resin-data"
-	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_TMP" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail "failed to create backup"
+	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail "failed to create backup"
+	sync
 	log "...done"
 fi
 
