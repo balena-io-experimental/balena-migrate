@@ -23,7 +23,6 @@ if [ -f /scripts/local ] ; then
     . /scripts/local
 fi
 
-
 if [ -f /etc/balena-migrate.conf ] ; then
     . /etc/balena-migrate.conf
 else
@@ -37,7 +36,7 @@ else
 fi
 
 if [  "$STRATEGY" != "DEFAULT" ] ; then
-    log_success_msg "local-premount balena-stage2-resized not enabled"
+    log "local-premount balena-stage2-resized not enabled"
     exit 0
 fi
 
@@ -45,7 +44,15 @@ fi
 
 FAIL_EXIT="EXIT"
 
-log "local-premount balena-stage2 started params: $1 $2 $3"
+LOG_TO=
+log_to "${MIGRATE_TMP}/${LOG_FILE}"
+
+log "local-premount balena-stage2 started"
+
+if [ -n "$LOG_DRIVE" ] ; then
+	log_mount ||  fail "failed to mount log dir"
+	log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
+fi
 
 log "creating migrate dir ${MIGRATE_TMP}"
 mkdir -p ${MIGRATE_TMP}
@@ -64,10 +71,16 @@ if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "..done"
 fi
 
-log "copying network config files"
-for file in "${rootmnt}${HOME_DIR}/resin-wifi-*"; do
-	cp "$file" "${MIGRATE_TMP}/" || fail  "failed to copy ${file to ${MIGRATE_TMP}/"
+log "copying network config files to initramfs"
+if [ -f "${rootmnt}${HOME_DIR}/resin-wifi-01" ] ; then
+	cp "${rootmnt}${HOME_DIR}/resin-wifi-01" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1  || log "no network config copied"
+fi 
+
+for file in $NETWORK_CONFIGS; do
+	log "copying ${rootmnt}${HOME_DIR}/$file"
+	cp "${rootmnt}${HOME_DIR}/$file" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1  || log "no network config copied"
 done
+
 log "..done"
 
 log "creating mountpoint on ${ROOTA_MNT_DIR}"
@@ -85,8 +98,7 @@ fi
 log "..done"
 
 if [ "$NO_FLASH" = "TRUE" ] ; then
-	log "terminating prematurely"
-	saveLog
+	term "terminating prematurely"
 	exit 0
 fi
 
@@ -96,35 +108,36 @@ umount ${rootmnt} || fail  "failed umount ${rootmnt}"
 FAIL_EXIT="REBOOT"
 log "..done"
 
-if [ -n "$LOG_DRIVE" ] ; then
-	log_mount ||  fail "failed to mount log dir"
-fi
 
 log "flashing image from ${MIGRATE_TMP}/${IMAGE_FILE} to ${ROOT_DEV} "
 log "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M \n"
 gzip -d -c "${MIGRATE_TMP}/${IMAGE_FILE}" | dd of=${ROOT_DEV} bs=4194304 || fail  "failed with gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4194304"
 log "..done"
 
-partprobe $ROOT_DEV >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
+partprobe $ROOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
 
-log_begin_msg "mounting resin-rootA on $DATA_MNT_DIR"
-mount -w -t "$IMG_ROOTA_TYPE" "$IMG_ROOTA_NAME" "$ROOTA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to mount resin-rootA partition"
+log "mounting resin-rootA using: mount -w -t $ROOTA_PART_TYPE $ROOTA_PART_NAME $ROOTA_MNT_DIR"
+mount -w -t $ROOTA_PART_TYPE $ROOTA_PART_NAME "$ROOTA_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-rootA partition"
 log "..done"
 
 # copy networking config
-cp "${MIGRATE_TMP}/resin-wifi-*" "$ROOTA_MNT_DIR/etc/NetworkManager/system_connections/" || fail "failed to copy network config"
+log "copying network config to resin-rootA "
+cp "${MIGRATE_TMP}/resin-wifi-*" "$ROOTA_MNT_DIR/etc/NetworkManager/system_connections/" >>$LOG_TO 2>&1 || log "no network config was copied"
+log "..done"
 
-log_begin_msg "mounting resin-data on $DATA_MNT_DIR"
-mount -w -t "$IMG_DATA_TYPE" "$IMG_DATA_NAME" "$DATA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail  "failed to mount resin-data partition"
+
+log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
+mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
+log_to "$DATA_MNT_DIR/$LOG_FILE"
 log "..done"
 
 if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
 	log "copying backup to resin-data"
-	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_MNT_DIR" >>${MIGRATE_TMP}/${LOG_FILE} 2>&1 || fail "failed to create backup"
+	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail "failed to create backup"
 	sync
 	log "...done"
 fi
 
-saveLog || true
+# saveLog || true
 sync || true
 reboot -f

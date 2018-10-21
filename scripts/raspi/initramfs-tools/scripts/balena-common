@@ -1,83 +1,39 @@
 #!/bin/sh
 
-log_mount()
-{
-        read_fstab_entry "$LOG_MOUNT_DIR"
-
-				MNT_FSNAME=$LOG_DRIVE
-				MNT_DIR=$LOG_MOUNT_DIR
-				MNT_TYPE=$LOG_FS_TYPE
-				MNT_OPTS=
-				MNT_FREQ=0
-				MNT_PASS=0
-				MNT_JUNK=
-
-				log "device setup: $MNT_FSNAME"
-        local_device_setup "$MNT_FSNAME" "$LOG_MOUNT_DIR file system"
-        MNT_FSNAME="${DEV}"
-				log "device setup now: $MNT_FSNAME"
-
-        # local_premount
-
-        #  FIXME This has no error checking
-        modprobe "${MNT_TYPE}"
-
-				log "MNT_PASS = $MNT_PASS"
-        if [ "$MNT_PASS" != 0 ]; then
-                checkfs "$MNT_FSNAME" "$MNT_DIR" "${MNT_TYPE}"
-        fi
-
-				log "creating log mount point ${LOG_MOUNT_DIR}"
-				mkdir -p "${LOG_MOUNT_DIR}" || fail "failed to create log mount point ${LOG_MOUNT_DIR}"
-				if [ ! -d "${LOG_MOUNT_DIR}" ] ; then
-				     fail  "failed to create directory in ${LOG_MOUNT_DIR}"
-				fi
-				log "...done"
-
-        # FIXME This has no error checking
-        # Mount filesystem
-				log "attempt: mount -w -t ${MNT_TYPE} -o ${MNT_OPTS} $MNT_FSNAME ${LOG_MOUNT_DIR}"
-				mount -w -t "${MNT_TYPE}" -o "${MNT_OPTS}" "$MNT_FSNAME" "${LOG_MOUNT_DIR}"
-}
 
 logMsg() {
 	if [ ! -d ${MIGRATE_TMP} ] ; then
 		mkdir -p ${MIGRATE_TMP}	|| fail  "failed to create directory ${MIGRATE_TMP}"
 	fi
-	echo $1 >> "${MIGRATE_TMP}/${LOG_FILE}"
+	echo $1 >> "$LOG_TO"
 }
 
-saveLog() {
-	if [ ! -f "${MIGRATE_TMP}/${LOG_FILE}" ] ; then
-		_log_msg "nothing to save \n"
+log_to() {
+  NEW_LOG=$1
+  if [ -n "$LOG_TO" ] ; then
+    cp "$LOG_TO" "$NEW_LOG"
   fi
-
-	if [ -d "${LOG_MOUNT_DIR}" ] ; then
-		cp ${MIGRATE_TMP}/${LOG_FILE}	${LOG_MOUNT_DIR}/ || true
-	fi
-
-	if [ -d "${rootmnt}${HOME_DIR}" ] ; then
-		# _log_msg "saving to ${rootmnt}${HOME_DIR}/${LOG_FILE} \n"
-		#	cp ${MIGRATE_TMP}/${LOG_FILE}	${rootmnt}${HOME_DIR}/
-		cat "${MIGRATE_TMP}/${LOG_FILE}"
-	else
-		if [ -d "${ROOTA_MNT_DIR}" ] ; then
-			_log_msg "saving to ${ROOTA_MNT_DIR}/${LOG_FILE} \n"
-			cp ${MIGRATE_TMP}/${LOG_FILE}	${ROOTA_MNT_DIR}/
-		else
-			_log_msg "nothing to save to /n"
-		fi
-	fi
+  LOG_TO=$NEW_LOG
 }
 
 log() {
 	logMsg "LOG: $1"
 }
 
+term() {
+	logMsg "TERM: $1"
+	if [ "$FAIL_EXIT" = "EXIT" ] ; then
+		cat "$LOG_TO"
+		panic  $1
+  else
+		reboot -f
+	fi
+}
+
 fail() {
 	logMsg "ERROR: $1"
-	saveLog || true
-	if [ "$FAIL_EXIT" = "EXIT" ] ; then
+  if [ "$FAIL_EXIT" = "EXIT" ] ; then
+		cat "$LOG_TO"
 		panic  $1
   else
 		reboot -f
@@ -96,12 +52,9 @@ log_mount()
 				MNT_PASS=0
 				MNT_JUNK=
 
-				log "device setup: $MNT_FSNAME"
+				log "log device setup: $MNT_FSNAME"
         local_device_setup "$MNT_FSNAME" "$LOG_MOUNT_DIR file system"
         MNT_FSNAME="${DEV}"
-				log "device setup now: $MNT_FSNAME"
-
-        # local_premount
 
         #  FIXME This has no error checking
         modprobe "${MNT_TYPE}"
@@ -120,6 +73,11 @@ log_mount()
 
         # FIXME This has no error checking
         # Mount filesystem
-				log "attempt: mount -w -t ${MNT_TYPE} -o ${MNT_OPTS} $MNT_FSNAME ${LOG_MOUNT_DIR}"
-				mount -w -t "${MNT_TYPE}" -o "${MNT_OPTS}" "$MNT_FSNAME" "${LOG_MOUNT_DIR}"
+				if [ -n "$MNT_OPTS" ] ; then
+					MNT_OPTS="-o $MNT_OPTS"
+				fi
+
+				log "attempt: mount -w -t ${MNT_TYPE} ${MNT_OPTS} $MNT_FSNAME ${LOG_MOUNT_DIR}"
+				mount -w -t ${MNT_TYPE} ${MNT_OPTS} $MNT_FSNAME "${LOG_MOUNT_DIR}"
+				log "...done"
 }
