@@ -36,7 +36,7 @@ else
 fi
 
 if [  "$STRATEGY" != "DEFAULT" ] ; then
-    log "local-premount balena-stage2-resized not enabled"
+    log "local-premount balena-stage2-default not enabled"
     exit 0
 fi
 
@@ -55,7 +55,7 @@ if [ -n "$LOG_DRIVE" ] ; then
 fi
 
 log "creating migrate dir ${MIGRATE_TMP}"
-mkdir -p ${MIGRATE_TMP}
+mkdir -p ${MIGRATE_TMP} || fail "failed to create directory ${MIGRATE_TMP}"
 if [ ! -d ${MIGRATE_TMP} ] ; then
      fail  "failed to create directory in ${MIGRATE_TMP}"
 fi
@@ -74,24 +74,24 @@ fi
 log "copying network config files to initramfs"
 if [ -f "${rootmnt}${HOME_DIR}/resin-wifi-01" ] ; then
 	cp "${rootmnt}${HOME_DIR}/resin-wifi-01" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1  || log "no network config copied"
-fi 
+fi
 
 for file in $NETWORK_CONFIGS; do
 	log "copying ${rootmnt}${HOME_DIR}/$file"
-	cp "${rootmnt}${HOME_DIR}/$file" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1  || log "no network config copied"
+	cp "${rootmnt}${HOME_DIR}/$file" "${MIGRATE_TMP}/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
 done
 
 log "..done"
 
-log "creating mountpoint on ${ROOTA_MNT_DIR}"
-mkdir -p ${ROOTA_MNT_DIR}
-if [ ! -d ${ROOTA_MNT_DIR} ] ; then
-     fail  "failed to create mount directory in ${ROOTA_MNT_DIR}"
+log "creating mountpoint on ${BOOT_MNT_DIR}"
+mkdir -p ${BOOT_MNT_DIR} || fail "failed to create directory ${BOOT_MNT_DIR}"
+if [ ! -d ${BOOT_MNT_DIR} ] ; then
+     fail  "failed to create mount directory in ${BOOT_MNT_DIR}"
 fi
 log "..done"
 
 log "creating mountpoint on ${DATA_MNT_DIR}"
-mkdir -p ${DATA_MNT_DIR}
+mkdir -p ${DATA_MNT_DIR}  || fail "failed to create directory ${DATA_MNT_DIR}"
 if [ ! -d ${DATA_MNT_DIR} ] ; then
      fail  "failed to create mount directory in ${DATA_MNT_DIR}"
 fi
@@ -116,15 +116,8 @@ log "..done"
 
 partprobe $ROOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
 
-log "mounting resin-rootA using: mount -w -t $ROOTA_PART_TYPE $ROOTA_PART_NAME $ROOTA_MNT_DIR"
-mount -w -t $ROOTA_PART_TYPE $ROOTA_PART_NAME "$ROOTA_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-rootA partition"
-log "..done"
-
-# copy networking config
-log "copying network config to resin-rootA "
-cp "${MIGRATE_TMP}/resin-wifi-*" "$ROOTA_MNT_DIR/etc/NetworkManager/system_connections/" >>$LOG_TO 2>&1 || log "no network config was copied"
-log "..done"
-
+DEVS=$(lsblk)
+log "devices after partprobe: $DEVS"
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
@@ -137,6 +130,18 @@ if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
 	sync
 	log "...done"
 fi
+
+log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
+mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"
+log "..done"
+
+# copy networking config
+log "copying network config to resin-boot "
+for file in $NETWORK_CONFIGS; do
+	log "copying ${MIGRATE_TMP}/$file"
+	cp "${MIGRATE_TMP}/$file" "${BOOT_MNT_DIR}/system-connections/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
+done
+log "..done"
 
 # saveLog || true
 sync || true

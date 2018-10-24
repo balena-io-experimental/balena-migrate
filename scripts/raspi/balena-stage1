@@ -29,7 +29,7 @@ BACKUP_FILE=backup.tgz
 BACKUP_SCRIPT=
 BACKUP_DIRECTORIES="/etc"
 # DEBUG end initramfs scripts before unmounting root / flashing the image
-NO_FLASH="TRUE"
+NO_FLASH= # "TRUE"
 # DEBUG: do not modify config.txt if set to "TRUE"
 NO_SETUP= # "TRUE"
 # create initramfs in contrast to using an initramfs supplied
@@ -48,7 +48,7 @@ HAS_WIFI_CFG="FALSE" #
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
 MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
 # attempt to mount and log to external drive if set
-LOG_DRIVE= # /dev/sda2
+LOG_DRIVE=/dev/sda1
 LOG_FS_TYPE=ext4
 
 ##########################################
@@ -128,15 +128,19 @@ fi
 
 function migrate_this_wifi {
   local ssid="$*"
+  # inform "migrate_this_wifi: ssid=<${ssid}>"
   local res="FALSE"
   if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] ; then
     res="TRUE"
   else
       if [ -f "$MIGRATE_WIFI_CFG" ] ; then
-        local found=$(grep -E "$ssid" "$MIGRATE_WIFI_CFG")
-        if [ -n "$found" ] && [ "$found" == "$ssid" ] ; then
-          res="TRUE"
-        fi
+          while read line
+          do
+            if [ "$line" == "$ssid" ] ; then
+              res="TRUE"
+              break
+            fi
+          done < "$MIGRATE_WIFI_CFG"
       fi
   fi
   echo $res
@@ -155,6 +159,7 @@ function wificfg_from_wpa {
   while read line ;
   do
       if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
+        # inform "wificfg_from_wpa: found network in <${line}>"
         local network="TRUE"
         local ssid=
         local psk=
@@ -162,7 +167,6 @@ function wificfg_from_wpa {
         if [ "$network" == "TRUE" ] ; then
           if [[ $line =~ ^\s*} ]] ; then
             if [ -n "$ssid" ] && [ -n "$psk" ] ; then
-                inform "writing wifi config for $ssid"
                 create_nmgr_file $cfgNo "$ssid" "$psk"
                 cfgNo=$((cfgNo + 1))
                 ssid=
@@ -173,12 +177,11 @@ function wificfg_from_wpa {
 
           if [[ $line =~ ^\s*ssid\s*= ]] ; then
             local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
+
             if [ -z "$tmpSsid" ] ; then
               tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
             fi
-
-            local res="$(migrate_this_wifi $tmpSsid)"
-            # inform "wificfg_from_wpa found $tmpSsid, migrate: $res"
+            local res=$(migrate_this_wifi $tmpSsid)
             if [ "$res" == "TRUE" ] ; then
               ssid=$tmpSsid
             fi
@@ -186,10 +189,12 @@ function wificfg_from_wpa {
           fi
 
           if [[ $line =~ ^\s*psk\s*= ]] ; then
+            # inform "wificfg_from_wpa: psk in line : <${line}>"
             psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
             if [ -z "$psk" ] ; then
               psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
             fi
+            # inform "wificfg_from_wpa: psk: <${psk}>"
             continue
           fi
         fi
@@ -256,7 +261,7 @@ fi
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
-INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe sync"
+INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe sync dirname lsblk"
 REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink" #  gzip
 
 for PGM in $REQUIRED_PGMS
@@ -317,15 +322,18 @@ BACKUP_FILE=${BACKUP_FILE}
 
 MIGRATE_TMP=/balena-migrate
 
-ROOTA_MNT_DIR=/resin-rootA
-ROOTA_PART_NAME=${ROOT_DEV}${PAD}2          # resinOS-rootA part name
-ROOTA_PART_TYPE=ext4                        # resinOS-rootA fs type
+BOOT_MNT_DIR=/resin-boot
+BOOT_PART_NAME=${ROOT_DEV}${PAD}1         # resinOS-boot part name
+BOOT_PART_TYPE=vfat                        # resinOS-boot fs type
 
 DATA_MNT_DIR=/resin-data
-DATA_PART_NAME=${ROOT_DEV}${PAD}6          # resinOS-data part name
-DATA_PART_TYPE=ext4                        # resinOS-data fs type
+DATA_PART_NAME=${ROOT_DEV}${PAD}6         # resinOS-data part name
+DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
+
+TEST_KSH="TRUE"
+
 EOI
 
 #####################################
@@ -355,6 +363,32 @@ NEW_PART_NAME=/dev/mmcblk0p3
 REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
 fi
+
+###########################
+## migrate network config
+###########################
+
+if [ "$MIGRATE_ALL_WIFIS"=="TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
+  NETWORK_CONFIGS=
+  if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
+    wificfg_from_wpa
+  else
+    if [ -d /etc/NetworkManager/system-connections/ ] ; then
+      wificfg_from_nmgr
+    else
+      warn "no supported wifi config found"
+    fi
+  fi
+
+  if [ -n "$NETWORK_CONFIGS" ] ; then
+    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
+    echo "" >> ${MIGRATE_CONF}
+  fi
+fi
+
+###########################
+## create initramfs
+###########################
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
     OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
@@ -432,27 +466,6 @@ if [ -n "$BACKUP_DIRECTORIES" ] ; then
   tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
   inform "done creating backup"
   # TODO: check / restrict size of backup file
-fi
-
-###########################
-## migrate network config
-###########################
-
-if [ "$MIGRATE_ALL_WIFIS"=="TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
-  NETWORK_CONFIGS=
-  if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
-    wificfg_from_wpa
-  else
-    if [ -d /etc/NetworkManager/system-connections/ ] ; then
-      wificfg_from_nmgr
-    else
-      warn "no supported wifi config found"
-    fi
-  fi
-
-  if [ -n "$NETWORK_CONFIGS" ] ; then
-    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
-  fi
 fi
 
 ###########################

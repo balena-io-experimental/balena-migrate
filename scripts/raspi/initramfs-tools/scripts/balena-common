@@ -2,9 +2,17 @@
 
 
 logMsg() {
-	if [ ! -d ${MIGRATE_TMP} ] ; then
-		mkdir -p ${MIGRATE_TMP}	|| fail  "failed to create directory ${MIGRATE_TMP}"
+	if [ -z "$LOG_TO" ] ; then
+		fail "logMsg LOG_TO not set"
 	fi
+
+	if [ ! -f $LOG_TO ] ; then
+		LOG_DIR=$(dirname $LOG_TO)
+		if [ ! -d $LOG_DIR ] ; then
+			mkdir -p $LOG_DIR	|| fail  "failed to create directory $LOG_DIR"
+		fi
+  fi
+
 	echo $1 >> "$LOG_TO"
 }
 
