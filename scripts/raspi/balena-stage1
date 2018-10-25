@@ -10,7 +10,7 @@ STRATEGY="DEFAULT"
 # where everything is
 # TODO: establish & use an absolute path to a set home directory that is not
 #       necessarily PWD
-HOME_DIR=/home/pi/raspi
+HOME_DIR=./
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
 # raspi cmdline.txt to modify
@@ -18,6 +18,7 @@ CMDLINE_TXT="/boot/cmdline.txt"
 # reboot automatically after script has finished by setting to "TRUE"
 DO_REBOOT= # "TRUE"
 # name of the balenaOS image to flash (expected in $HOMEDIR)
+# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
 IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 # where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
 MIGRATE_CONF=/etc/balena-migrate.conf
@@ -51,6 +52,13 @@ MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate,
 LOG_DRIVE=/dev/sda1
 LOG_FS_TYPE=ext4
 
+SUPPORTED_OSSES="ubuntu-14.04 raspbian-9"
+SUPPORTED_ARCHS="x86_64 armv7l"
+
+RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
+RASPI_2_REVS="a01040 a01041 a21041 a22042"
+RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
+
 ##########################################
 # log functions
 ##########################################
@@ -81,6 +89,42 @@ function fail {
     echo "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
     clean
     exit -1
+}
+
+##########################################
+# check if list contains string
+##########################################
+# careful how you call it, should be
+# eg.: listContains "$SUPPORTED_OSTYPES" $OSTYPE
+function listContains {
+    local res="FALSE"
+    for curr in $1
+    do
+        if [ "$2" == "$curr" ]; then
+            res="TRUE"
+            break;
+        fi
+    done
+    echo $res
+}
+
+##########################################
+# try to establish OS release
+##########################################
+checkOs() {
+    if [ -f /etc/os-release ]; then
+        local OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
+        local OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
+        VERSION="$OS_ID-$OS_VERSION"
+    else
+        # other methods for other osses
+        # hostnamectrl
+        # lsb_release -a
+        # add methods as you add osses that need different methods from above
+        VERSION=
+    fi
+
+    echo "$VERSION"
 }
 
 ##########################################
@@ -249,10 +293,42 @@ function splitPartName {
     echo "${pathName} ${devName} ${no} ${pad}"
 }
 
+function checkArmDevs {
+  RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
+  inform "RPI_HW_REV=$RPI_HW_REV"
+  IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
+  if [ "$IS_PI1" == "TRUE" ] ; then
+    IS_PI="TRUE"
+    inform "device is a Raspberry PI 1"
+    if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
+      fail "expected raspberrypi1 image, got $IMAGE_NAME"
+    fi
+  else
+      IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
+      if [ "$IS_PI2" == "TRUE" ] ; then
+        IS_PI="TRUE"
+        inform "device is a Raspberry PI 2"
+        if [[ ! $IMAGE_NAME =~ raspberrypi2 ]] ; then
+          fail "expected raspberrypi2 image, got $IMAGE_NAME"
+        fi
+      else
+        IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
+        if [ "$IS_PI3" == "TRUE" ] ; then
+          IS_PI="TRUE"
+          inform "device is a Raspberry PI 3"
+          if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
+            fail "expected raspberrypi3 image, got $IMAGE_NAME"
+          fi
+        else
+          fail "no known PI revision found: $RPI_HW_REV"
+        fi
+      fi
+  fi
+}
+
 ##########################################
 # main : create initramfs & install it
 ##########################################
-
 
 if [[ $EUID -ne 0 ]]; then
     fail "This script must be run as root"
@@ -262,7 +338,7 @@ inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
 INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe sync dirname lsblk"
-REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink" #  gzip
+REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink mkinitramfs sed" #  gzip
 
 for PGM in $REQUIRED_PGMS
 do
@@ -282,10 +358,47 @@ if [[ ! $HOME_DIR =~ ^/.* ]] ; then
   cd $CURR_DIR
 fi
 
+if [ ! -d "$HOME_DIR" ] ; then
+  fail "homedir does not exist: $HOME_DIR"
+fi
+
 inform "HOME_DIR=$HOME_DIR"
 
 if [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
   fail "missing image file: ${HOME_DIR}/$IMAGE_NAME"
+fi
+
+
+##########################################
+# detect device / check for correct image ?
+##########################################
+ARCH=$(uname -m)
+
+case $ARCH in
+  armv*)
+    checkArmDevs
+    ;;
+  x86_64)
+    inform "ARCH=$ARCH"
+    if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
+        fail "expected genericx86-64 image, got $IMAGE_NAME"
+    fi
+    ;;
+  *)
+    fail "unknown / unsupported architecture: $ARCH"
+    ;;
+esac
+
+KERNEL_VER=$(uname -r)
+inform "KERNEL_VER=$KERNEL_VER"
+
+OS_VERSION=$(checkOs)
+inform "OS_VERSION=$OS_VERSION"
+
+RES=$(listContains "${SUPPORTED_OSSES}" ${OS_VERSION})
+# inform "listContains \"${SUPPORTED_OSSES}\" ${OS_VERSION} = <${RES}>"
+if [ ! "$RES"=="TRUE" ] ; then
+    fail "not a supported OS ${OS_VERSION}"
 fi
 
 if [ "$MK_INITRAMFS"=="TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
@@ -332,8 +445,6 @@ DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
 
-TEST_KSH="TRUE"
-
 EOI
 
 #####################################
@@ -363,6 +474,7 @@ NEW_PART_NAME=/dev/mmcblk0p3
 REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
 fi
+
 
 ###########################
 ## migrate network config
@@ -408,7 +520,7 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
 fi
 
 
-if [ "$NO_SETUP" != "TRUE" ] ; then
+if [ ! "$NO_SETUP" == "TRUE" ] && [ "$IS_PI"=="TRUE" ] ; then
   ##########################
   ## Modify /boot/config.txt
   ##########################
