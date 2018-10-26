@@ -11,28 +11,30 @@ STRATEGY="DEFAULT"
 # TODO: establish & use an absolute path to a set home directory that is not
 #       necessarily PWD
 HOME_DIR=./
-# raspi config.txt to modify
-CONFIG_TXT="/boot/config.txt"
-# raspi cmdline.txt to modify
-CMDLINE_TXT="/boot/cmdline.txt"
 # reboot automatically after script has finished by setting to "TRUE"
 DO_REBOOT= # "TRUE"
 # name of the balenaOS image to flash (expected in $HOMEDIR)
-# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
-IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
-# where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
-MIGRATE_CONF=/etc/balena-migrate.conf
+IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
+# IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
+
 # switch on initramfs / kernel debug mode by seting to "TRUE"
 DEBUG="TRUE"
+
 # name of backup file to create/transfer to balena-data
 BACKUP_FILE=backup.tgz
 # TODO: customer defined backup script to call
 BACKUP_SCRIPT=
 BACKUP_DIRECTORIES="/etc"
+
+# Grub boot devices
+GRUB_BOOT_DEV="hd0,msdos1"
+
 # DEBUG end initramfs scripts before unmounting root / flashing the image
-NO_FLASH= # "TRUE"
+NO_FLASH="TRUE"
+ERROR_EXIT= # "reboot -f"
+
 # DEBUG: do not modify config.txt if set to "TRUE"
-NO_SETUP= # "TRUE"
+NO_SETUP= #"TRUE"
 # create initramfs in contrast to using an initramfs supplied
 MK_INITRAMFS="TRUE"
 # name of initramfs to be created/used expected in $HOMEDIR
@@ -44,13 +46,21 @@ MK_INITRAM_RETAIN= # "TRUE"
 # script namme for logging
 SCRIPT_NAME="balena-stage1"
 
-# set to "TRUE" if a wifi config is provided in image
-HAS_WIFI_CFG="FALSE" #
+# attempt to mount and log initramfs logs to external drive if set
+LOG_DRIVE=/dev/sdb1
+LOG_FS_TYPE=ext4
+
+HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
 MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
-# attempt to mount and log to external drive if set
-LOG_DRIVE=/dev/sda1
-LOG_FS_TYPE=ext4
+
+# where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
+MIGRATE_CONF=/etc/balena-migrate.conf
+
+# raspi config.txt to modify
+CONFIG_TXT="/boot/config.txt"
+# raspi cmdline.txt to modify
+CMDLINE_TXT="/boot/cmdline.txt"
 
 SUPPORTED_OSSES="ubuntu-14.04 raspbian-9"
 SUPPORTED_ARCHS="x86_64 armv7l"
@@ -58,6 +68,10 @@ SUPPORTED_ARCHS="x86_64 armv7l"
 RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
 RASPI_2_REVS="a01040 a01041 a21041 a22042"
 RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
+
+GRUB_MIN_VER=2
+BOOT_DIR=/boot
+
 
 ##########################################
 # log functions
@@ -293,6 +307,10 @@ function splitPartName {
     echo "${pathName} ${devName} ${no} ${pad}"
 }
 
+##########################################
+# check armvX arch  device
+##########################################
+
 function checkArmDevs {
   RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
   inform "RPI_HW_REV=$RPI_HW_REV"
@@ -324,6 +342,170 @@ function checkArmDevs {
         fi
       fi
   fi
+}
+
+
+
+####################################################
+## setup raspbery pi to boot using initramfs
+####################################################
+
+function setupBootCfg_rpi {
+
+  ##########################
+  ## Modify /boot/config.txt
+  ##########################
+
+  inform "making backup of config.txt"
+  CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+  TMP_FILE=$(mktemp)
+  INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
+
+  while read -r line
+  do
+    if [[ $line =~ ^\s*\# ]] ; then
+      echo $line >> $TMP_FILE
+      continue
+    fi
+
+    if [[ $line =~ ^\s*initramfs ]] ; then
+      if [ "$line" != "$INITRAM_CMD" ] ; then
+        echo "# $line" >> $TMP_FILE
+      fi
+    else
+      echo $line >> $TMP_FILE
+    fi
+  done < "${CONFIG_TXT}"
+  echo $INITRAM_CMD >> $TMP_FILE
+  cp $TMP_FILE $CONFIG_TXT
+  rm $TMP_FILE
+
+  ###########################
+  ## Modify /boot/cmdline.txt
+  ###########################
+
+  if [ "$DEBUG" == "TRUE" ] ; then
+    CMD_LINE=$(cat ${CMDLINE_TXT})
+    if [[ ! $CMD_LINE =~ debug ]] ; then
+      inform "making backup of ${CMDLINE_TXT}"
+      CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+      cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
+    	CMD_LINE="${CMD_LINE} debug"
+    	echo $CMD_LINE > cmdline.txt
+    fi
+  fi
+
+  inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+  cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+}
+
+####################################################
+## setup intel device to boot with initramfs
+####################################################
+
+function setupBootCfg_other {
+  # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
+  # TODO: assuming we are on debian like OS
+
+  # BOOT_IMAGE=/boot/vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro
+  local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
+  if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
+    fail "no kernel command line"
+  fi
+
+  case "$KERNEL_CMD_LINE_RAW" in
+     BOOT_IMAGE=*)
+        # Ubuntu version
+        local KERNEL_CMD_LINE=$(expr match "$KERNEL_CMD_LINE_RAW" '^BOOT_IMAGE=\(.*\)')
+        # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
+        local TMP=($KERNEL_CMD_LINE)
+        KBOOT_DIR=$(dirname ${TMP[0]})
+        ;;
+        *)
+          fail "not a known command line format $KERNEL_CMD_LINE_RAW"
+        ;;
+  esac
+
+  if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
+    KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
+  fi
+
+
+  if [ "$DEBUG" == "TRUE" ] ; then
+    if [[ ! "$KERNEL_CMD_LINE" =~ debug ]] ; then
+      KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
+    fi
+  fi
+
+
+
+  inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
+  # inform "BOOT_DIR=$BOOT_DIR"
+
+  if [ "$KBOOT_DIR" != "/boot" ] ; then
+    # boot config does not appear to be on root partition
+    if [ "$KBOOT_DIR" == "." ] ; then
+      $KBOOT_DIR=
+    else
+      $KBOOT_DIR="$KBOOT_DIR/"
+    fi
+
+    local BOOT_PART_INFO=($(df -l --output=source,target | grep -E "\\s+/boot$"))
+    if [ -n "$BOOT_PART_INFO" ] ; then
+        # but it is mounted as /boot
+        BOOT_DIR=/boot
+    else
+        # try find it
+        local BOOT_PART_RAW=$(parted -sm $ROOT_DEV print | grep -E "(:|,)boot(,|;)")
+        if [ -z "$BOOT_PART_RAW" ] ; then
+           fail "could not find boot partition on $ROOT_DEV"
+        fi
+
+        # inform "BOOT_PART_RAW=$BOOT_PART_RAW"
+        local BOOT_PART_NUM=$(expr match "$BOOT_PART_RAW" '^\([^:]\+\):.*')
+
+        mkdir -p /mnt/tmp-boot || fail "failed to create mount dir /mnt/tmp-boot"
+        mount "${ROOT_DEV}${ROOT_PAD}${BOOT_PART_NUM}" /mnt/tmp-boot || fail "failed to mount ${ROOT_DEV}${ROOT_PAD}${BOOT_PART_NUM} on  /mnt/tmp-boot"
+        BOOT_DIR=/mnt/tmp-boot
+    fi
+  else
+    KBOOT_DIR="${KBOOT_DIR}/"
+  fi
+
+  inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}"
+  cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}"
+
+  if [ -z "$(whereis -b update-grub)" ] || [ -z "$(whereis -b grub-reboot)" ] ; then
+      fail "failed to ensure required programs update-grub, grub-reboot, grub-install"
+  fi
+
+  if [ ! -d /etc/grub.d ] ; then
+      fail "grub configuration not found"
+  fi
+
+ TODO: make grub HD num from hdDev, just assuming 0 for now
+cat <<EOI > /etc/grub.d/42_resin
+#!/bin/sh
+exec tail -n +3 \$0
+# This file provides an easy way to add custom menu entries.  Simply type the
+# menu entries you want to add after this comment.  Be careful not to change
+# the 'exec tail' line above.
+
+menuentry "resin-migration" {
+  insmod part_msdos
+  insmod ext2
+
+  set root='$GRUB_BOOT_DEV'
+  linux $KERNEL_CMD_LINE
+  initrd  ${KBOOT_DIR}${INITRAMFS_NAME}
+}
+EOI
+chmod +x /etc/grub.d/42_resin
+
+inform "updating grub config using ${GRUBUPDT}"
+update-grub || fail "failed to update grub config"
+inform "calling grub-reboot resin-migration"
+grub-reboot resin-migration
 }
 
 ##########################################
@@ -372,7 +554,12 @@ fi
 ##########################################
 # detect device / check for correct image ?
 ##########################################
+
 ARCH=$(uname -m)
+
+if [ ! "$(listContains "$SUPPORTED_ARCHS" $ARCH)" == "TRUE" ] ; then
+  fail "not a supported architecture: $ARCH"
+fi
 
 case $ARCH in
   armv*)
@@ -397,11 +584,11 @@ inform "OS_VERSION=$OS_VERSION"
 
 RES=$(listContains "${SUPPORTED_OSSES}" ${OS_VERSION})
 # inform "listContains \"${SUPPORTED_OSSES}\" ${OS_VERSION} = <${RES}>"
-if [ ! "$RES"=="TRUE" ] ; then
+if [ "$RES" != "TRUE" ] ; then
     fail "not a supported OS ${OS_VERSION}"
 fi
 
-if [ "$MK_INITRAMFS"=="TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
+if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
   fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
 
@@ -444,7 +631,7 @@ DATA_PART_NAME=${ROOT_DEV}${PAD}6         # resinOS-data part name
 DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
-
+ERROR_EXIT=${ERROR_EXIT}
 EOI
 
 #####################################
@@ -475,12 +662,11 @@ REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
 fi
 
-
 ###########################
 ## migrate network config
 ###########################
 
-if [ "$MIGRATE_ALL_WIFIS"=="TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
+if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
   NETWORK_CONFIGS=
   if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
     wificfg_from_wpa
@@ -515,54 +701,22 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     inform "creating initramfs: mkinitramfs $OPTS"
     mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
-    inform "copying initramfs"
-    cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
+    # inform "copying initramfs"
+    # cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
 fi
 
 
-if [ ! "$NO_SETUP" == "TRUE" ] && [ "$IS_PI"=="TRUE" ] ; then
-  ##########################
-  ## Modify /boot/config.txt
-  ##########################
-
-  inform "making backup of config.txt"
-  CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-  TMP_FILE=$(mktemp)
-  INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
-
-  while read -r line
-  do
-    if [[ $line =~ ^\s*\# ]] ; then
-      echo $line >> $TMP_FILE
-      continue
-    fi
-
-    if [[ $line =~ ^\s*initramfs ]] ; then
-      if [ "$line" != "$INITRAM_CMD" ] ; then
-        echo "# $line" >> $TMP_FILE
-      fi
-    else
-      echo $line >> $TMP_FILE
-    fi
-  done < "${CONFIG_TXT}"
-  echo $INITRAM_CMD >> $TMP_FILE
-  cp $TMP_FILE $CONFIG_TXT
-  rm $TMP_FILE
-
-  ###########################
-  ## Modify /boot/cmdline.txt
-  ###########################
-
-  if [ "$DEBUG" == "TRUE" ] ; then
-    CMD_LINE=$(cat ${CMDLINE_TXT})
-    if [[ ! $CMD_LINE =~ debug ]] ; then
-      inform "making backup of ${CMDLINE_TXT}"
-      CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-      cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
-    	CMD_LINE="${CMD_LINE} debug"
-    	echo $CMD_LINE > cmdline.txt
-    fi
+if [ ! "$NO_SETUP" == "TRUE" ] ; then
+  inform "boot setup enabled: NO_SETUP=$NO_SETUP"
+  if [ "$IS_PI" == "TRUE" ] ; then
+    inform "performing boot setup for RPI: $IS_PI"
+    setupBootCfg_rpi
+  else
+    inform "performing boot setup for other: $IS_PI"
+    setupBootCfg_other
   fi
+else
+  inform "boot setup disabled: NO_SETUP=$NO_SETUP"
 fi
 
 ###########################
