@@ -49,15 +49,14 @@ FAIL_EXIT="EXIT"
 LOG_TO=
 log_to "${MIGRATE_TMP}/${LOG_FILE}"
 
-log "local-premount balena-stage2 started"
+log "local-bottom balena-stage2-default started"
 
 
 if [ -n "$LOG_DRIVE" ] ; then
-	log_mount ||  fail "failed to mount log dir"
+	mkdir -p ${LOG_MOUNT_DIR} || fail "failed to create mount dir ${LOG_MOUNT_DIR}"
+	/bin/mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR} || fail "failed to mount log dir using /bin/mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR}"
 	log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
 fi
-
-exit 0
 
 log "creating migrate dir ${MIGRATE_TMP}"
 mkdir -p ${MIGRATE_TMP} || fail "failed to create directory ${MIGRATE_TMP}"

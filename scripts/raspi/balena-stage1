@@ -28,6 +28,7 @@ BACKUP_DIRECTORIES="/etc"
 
 # Grub boot devices
 GRUB_BOOT_DEV="hd0,msdos1"
+GRUB_BOOT_TYPE="legacy"
 
 # DEBUG end initramfs scripts before unmounting root / flashing the image
 NO_FLASH="TRUE"
@@ -121,6 +122,21 @@ function listContains {
     done
     echo $res
 }
+
+##########################################
+# check if programs are available
+##########################################
+
+function checkPgms {
+  for pgm in $*
+  do
+      local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+      if [ -z "$pgmPath" ] || [ ! -f "$pgmPath" ] ; then
+        fail "cannot find required program: $pgm as $pgmPath"
+     fi
+  done
+}
+
 
 ##########################################
 # try to establish OS release
@@ -408,6 +424,8 @@ function setupBootCfg_other {
   # TODO: assuming we are on debian like OS
 
   # BOOT_IMAGE=/boot/vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install"
+
   local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
   if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
     fail "no kernel command line"
@@ -436,8 +454,6 @@ function setupBootCfg_other {
       KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
     fi
   fi
-
-
 
   inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
   # inform "BOOT_DIR=$BOOT_DIR"
@@ -483,7 +499,22 @@ function setupBootCfg_other {
       fail "grub configuration not found"
   fi
 
- TODO: make grub HD num from hdDev, just assuming 0 for now
+TODO: make grub HD num from hdDev, just assuming 0 for now
+
+GRUB_INSTALL="TRUE"
+local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
+echo "(${grubDev}) $ROOT_DEV" > ${HOME_DIR}/device.map
+
+cat << EOI > ${HOME_DIR}/grub.cfg
+serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
+default=boot
+timeout=0
+
+menuentry 'boot'{
+linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
+}
+EOI
+
 cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
 exec tail -n +3 \$0
@@ -519,8 +550,10 @@ fi
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
-INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe sync dirname lsblk"
-REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink mkinitramfs sed" #  gzip
+
+INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk"
+REQUIRED_PGMS="lsblk readlink mkinitramfs sed" #  gzip
+checkPgms $REQUIRED_PGMS
 
 for PGM in $REQUIRED_PGMS
 do
@@ -576,6 +609,8 @@ case $ARCH in
     ;;
 esac
 
+checkPgms $INITRAM_REQUIRED_PGMS
+
 KERNEL_VER=$(uname -r)
 inform "KERNEL_VER=$KERNEL_VER"
 
@@ -617,7 +652,7 @@ LOG_FILE=migrate.log
 STRATEGY=${STRATEGY}
 ROOT_DEV=${ROOT_DEV}
 HOME_DIR=${HOME_DIR}
-IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
+IMAGE_FILE=${IMAGE_NAME}
 BACKUP_FILE=${BACKUP_FILE}
 
 MIGRATE_TMP=/balena-migrate
@@ -632,6 +667,8 @@ DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
 ERROR_EXIT=${ERROR_EXIT}
+
+GRUB_INSTALL=${GRUB_INSTALL}
 EOI
 
 #####################################

@@ -55,4 +55,8 @@ echo "[balena-init] dest dir ${DESTDIR}"
 
 cp /etc/balena-migrate.conf "${DESTDIR}/etc/"
 
+if [ -f ${HOME_DIR}/grub.cfg ] ; then
+	cp -f ${HOME_DIR}/grub.cfg "${DESTDIR}/"
+fi
+
 exit 0
