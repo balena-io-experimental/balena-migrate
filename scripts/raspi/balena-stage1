@@ -14,8 +14,8 @@ HOME_DIR=./
 # reboot automatically after script has finished by setting to "TRUE"
 DO_REBOOT= # "TRUE"
 # name of the balenaOS image to flash (expected in $HOMEDIR)
-# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
-IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
+IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
+# IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
 # switch on initramfs / kernel debug mode by seting to "TRUE"
 DEBUG="TRUE"
@@ -46,7 +46,7 @@ MK_INITRAM_VERBOSE= # "TRUE"
 MK_INITRAM_RETAIN= # "TRUE"
 
 # attempt to mount and log initramfs logs to external drive if set
-LOG_DRIVE=/dev/sda1
+LOG_DRIVE=/dev/sdb1
 LOG_FS_TYPE=ext4
 
 HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
@@ -381,6 +381,7 @@ function setupBootCfg_rpi {
   # make sure BUSYBOX is NOT used
   inform "checking initramfs-tools config"
   sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1n/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1list/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   while read -r line
   do
@@ -435,7 +436,7 @@ function setupBootCfg_other {
   # make sure BUSYBOX is used
   inform "checking initramfs-tools config"
   sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
   local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
   if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
     GRUB_BOOT_TYPE="UEFI"

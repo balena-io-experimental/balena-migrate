@@ -134,8 +134,8 @@ log "..done"
 
 partprobe $ROOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
 
-DEVS=$(lsblk)
-log "devices after partprobe: $DEVS"
+# DEVS=$(lsblk)
+# log "devices after partprobe: $DEVS"
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
@@ -164,8 +164,11 @@ log "..done"
 
 if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	log "attempting grub install with type $GRUB_BOOT_TYPE"
-	if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
-		cp ${MIGRATE_TMP}/grub.cfg ${BOOT_MNT_DIR}/grub/ || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+	if [ -f grub.cfg ] ; then
+		log "copying grub.cfg"
+		cp grub.cfg ${BOOT_MNT_DIR}/grub/ || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+	else
+		fail "no grub config found"
 	fi
 
 	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
@@ -179,7 +182,7 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 #--modules="biosdisk part_msdos ext2 configfile normal multiboot" \
 
 		grub-install 	--no-floppy \
-									--grub-mkdevicemap=${MIGRATE_TMP}/device.map \
+									--grub-mkdevicemap=device.map \
 									--boot-directory=${BOOT_MNT_DIR} \
 									${ROOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
 	fi
