@@ -18,7 +18,7 @@ IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
 # IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
 # switch on initramfs / kernel debug mode by seting to "TRUE"
-DEBUG="TRUE"
+DEBUG= # "TRUE"
 
 # name of backup file to create/transfer to balena-data
 BACKUP_FILE=backup.tgz
@@ -53,25 +53,6 @@ HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
 MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
 
-# where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
-MIGRATE_CONF=/etc/balena-migrate.conf
-
-# raspi config.txt to modify
-CONFIG_TXT="/boot/config.txt"
-# raspi cmdline.txt to modify
-CMDLINE_TXT="/boot/cmdline.txt"
-
-SUPPORTED_OSSES="ubuntu-14.04 raspbian-9"
-SUPPORTED_ARCHS="x86_64 armv7l"
-
-RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
-RASPI_2_REVS="a01040 a01041 a21041 a22042"
-RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
-
-GRUB_MIN_VER=2
-BOOT_DIR=/boot
-# script namme for logging
-SCRIPT_NAME="balena-stage1"
 
 
 ##########################################
@@ -563,6 +544,30 @@ if [[ $EUID -ne 0 ]]; then
     fail "This script must be run as root"
 fi
 
+if [ -f /etc/balena-migrate.conf ] ; then
+  # override some of the settings above
+  . /etc/balena-migrate.conf
+fi
+
+# raspi config.txt to modify
+CONFIG_TXT="/boot/config.txt"
+# raspi cmdline.txt to modify
+CMDLINE_TXT="/boot/cmdline.txt"
+
+SUPPORTED_OSSES="ubuntu-14.04 raspbian-9"
+SUPPORTED_ARCHS="x86_64 armv7l"
+
+RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
+RASPI_2_REVS="a01040 a01041 a21041 a22042"
+RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
+
+GRUB_MIN_VER=2
+BOOT_DIR=/boot
+# script namme for logging
+SCRIPT_NAME="balena-stage1"
+# where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
+MIGRATE_CONF=/etc/balena-migrate-stage2.conf
+
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
@@ -590,7 +595,6 @@ inform "HOME_DIR=$HOME_DIR"
 if [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
   fail "missing image file: ${HOME_DIR}/$IMAGE_NAME"
 fi
-
 
 ##########################################
 # detect device / check for correct image ?
