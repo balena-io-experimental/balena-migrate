@@ -49,15 +49,24 @@ FAIL_EXIT="EXIT"
 LOG_TO=
 log_to "${MIGRATE_TMP}/${LOG_FILE}"
 
-log "local-premount balena-stage2 started"
+log "local-bottom balena-stage2-default started"
 
 
 if [ -n "$LOG_DRIVE" ] ; then
-	log_mount ||  fail "failed to mount log dir"
+	# TODO: needs to wait for USB drive to show up
+	mkdir -p ${LOG_MOUNT_DIR} || fail "failed to create mount dir ${LOG_MOUNT_DIR}"
+	loopCount=0
+	while [ ! -b "$LOG_DRIVE" ] && [ $loopCount -lt 3 ] ;
+	do
+	   log "log device not present: $LOG_DRIVE waiting.."
+	   udevadm settle --timeout=10
+	   sleep 10
+	   loopCount=$(($loopCount + 1))
+	done
+	mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR} || fail "failed to mount log dir using mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR}"
 	log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
+	log "logging to ${LOG_MOUNT_DIR}/${LOG_FILE}"
 fi
-
-exit 0
 
 log "creating migrate dir ${MIGRATE_TMP}"
 mkdir -p ${MIGRATE_TMP} || fail "failed to create directory ${MIGRATE_TMP}"
@@ -125,8 +134,8 @@ log "..done"
 
 partprobe $ROOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
 
-DEVS=$(lsblk)
-log "devices after partprobe: $DEVS"
+# DEVS=$(lsblk)
+# log "devices after partprobe: $DEVS"
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
@@ -140,6 +149,7 @@ if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
 	log "...done"
 fi
 
+
 log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
 mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"
 log "..done"
@@ -151,6 +161,32 @@ for file in $NETWORK_CONFIGS; do
 	cp "${MIGRATE_TMP}/$file" "${BOOT_MNT_DIR}/system-connections/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
 done
 log "..done"
+
+if [ "$GRUB_INSTALL" = "TRUE" ] ; then
+	log "attempting grub install with type $GRUB_BOOT_TYPE"
+	if [ -f grub.cfg ] ; then
+		log "copying grub.cfg"
+		cp grub.cfg ${BOOT_MNT_DIR}/grub/ || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+	else
+		fail "no grub config found"
+	fi
+
+	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
+	# if [ "${FLASH_BOOTLOADER}" == "TRUE" ] ; then
+	# 		inform "flashing boot.img os to ${ORIG_BOOT_DEV}"
+	# 		dd if=${BOOT_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1
+	# 		inform "flashing core.img os to ${ORIG_BOOT_DEV}"
+	# 		dd if=${CORE_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1 seek=512
+	# fi
+
+#--modules="biosdisk part_msdos ext2 configfile normal multiboot" \
+
+		grub-install 	--no-floppy \
+									--grub-mkdevicemap=device.map \
+									--boot-directory=${BOOT_MNT_DIR} \
+									${ROOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+	fi
+fi
 
 # saveLog || true
 sync || true

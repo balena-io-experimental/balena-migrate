@@ -28,9 +28,10 @@ BACKUP_DIRECTORIES="/etc"
 
 # Grub boot devices
 GRUB_BOOT_DEV="hd0,msdos1"
+GRUB_BOOT_TYPE="legacy"
 
 # DEBUG end initramfs scripts before unmounting root / flashing the image
-NO_FLASH="TRUE"
+NO_FLASH= #"TRUE"
 ERROR_EXIT= # "reboot -f"
 
 # DEBUG: do not modify config.txt if set to "TRUE"
@@ -43,8 +44,6 @@ INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 MK_INITRAM_VERBOSE= # "TRUE"
 # DEBUG keep initramfs layout
 MK_INITRAM_RETAIN= # "TRUE"
-# script namme for logging
-SCRIPT_NAME="balena-stage1"
 
 # attempt to mount and log initramfs logs to external drive if set
 LOG_DRIVE=/dev/sdb1
@@ -71,6 +70,8 @@ RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 
 GRUB_MIN_VER=2
 BOOT_DIR=/boot
+# script namme for logging
+SCRIPT_NAME="balena-stage1"
 
 
 ##########################################
@@ -121,6 +122,21 @@ function listContains {
     done
     echo $res
 }
+
+##########################################
+# check if programs are available
+##########################################
+
+function checkPgms {
+  for pgm in $*
+  do
+      local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+      if [ -z "$pgmPath" ] || [ ! -f "$pgmPath" ] ; then
+        fail "cannot find required program: $pgm as $pgmPath"
+     fi
+  done
+}
+
 
 ##########################################
 # try to establish OS release
@@ -351,15 +367,21 @@ function checkArmDevs {
 ####################################################
 
 function setupBootCfg_rpi {
-
+  inform "setupBootCfg_rpi"
   ##########################
   ## Modify /boot/config.txt
   ##########################
 
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} cp cat rm sleep"
   inform "making backup of config.txt"
   CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
   TMP_FILE=$(mktemp)
   INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
+
+  # make sure BUSYBOX is NOT used
+  inform "checking initramfs-tools config"
+  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1n/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1list/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   while read -r line
   do
@@ -395,8 +417,6 @@ function setupBootCfg_rpi {
     fi
   fi
 
-  inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
-  cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
 }
 
 ####################################################
@@ -404,10 +424,25 @@ function setupBootCfg_rpi {
 ####################################################
 
 function setupBootCfg_other {
+  inform "setupBootCfg_other"
   # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
   # TODO: assuming we are on debian like OS
 
   # BOOT_IMAGE=/boot/vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro
+
+  # TODO: this is ublikely to work but I will try it
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
+
+  # make sure BUSYBOX is used
+  inform "checking initramfs-tools config"
+  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
+  if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
+    GRUB_BOOT_TYPE="UEFI"
+    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr"
+  fi
+
   local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
   if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
     fail "no kernel command line"
@@ -436,8 +471,6 @@ function setupBootCfg_other {
       KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
     fi
   fi
-
-
 
   inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
   # inform "BOOT_DIR=$BOOT_DIR"
@@ -472,18 +505,30 @@ function setupBootCfg_other {
     KBOOT_DIR="${KBOOT_DIR}/"
   fi
 
-  inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}"
-  cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}"
-
   if [ -z "$(whereis -b update-grub)" ] || [ -z "$(whereis -b grub-reboot)" ] ; then
-      fail "failed to ensure required programs update-grub, grub-reboot, grub-install"
+      fail "failed to ensure required programs update-grub, grub-reboot"
   fi
 
   if [ ! -d /etc/grub.d ] ; then
       fail "grub configuration not found"
   fi
 
- TODO: make grub HD num from hdDev, just assuming 0 for now
+# TODO: make grub HD num from hdDev, just assuming 0 for now
+
+  GRUB_INSTALL="TRUE"
+  local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
+  echo "(${grubDev}) $ROOT_DEV" > ${HOME_DIR}/device.map
+
+  cat << EOI > ${HOME_DIR}/grub.cfg
+serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
+default=boot
+timeout=0
+
+menuentry 'boot'{
+linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
+}
+EOI
+
 cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
 exec tail -n +3 \$0
@@ -502,15 +547,17 @@ menuentry "resin-migration" {
 EOI
 chmod +x /etc/grub.d/42_resin
 
-inform "updating grub config using ${GRUBUPDT}"
-update-grub || fail "failed to update grub config"
-inform "calling grub-reboot resin-migration"
-grub-reboot resin-migration
+  inform "updating grub config using ${GRUBUPDT}"
+  update-grub || fail "failed to update grub config"
+  inform "calling grub-reboot resin-migration"
+  grub-reboot resin-migration
 }
 
-##########################################
+####################################################################################
+####################################################################################
 # main : create initramfs & install it
-##########################################
+####################################################################################
+####################################################################################
 
 if [[ $EUID -ne 0 ]]; then
     fail "This script must be run as root"
@@ -519,16 +566,10 @@ fi
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
-INITRAM_REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe sync dirname lsblk"
-REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS lsblk readlink mkinitramfs sed" #  gzip
 
-for PGM in $REQUIRED_PGMS
-do
-    PGM_PATH="$(whereis -b $PGM | awk '{ print $2}')"
-    if [ -z "$PGM_PATH" ] || [ ! -f "$PGM_PATH" ] ; then
-      fail "cannot find required program: $PGM as $PGM_PATH"
-   fi
-done
+INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm"
+REQUIRED_PGMS="lsblk readlink mkinitramfs sed" #  gzip
+checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
 
@@ -576,6 +617,8 @@ case $ARCH in
     ;;
 esac
 
+checkPgms $INITRAM_REQUIRED_PGMS
+
 KERNEL_VER=$(uname -r)
 inform "KERNEL_VER=$KERNEL_VER"
 
@@ -601,6 +644,25 @@ ROOT_DEV=${TMP[0]}/${TMP[1]}
 inform "ROOT_DEV=${ROOT_DEV}"
 
 ###########################
+## create boot configuration
+###########################
+
+if [ ! "$NO_SETUP" == "TRUE" ] ; then
+  inform "boot setup enabled: NO_SETUP=$NO_SETUP"
+  if [ "$IS_PI" == "TRUE" ] ; then
+    inform "performing boot setup for RPI: $IS_PI"
+    setupBootCfg_rpi
+  else
+    inform "performing boot setup for other: $IS_PI"
+    setupBootCfg_other
+  fi
+else
+  inform "boot setup disabled: NO_SETUP=$NO_SETUP"
+fi
+
+
+
+###########################
 ## write /etc/migrate.conf
 ###########################
 
@@ -617,7 +679,7 @@ LOG_FILE=migrate.log
 STRATEGY=${STRATEGY}
 ROOT_DEV=${ROOT_DEV}
 HOME_DIR=${HOME_DIR}
-IMAGE_FILE=resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz
+IMAGE_FILE=${IMAGE_NAME}
 BACKUP_FILE=${BACKUP_FILE}
 
 MIGRATE_TMP=/balena-migrate
@@ -632,6 +694,10 @@ DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
 ERROR_EXIT=${ERROR_EXIT}
+
+GRUB_INSTALL=${GRUB_INSTALL}
+GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
+
 EOI
 
 #####################################
@@ -701,22 +767,8 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     inform "creating initramfs: mkinitramfs $OPTS"
     mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
-    # inform "copying initramfs"
-    # cp ${HOME_DIR}/${INITRAMFS_NAME} /boot || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to /boot"
-fi
-
-
-if [ ! "$NO_SETUP" == "TRUE" ] ; then
-  inform "boot setup enabled: NO_SETUP=$NO_SETUP"
-  if [ "$IS_PI" == "TRUE" ] ; then
-    inform "performing boot setup for RPI: $IS_PI"
-    setupBootCfg_rpi
-  else
-    inform "performing boot setup for other: $IS_PI"
-    setupBootCfg_other
-  fi
-else
-  inform "boot setup disabled: NO_SETUP=$NO_SETUP"
+    inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+    cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
 fi
 
 ###########################
