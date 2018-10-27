@@ -25,10 +25,10 @@ fi
 
 # reboot -f
 
-if [ -f /etc/balena-migrate-stage2.conf ] ; then
-    . /etc/balena-migrate-stage2.conf
+if [ -f /etc/balena-migrate.conf ] ; then
+    . /etc/balena-migrate.conf
 else
-    panic  "/etc/balena-migrate-stage2.conf not found"
+    panic  "balena-migrate.conf not found"
 fi
 
 if [ -f /scripts/balena-common ] ; then

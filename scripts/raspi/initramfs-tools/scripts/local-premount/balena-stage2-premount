@@ -1,0 +1,51 @@
+#!/bin/sh
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+set -e
+
+if [ -f /scripts/functions ] ; then
+    . /scripts/functions
+fi
+
+if [ -f /scripts/local ] ; then
+    . /scripts/local
+fi
+
+# _log_msg ""
+
+log_success_msg "local-premount balena-stage2 started params: $1 $2 $3"
+
+if [ -f /etc/balena-migrate.conf ] ; then
+    . /etc/balena-migrate.conf
+else
+    panic "balena-migrate.conf not found"
+fi
+
+if [ -f /scripts/balena-common ] ; then
+    . /scripts/balena-common
+else
+		panic  "/scripts/balena-common not found"
+fi
+
+if [  "$STRATEGY" = "RESIZE" ] ; then
+  log_success_msg "local-premount balena-stage2-resized enabled"
+
+	_log_msg "resizing fs ${RESIZE_FS} to ${RESIZE_PART_TO}"
+	e2fsck -f -p "${RESIZE_FS}" || panic "failed: e2fsck ${RESIZE_FS}"
+	resize2fs -f "${RESIZE_FS}" ${RESIZE_PART_SIZE}s || panic "failed: resize2fs ${RESIZE_FS} ${RESIZE_PART_SIZE}s"
+	parted --script "${RESIZE_DEV}" rm ${RESIZE_PART_NO} || panic "failed: parted --script ${RESIZE_DEV} rm ${RESIZE_PART_NO}"
+	parted --script "${RESIZE_DEV}" mkpart "${RESIZE_PART_TYPE}" "${RESIZE_PART_FS}" ${RESIZE_PART_START}s ${RESIZE_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${RESIZE_PART_TYPE} ${RESIZE_PART_FS} ${RESIZE_PART_START}s ${RESIZE_PART_TO}s"
+	parted --script "${RESIZE_DEV}" mkpart "${NEW_PART_TYPE}" "${NEW_PART_FS}" ${NEW_PART_START}s ${NEW_PART_TO}s || panic "failed: parted --script ${RESIZE_DEV} mkpart ${NEW_PART_TYPE} ${NEW_PART_FS} ${NEW_PART_START}s ${NEW_PART_TO}s"
+	mke2fs -t "${NEW_PART_FS}" "${NEW_PART_NAME}" || panic "failed: mke2fs -t ${NEW_PART_FS} ${NEW_PART_NAME}"
+fi
