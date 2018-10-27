@@ -63,9 +63,13 @@ if [ -n "$LOG_DRIVE" ] ; then
 	   sleep 10
 	   loopCount=$(($loopCount + 1))
 	done
-	mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR} || fail "failed to mount log dir using mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR}"
-	log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
-	log "logging to ${LOG_MOUNT_DIR}/${LOG_FILE}"
+	if [ -b "$LOG_DRIVE" ] ; then
+		mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR} || fail "failed to mount log dir using mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR}"
+		log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
+		log "logging to ${LOG_MOUNT_DIR}/${LOG_FILE}"
+	else
+		log "log device could not be found  $LOG_DRIVE"
+	fi
 fi
 
 log "creating migrate dir ${MIGRATE_TMP}"
