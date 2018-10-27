@@ -55,8 +55,16 @@ echo "[balena-init] dest dir ${DESTDIR}"
 
 cp /etc/balena-migrate.conf "${DESTDIR}/etc/"
 
-if [ -f ${HOME_DIR}/grub.cfg ] ; then
-	cp -f ${HOME_DIR}/grub.cfg "${DESTDIR}/"
+if [ "$GRUB_INSTALL" = "TRUE" ] ; then
+	if [ -f ${HOME_DIR}/grub.cfg ] ; then
+		echo "[balena-init] copying ${HOME_DIR}/grub.cfg"
+		cp ${HOME_DIR}/grub.cfg "${DESTDIR}/"
+	fi
+
+	if [ -f ${HOME_DIR}/device.map ] ; then
+		echo "[balena-init] copying ${HOME_DIR}/device.map"
+		cp ${HOME_DIR}/device.map "${DESTDIR}/"
+	fi
 fi
 
 exit 0
