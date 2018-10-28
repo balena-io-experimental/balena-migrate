@@ -3,6 +3,7 @@
 /.idea
 /flasher_img
 /scripts/test
+/test
 *.img
 *.iso
 *.vmdk
