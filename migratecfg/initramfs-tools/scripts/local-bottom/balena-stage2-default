@@ -51,24 +51,25 @@ log_to "${MIGRATE_TMP}/${LOG_FILE}"
 
 log "local-bottom balena-stage2-default started"
 
-
 if [ -n "$LOG_DRIVE" ] ; then
-	# TODO: needs to wait for USB drive to show up
-	mkdir -p ${LOG_MOUNT_DIR} || fail "failed to create mount dir ${LOG_MOUNT_DIR}"
-	loopCount=0
-	while [ ! -b "$LOG_DRIVE" ] && [ $loopCount -lt 3 ] ;
-	do
-	   log "log device not present: $LOG_DRIVE waiting.."
-	   udevadm settle --timeout=10
-	   sleep 10
-	   loopCount=$(($loopCount + 1))
-	done
-	if [ -b "$LOG_DRIVE" ] ; then
-		mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR} || fail "failed to mount log dir using mount -w -t ${LOG_FS_TYPE} ${LOG_DRIVE} ${LOG_MOUNT_DIR}"
-		log_to "${LOG_MOUNT_DIR}/${LOG_FILE}"
-		log "logging to ${LOG_MOUNT_DIR}/${LOG_FILE}"
-	else
-		log "log device could not be found  $LOG_DRIVE"
+	mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR}
+fi
+
+# TODO: restore former boot configuration on raspian
+# mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR}
+
+if [ "$REMOUNT_BOOT" = "TRUE" ] ; then
+	if [ mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ] ; then
+		if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
+			cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT} 
+			log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
+		fi
+		if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
+			cp /orig-boot/${CMDLINE_TXT_BACKUP} /orig-boot/${CMDLINE_TXT}
+			log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
+		fi
+		umount /orig-boot
+		log "restored original boot configuration"
 	fi
 fi
 
@@ -131,12 +132,12 @@ FAIL_EXIT="REBOOT"
 log "..done"
 
 
-log "flashing image from ${MIGRATE_TMP}/${IMAGE_FILE} to ${ROOT_DEV} "
-log "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4M \n"
-gzip -d -c "${MIGRATE_TMP}/${IMAGE_FILE}" | dd of=${ROOT_DEV} bs=4194304 || fail  "failed with gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${ROOT_DEV} bs=4194304"
+log "flashing image from ${MIGRATE_TMP}/${IMAGE_FILE} to ${BOOT_DEV} "
+log "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${BOOT_DEV} bs=4M \n"
+gzip -d -c "${MIGRATE_TMP}/${IMAGE_FILE}" | dd of=${BOOT_DEV} bs=4194304 || fail  "failed with gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${BOOT_DEV} bs=4194304"
 log "..done"
 
-partprobe $ROOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $ROOT_DEV"
+partprobe $BOOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $BOOT_DEV"
 
 # DEVS=$(lsblk)
 # log "devices after partprobe: $DEVS"
@@ -188,7 +189,7 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 		grub-install 	--no-floppy \
 									--grub-mkdevicemap=device.map \
 									--boot-directory=${BOOT_MNT_DIR} \
-									${ROOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
 	fi
 fi
 

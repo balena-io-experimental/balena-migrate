@@ -305,6 +305,31 @@ function splitPartName {
 }
 
 ##########################################
+# get root info
+# get info about the mount point and path
+# to /root
+##########################################
+function getBootInfo {
+  if [ ! -d /boot ] ; then
+    fail "boot directory could not be found"
+  fi
+
+  local rootDev=$(findmnt --noheadings --canonicalize --output SOURCE /)
+  if [ -z "$rootDev" ] ; then
+    fail "root mount point could not be found"
+  fi
+
+  local bootDev=$(findmnt --noheadings --canonicalize --output SOURCE /boot)
+
+  if [ -n "$bootDev" ] ; then
+    echo "$rootDev $bootDev /"
+  else
+    echo "$rootDev $rootDev /boot"
+  fi
+}
+
+
+##########################################
 # check armvX arch  device
 ##########################################
 
@@ -323,7 +348,7 @@ function checkArmDevs {
       if [ "$IS_PI2" == "TRUE" ] ; then
         IS_PI="TRUE"
         inform "device is a Raspberry PI 2"
-        if [[ ! $IMAGE_NAME =~ raspberrypi2 ]] ; then
+        if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
           fail "expected raspberrypi2 image, got $IMAGE_NAME"
         fi
       else
@@ -470,25 +495,6 @@ function setupBootCfg_other {
     else
       $KBOOT_DIR="$KBOOT_DIR/"
     fi
-
-    local BOOT_PART_INFO=($(df -l --output=source,target | grep -E "\\s+/boot$"))
-    if [ -n "$BOOT_PART_INFO" ] ; then
-        # but it is mounted as /boot
-        BOOT_DIR=/boot
-    else
-        # try find it
-        local BOOT_PART_RAW=$(parted -sm $ROOT_DEV print | grep -E "(:|,)boot(,|;)")
-        if [ -z "$BOOT_PART_RAW" ] ; then
-           fail "could not find boot partition on $ROOT_DEV"
-        fi
-
-        # inform "BOOT_PART_RAW=$BOOT_PART_RAW"
-        local BOOT_PART_NUM=$(expr match "$BOOT_PART_RAW" '^\([^:]\+\):.*')
-
-        mkdir -p /mnt/tmp-boot || fail "failed to create mount dir /mnt/tmp-boot"
-        mount "${ROOT_DEV}${ROOT_PAD}${BOOT_PART_NUM}" /mnt/tmp-boot || fail "failed to mount ${ROOT_DEV}${ROOT_PAD}${BOOT_PART_NUM} on  /mnt/tmp-boot"
-        BOOT_DIR=/mnt/tmp-boot
-    fi
   else
     KBOOT_DIR="${KBOOT_DIR}/"
   fi
@@ -505,7 +511,7 @@ function setupBootCfg_other {
 
   GRUB_INSTALL="TRUE"
   local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
-  echo "(${grubDev}) $ROOT_DEV" > ${HOME_DIR}/device.map
+  echo "(${grubDev}) $BOOT_DEV" > ${HOME_DIR}/device.map
 
   cat << EOI > ${HOME_DIR}/grub.cfg
 serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
@@ -531,7 +537,7 @@ menuentry "resin-migration" {
 
   set root='$GRUB_BOOT_DEV'
   linux $KERNEL_CMD_LINE
-  initrd  ${KBOOT_DIR}${INITRAMFS_NAME}
+  initrd  ${BOOT_DIR}${INITRAMFS_NAME}
 }
 EOI
     chmod +x /etc/grub.d/42_resin
@@ -583,7 +589,7 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 
 INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm"
-REQUIRED_PGMS="lsblk readlink mkinitramfs sed" #  gzip
+REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt" #  gzip
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -655,13 +661,52 @@ if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; the
   fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
 
-ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
+
+DRIVE_INFO=($(getBootInfo))
+
+ROOT_FS=${DRIVE_INFO[0]}
+BOOT_FS=${DRIVE_INFO[1]}
+BOOT_PATH=${DRIVE_INFO[2]}
+
+inform "root partition: ${ROOT_FS} boot partition: ${BOOT_FS} boot path on boot partition: ${BOOT_PATH}"
+
+TMP=($(splitPartName ${BOOT_FS}))
+
+BOOT_PAD=${TMP[3]}
+BOOT_DEV=${TMP[0]}/${TMP[1]}
+BOOT_PART_NO=${TMP[2]}
+
 TMP=($(splitPartName ${ROOT_FS}))
 
-PAD=${TMP[3]}
-ROOT_DEV=${TMP[0]}/${TMP[1]}
+if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
+  fail "unsupported boot configuration /boot is on a separate drive from / "
+fi
 
-inform "ROOT_DEV=${ROOT_DEV}"
+if [ "$ROOT_FS" != "$BOOT_FS" ] ; then
+  REMOUNT_BOOT="TRUE"
+
+  while read line ;
+  do
+    if [[ $line =~ ^\s*Partition\ Table:\s*gpt ]] ; then
+      local gptTable="TRUE"
+      continue
+    fi
+
+    if [[ $line =~ ^\s*${BOOT_PART_NO}.* ]] ; then
+      if [ "$gptTable" == "TRUE" ] ; then
+        BOOT_FS_TYPE=$(parted -s ${BOOT_DEV} print | grep -E "^\s*${BOOT_PART_NO}.*" | awk '{print $5}')
+      else
+        BOOT_FS_TYPE=$(parted -s ${BOOT_DEV} print | grep -E "^\s*${BOOT_PART_NO}.*" | awk '{print $6}')
+      fi
+    fi
+  done < <(parted -s ${BOOT_DEV} print)
+
+  if [[ $BOOT_FS_TYPE =~ ^fat[0-9]+$ ]]  ; then
+    BOOT_FS_TYPE="vfat"
+  fi
+fi
+
+inform "BOOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
 ###########################
 ## create boot configuration
@@ -679,6 +724,9 @@ fi
 ## write /etc/migrate.conf
 ###########################
 
+
+
+
 cat <<EOI > ${MIGRATE_CONF}
 #!/bin/sh
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
@@ -690,7 +738,14 @@ LOG_MOUNT_DIR=/extlog
 LOG_FILE=migrate.log
 
 STRATEGY=${STRATEGY}
-ROOT_DEV=${ROOT_DEV}
+BOOT_DEV=${BOOT_DEV}
+
+
+REMOUNT_BOOT=$REMOUNT_BOOT
+ORIG_BOOT_PATH=${BOOT_PATH}
+ORIG_BOOT_PART=${BOOT_FS}
+ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}
+
 HOME_DIR=${HOME_DIR}
 IMAGE_FILE=${IMAGE_NAME}
 BACKUP_FILE=${BACKUP_FILE}
@@ -698,11 +753,11 @@ BACKUP_FILE=${BACKUP_FILE}
 MIGRATE_TMP=/balena-migrate
 
 BOOT_MNT_DIR=/resin-boot
-BOOT_PART_NAME=${ROOT_DEV}${PAD}1         # resinOS-boot part name
+BOOT_PART_NAME=${BOOT_DEV}${BOOT_PAD}1         # resinOS-boot part name
 BOOT_PART_TYPE=vfat                        # resinOS-boot fs type
 
 DATA_MNT_DIR=/resin-data
-DATA_PART_NAME=${ROOT_DEV}${PAD}6         # resinOS-data part name
+DATA_PART_NAME=${BOOT_DEV}${BOOT_PAD}6         # resinOS-data part name
 DATA_PART_TYPE=ext4                       # resinOS-data fs type
 
 NO_FLASH=${NO_FLASH}
@@ -713,6 +768,22 @@ GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 
 EOI
 
+if [ -n "$CONFIG_TXT_BACKUP" ] ; then
+  cat <<EOI >> ${MIGRATE_CONF}
+CONFIG_TXT=$(basename $CONFIG_TXT)
+CONFIG_TXT_BACKUP=$(basename ${CONFIG_TXT_BACKUP})
+
+EOI
+fi
+
+if [ -n "$CMDLINE_TXT_BACKUP" ] ; then
+  cat <<EOI >> ${MIGRATE_CONF}
+CMDLINE_TXT=$(basename $CMDLINE_TXT)
+CMDLINE_TXT_BACKUP=$(basename ${CMDLINE_TXT_BACKUP})
+
+EOI
+fi
+
 #####################################
 ## USE: resize strategy - unfinished
 #####################################
@@ -722,7 +793,7 @@ if [ "$STRATEGY" == "RESIZE" ] ; then
 MEM_MIN_AVAIL=600000
 MEM_TMPFS_SIZE=512M
 RESIZE_FS="${ROOT_FS}"
-RESIZE_DEV=${ROOT_DEV}
+RESIZE_DEV=${BOOT_DEV}
 RESIZE_PART_NO=${TMP[2]}
 # TODO: actually calculate this
 RESIZE_PART_START=94208

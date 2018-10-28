@@ -52,44 +52,27 @@ fail() {
 	fi
 }
 
-log_mount()
-{
-        read_fstab_entry "$LOG_MOUNT_DIR"
+mount_device() {
+	MNT_FS_NAME=$1
+	MNT_FS_TYPE=$2
+	MNT_DIR=$3
 
-				MNT_FSNAME=$LOG_DRIVE
-				MNT_DIR=$LOG_MOUNT_DIR
-				MNT_TYPE=$LOG_FS_TYPE
-				MNT_OPTS=
-				MNT_FREQ=0
-				MNT_PASS=0
-				MNT_JUNK=
+	if [ -d ${MNT_DIR} ] ; then
+	  mkdir -p ${MNT_DIR} || fail "failed to create mount dir ${MNT_DIR}"
+	fi
 
-				log "log device setup: $MNT_FSNAME"
-        local_device_setup "$MNT_FSNAME" "$LOG_MOUNT_DIR file system"
-        MNT_FSNAME="${DEV}"
+	loopCount=0
+	while [ ! -b "${MNT_FS_NAME}" ] && [ $loopCount -lt 3 ] ;
+	do
+		 log "log device not present: ${MNT_FS_NAME} waiting.."
+		 udevadm settle --timeout=10
+		 sleep 10
+		 loopCount=$(($loopCount + 1))
+	done
 
-        #  FIXME This has no error checking
-        modprobe "${MNT_TYPE}"
+	if [ -b "${MNT_FS_NAME}" ] ; then
+		fail "device not present: ${MNT_FS_NAME}"
+	fi
 
-				log "MNT_PASS = $MNT_PASS"
-        if [ "$MNT_PASS" != 0 ]; then
-                checkfs "$MNT_FSNAME" "$MNT_DIR" "${MNT_TYPE}"
-        fi
-
-				log "creating log mount point ${LOG_MOUNT_DIR}"
-				mkdir -p "${LOG_MOUNT_DIR}" || fail "failed to create log mount point ${LOG_MOUNT_DIR}"
-				if [ ! -d "${LOG_MOUNT_DIR}" ] ; then
-				     fail  "failed to create directory in ${LOG_MOUNT_DIR}"
-				fi
-				log "...done"
-
-        # FIXME This has no error checking
-        # Mount filesystem
-				if [ -n "$MNT_OPTS" ] ; then
-					MNT_OPTS="-o $MNT_OPTS"
-				fi
-
-				log "attempt: mount -w -t ${MNT_TYPE} ${MNT_OPTS} $MNT_FSNAME ${LOG_MOUNT_DIR}"
-				mount -w -t ${MNT_TYPE} ${MNT_OPTS} $MNT_FSNAME "${LOG_MOUNT_DIR}"
-				log "...done"
+	mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} || fail "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
 }
