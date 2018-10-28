@@ -553,9 +553,8 @@ fi
 CONFIG_TXT="/boot/config.txt"
 # raspi cmdline.txt to modify
 CMDLINE_TXT="/boot/cmdline.txt"
-
 SUPPORTED_OSSES="ubuntu-14.04 raspbian-9"
-SUPPORTED_ARCHS="x86_64 armv7l"
+SUPPORTED_ARCHS="x86_64 armv7l i686"
 
 RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
 RASPI_2_REVS="a01040 a01041 a21041 a22042"
@@ -614,6 +613,12 @@ case $ARCH in
     inform "ARCH=$ARCH"
     if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
         fail "expected genericx86-64 image, got $IMAGE_NAME"
+    fi
+    ;;
+  i686)
+    inform "ARCH=$ARCH"
+    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] ; then
+        fail "expected intel-core2-32 image, got $IMAGE_NAME"
     fi
     ;;
   *)
