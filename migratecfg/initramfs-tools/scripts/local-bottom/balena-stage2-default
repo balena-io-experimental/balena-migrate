@@ -52,26 +52,34 @@ log_to "${MIGRATE_TMP}/${LOG_FILE}"
 log "local-bottom balena-stage2-default started"
 
 if [ -n "$LOG_DRIVE" ] ; then
-	mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR}
+	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} "TRUE" ; then
+		log_to 	"${LOG_MOUNT_DIR}/${LOG_FILE}"
+  else
+		LOG_DRIVE=
+	fi
 fi
 
 # TODO: restore former boot configuration on raspian
-# mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR}
 
 if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	log "attempting to restore boot configuration"
-	if mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot "TRUE" ; then
-		if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
-			cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT}
-			log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
-		fi
-		if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
-			cp /orig-boot/${CMDLINE_TXT_BACKUP} /orig-boot/${CMDLINE_TXT}
-			log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
-		fi
-		umount /orig-boot
-		log "restored original boot configuration"
+
+	if [ "$ORIG_BOOT_PART" != "$ORIG_ROOT_PART" ] ; then
+		mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot "TRUE" >>"$LOG_TO" 2>&1 || log "failed to mount ${ORIG_BOOT_PART}"
 	fi
+
+	if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
+		cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CONFIG_TXT_BACKUP}"
+		log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
+	fi
+
+	if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
+		cp /orig-boot/${CMDLINE_TXT_BACKUP} /orig-boot/${CMDLINE_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CMDLINE_TXT_BACKUP}"
+		log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
+	fi
+
+	umount /orig-boot >>"$LOG_TO" 2>&1 || log "failed to unmount ${ORIG_BOOT_PART}"
+	log "restored original boot configuration"
 fi
 
 log "creating migrate dir ${MIGRATE_TMP}"
@@ -100,8 +108,6 @@ for file in $NETWORK_CONFIGS; do
 	log "copying ${rootmnt}${HOME_DIR}/$file"
 	cp "${rootmnt}${HOME_DIR}/$file" "${MIGRATE_TMP}/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
 done
-
-log "..done"
 
 log "creating mountpoint on ${BOOT_MNT_DIR}"
 mkdir -p ${BOOT_MNT_DIR} || fail "failed to create directory ${BOOT_MNT_DIR}"
@@ -145,7 +151,11 @@ partprobe $BOOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $B
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
-log_to "$DATA_MNT_DIR/$LOG_FILE"
+
+if [ -z "$LOG_DRIVE" ] ; then
+	log_to "$DATA_MNT_DIR/$LOG_FILE"
+fi
+
 log "..done"
 
 if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
@@ -154,7 +164,6 @@ if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
 	sync
 	log "...done"
 fi
-
 
 log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
 mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"

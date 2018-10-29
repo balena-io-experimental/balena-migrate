@@ -14,7 +14,7 @@ HOME_DIR=./
 # reboot automatically after script has finished by setting to "TRUE"
 DO_REBOOT= # "TRUE"
 # name of the balenaOS image to flash (expected in $HOMEDIR)
-IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
+# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
 # IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
 # switch on initramfs / kernel debug mode by seting to "TRUE"
@@ -27,7 +27,7 @@ BACKUP_SCRIPT=
 BACKUP_DIRECTORIES="/etc"
 
 # Grub boot devices
-GRUB_BOOT_DEV="hd0,msdos1"
+GRUB_BOOT_DEV="hd0"
 GRUB_BOOT_TYPE="legacy"
 
 # DEBUG end initramfs scripts before unmounting root / flashing the image
@@ -52,7 +52,6 @@ LOG_FS_TYPE=ext4
 HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
 MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
-
 
 
 ##########################################
@@ -386,8 +385,8 @@ function setupBootCfg_rpi {
   sed -i 's/^\(MODULES\s*=\s*\).*$/\1list/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
 
-  if [ ! "$NO_SETUP" == "TRUE" ] ; then
-
+  if [ "$NO_SETUP" != "TRUE" ] ; then
+    RESTORE_BOOT="TRUE"
 
     CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
     cp ${CONFIG_TXT}  ${CONFIG_TXT_BACKUP}
@@ -527,6 +526,14 @@ linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-
 EOI
 
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
+    if [ "$GPT_TABLE" == "TRUE" ] ; then
+      local partMod="part_gpt"
+      GRUB_BOOT_DEV="${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}"
+    else
+      local partMod="part_msdos"
+      GRUB_BOOT_DEV="${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}"
+    fi
+
     cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
 exec tail -n +3 \$0
@@ -535,7 +542,7 @@ exec tail -n +3 \$0
 # the 'exec tail' line above.
 
 menuentry "resin-migration" {
-  insmod part_msdos
+  insmod $partMod
   insmod ext2
 
   set root='$GRUB_BOOT_DEV'
@@ -592,7 +599,7 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 
 INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm"
-REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt" #  gzip
+REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt parted" #  gzip
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -611,8 +618,8 @@ fi
 
 inform "HOME_DIR=$HOME_DIR"
 
-if [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
-  fail "missing image file: ${HOME_DIR}/$IMAGE_NAME"
+if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
+  fail "missing image file: $IMAGE_NAME"
 fi
 
 ##########################################
@@ -664,6 +671,7 @@ if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; the
   fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
 
+# TODO: handle gpt / msdos1 partition tables
 
 DRIVE_INFO=($(getBootInfo))
 
@@ -680,34 +688,37 @@ BOOT_DEV=${TMP[0]}/${TMP[1]}
 BOOT_PART_NO=${TMP[2]}
 
 TMP=($(splitPartName ${ROOT_FS}))
+ROOT_PART_NO=${TMP[2]}
 
 if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
   fail "unsupported boot configuration /boot is on a separate drive from / "
 fi
 
-if [ "$ROOT_FS" != "$BOOT_FS" ] ; then
-  RESTORE_BOOT="TRUE"
+while read line ;
+do
+  # inform "parted line: $line"
 
-  while read line ;
-  do
-    if [[ $line =~ ^\s*Partition\ Table:\s*gpt ]] ; then
-      local gptTable="TRUE"
-      continue
-    fi
-
-    if [[ $line =~ ^\s*${BOOT_PART_NO}.* ]] ; then
-      if [ "$gptTable" == "TRUE" ] ; then
-        BOOT_FS_TYPE=$(parted -s ${BOOT_DEV} print | grep -E "^\s*${BOOT_PART_NO}.*" | awk '{print $5}')
-      else
-        BOOT_FS_TYPE=$(parted -s ${BOOT_DEV} print | grep -E "^\s*${BOOT_PART_NO}.*" | awk '{print $6}')
-      fi
-    fi
-  done < <(parted -s ${BOOT_DEV} print)
-
-  if [[ $BOOT_FS_TYPE =~ ^fat[0-9]+$ ]]  ; then
-    BOOT_FS_TYPE="vfat"
+  if [[ $line =~ ^Partition\ Table:\ gpt ]] ; then
+    inform "gpt partition table found"
+    GPT_TABLE="TRUE"
+    continue
   fi
-fi
+
+  # determine BOOT partitions FS type
+  if [[ $line =~ ^${BOOT_PART_NO}.* ]] ; then
+    parts=($line)
+    if [ "$GPT_TABLE" == "TRUE" ] ; then
+      BOOT_FS_TYPE=${parts[4]}
+    else
+      BOOT_FS_TYPE=${parts[5]}
+    fi
+
+    if [[ $BOOT_FS_TYPE =~ ^fat[0-9]+$ ]]  ; then
+      BOOT_FS_TYPE="vfat"
+    fi
+    break
+  fi
+done < <(parted -s ${BOOT_DEV} print)
 
 inform "BOOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
@@ -728,8 +739,6 @@ fi
 ###########################
 
 
-
-
 cat <<EOI > ${MIGRATE_CONF}
 #!/bin/sh
 # DO NOT EDIT ! This file is supposed to be created by stage1 script
@@ -743,10 +752,11 @@ LOG_FILE=migrate.log
 STRATEGY=${STRATEGY}
 BOOT_DEV=${BOOT_DEV}
 
-
 RESTORE_BOOT=$RESTORE_BOOT
+REMOUNT_BOOT=$REMOUNT_BOOT
 ORIG_BOOT_PATH=${BOOT_PATH}
 ORIG_BOOT_PART=${BOOT_FS}
+ORIG_ROOT_PART=${ROOT_FS}
 ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}
 
 HOME_DIR=${HOME_DIR}
@@ -768,6 +778,7 @@ ERROR_EXIT=${ERROR_EXIT}
 
 GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
+GRUB_PART_GPT=${GPT_TABLE}
 
 EOI
 
