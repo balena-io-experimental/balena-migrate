@@ -56,8 +56,9 @@ mount_device() {
 	MNT_FS_NAME=$1
 	MNT_FS_TYPE=$2
 	MNT_DIR=$3
+	TOLERATE=$4
 
-	if [ -d ${MNT_DIR} ] ; then
+	if [ ! -d ${MNT_DIR} ] ; then
 	  mkdir -p ${MNT_DIR} || fail "failed to create mount dir ${MNT_DIR}"
 	fi
 
@@ -71,8 +72,15 @@ mount_device() {
 	done
 
 	if [ -b "${MNT_FS_NAME}" ] ; then
-		fail "device not present: ${MNT_FS_NAME}"
+		mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} || fail "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
+		log "mounted device ${MNT_FS_NAME} on ${MNT_DIR}"
+		return 0
+	else
+		if [ "$TOLERATE" = "TRUE" ] ; then
+			log "device not present: ${MNT_FS_NAME}"
+			return 1
+		else
+			fail "device not present: ${MNT_FS_NAME}"
+		fi
 	fi
-
-	mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} || fail "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
 }

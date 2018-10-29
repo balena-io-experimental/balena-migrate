@@ -387,9 +387,12 @@ function setupBootCfg_rpi {
 
 
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
-    inform "making backup of config.txt"
+
 
     CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+    cp ${CONFIG_TXT}  ${CONFIG_TXT_BACKUP}
+    inform "created backup of ${CONFIG_TXT} in ${CONFIG_TXT_BACKUP}"
+
     TMP_FILE=$(mktemp)
     INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
 
@@ -420,11 +423,11 @@ function setupBootCfg_rpi {
     if [ "$DEBUG" == "TRUE" ] ; then
       CMD_LINE=$(cat ${CMDLINE_TXT})
       if [[ ! $CMD_LINE =~ debug ]] ; then
-        inform "making backup of ${CMDLINE_TXT}"
         CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
+        inform "created backup of ${CMDLINE_TXT} in ${CMDLINE_TXT_BACKUP}"
         cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
       	CMD_LINE="${CMD_LINE} debug"
-      	echo $CMD_LINE > cmdline.txt
+      	echo $CMD_LINE > ${CMDLINE_TXT}
       fi
     fi
   else
@@ -683,7 +686,7 @@ if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
 fi
 
 if [ "$ROOT_FS" != "$BOOT_FS" ] ; then
-  REMOUNT_BOOT="TRUE"
+  RESTORE_BOOT="TRUE"
 
   while read line ;
   do
@@ -741,7 +744,7 @@ STRATEGY=${STRATEGY}
 BOOT_DEV=${BOOT_DEV}
 
 
-REMOUNT_BOOT=$REMOUNT_BOOT
+RESTORE_BOOT=$RESTORE_BOOT
 ORIG_BOOT_PATH=${BOOT_PATH}
 ORIG_BOOT_PART=${BOOT_FS}
 ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}

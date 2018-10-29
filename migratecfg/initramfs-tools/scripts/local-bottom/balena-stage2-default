@@ -58,10 +58,11 @@ fi
 # TODO: restore former boot configuration on raspian
 # mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR}
 
-if [ "$REMOUNT_BOOT" = "TRUE" ] ; then
-	if [ mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ] ; then
+if [ "$RESTORE_BOOT" = "TRUE" ] ; then
+	log "attempting to restore boot configuration"
+	if mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot "TRUE" ; then
 		if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
-			cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT} 
+			cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT}
 			log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
 		fi
 		if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
