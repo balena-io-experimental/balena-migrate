@@ -2,53 +2,58 @@
 
 **THIS IS WORK IN PROGRESS CODE** Project is not expected to reliably work yet.
 
-This project attempts to create a unified approach to migrate a range of different device types and a linux operaring 
-systems to resinOS.
+This project attempts to provide a generic solution to migrate a range of different device types running linux operating 
+systems to resinOS. 
 
 # Strategy
 
 
-The migration is performed in two stages. The first stage ensures that all requirements are met. 
+The migration is performed in two stages:
+
+**Stage 1**
+
+The first stage ensures that all requirements are met. 
 The stage 1 script will create a configuration file in ```/etc/balena-migration-stage2.conf``` that will determine 
 the actions and required files for initramfs creation as well as for stage 2. 
 
 The stage 1 script then creates an initramfs file that contains all scripts programms and configuration files needed for 
-phase 2.
-The stage 1 script will also perform migration task such as creating a backup and migrating network (WIFI) configurations
-that will be transferred to (resin-data) or installed in resinOS (mainly resin-boot/system-connections). The backup files 
-files as well as the actual resinOS image file are often too big to be contained in the root partition 
+phase 2. 
+
+The stage 1 script will also perform migration tasks such as creating a backup (that will be transferred to (resin-data) ) 
+and migrating network (WIFI) configurations to be installed in resinOS (resin-boot/system-connections). The backup files 
+files as well as the actual resinOS image file are likely too big to be contained in the root partition 
 where the initramfs resides and will be copied from the root file system to initramfs in stage 2.     
   
-The stage 1 script will then reconfigure the booloader of system to use the created initramfs and optionally reboot. On 
-systems using grub as bootloader the system is configured to have one shot at the modified boot configuration using 
+The stage 1 script will reconfigure the booloader of the system to use the created initramfs and optionally reboot the system. 
+On systems using grub as bootloader the system is configured to have one shot at the modified boot configuration using 
 grub-reboot. On RPI the /boot/config.txt and cmdline.txt files are modified.   
- 
 
-When booted from the newly created initramfs the contained scripts will attempt to store all required files inside the 
-tmpfs that the initram system is mounted on. The configuration created in stage 1 (/etc/balena-migrate-stage2.conf) contains 
-instructions on which files to transfer to the tmpfs.
+**Stage 2** 
+
+When booted from the newly created initramfs the contained stage 2 scripts will attempt to store all required files inside 
+the tmpfs that the initram system is mounted on. The configuration created in stage 1 (/etc/balena-migrate-stage2.conf) 
+contains instructions on which files to transfer to the tmpfs.
 
 Any failures up to this point can be tolerated by resetting the boot configuration to the prior state. In grub based 
-boot loaders this is achieved automatically for RPI devices the /boot/config.txt and /boot/cmdline.txt files have to be restored 
-to their prior state and the systems should be able to reboot into its former configuration.      
+boot loaders this is achieved automatically, for RPI devices the /boot/config.txt and /boot/cmdline.txt files have to be 
+restored to their prior state and the systems should be able to reboot into its former configuration.      
  
 When all files are secured the stage2 scripts will unmount the former root file system and flash the configured resinOS 
-image to the target device. After flashing, the script will trigger a reread of the devices partition information and attempt
-to mount resin-boot and resin-data to transfer files.
+image to the target device. After flashing, the script will trigger a reread of the devices partition information and 
+attempt to mount resin-boot and resin-data to transfer files. 
 
 A raspberry PI device the can be rebooted after this step as the resinOS image contains all information necessarry to 
 reboot the system. 
 
 On Intel based devices the stage 2 script will attempt to create a new boot loader configuration by copying a new 
-grub.cfg to the resin-boot partition and by calling grub-install on the boot device. Alternatively boot loader images 
-could be provided or contained in the resinOS image.      
-            
+grub.cfg to the resin-boot partition and then calling grub-install on the boot device. Alternatively boot loader images 
+can be provided and flashed or contained in the resinOS image.                  
 
 # Migration Stage 1 
 The script ```balena-stage1``` will check the prerequisites for migration before it attempts to modify the system. 
   
-The main script contains a list of supported operation systems and hardware platforms that it has been tested on. 
-It will reject any OS or hardware not contained in that list. The idea is to add further architectures and OS'ses and 
+The script contains a list of supported operation systems and hardware platforms that it has been tested on. 
+It will reject any OS or hardware not contained in that list. The idea is to add further architectures, OS'ses and 
 OS versions  only after they have been tested.   
 
 ## Prerequisites
@@ -68,12 +73,12 @@ Architectures taken from  ```uname -m```:
 
 | uname tag  | Architecture |  |
 | ------------- |:-------------|:--------|
-| armv7l | arm v7  | distinguish RPI's / other devices by analysing ```/proc/cpuinfo``` , expect image tagged appropriately with with 'raspberrypi1', 'raspberrypi2', 'raspberrypi3' |
+| armv7l | arm v7  | distinguish RPI's / other devices by analysing ```/proc/cpuinfo``` , expect image tagged appropriately with with 'raspberry-pi1', 'raspberry-pi2', 'raspberrypi3' |
 | x86_64 | intel 64 bit systems | expect image tagged with 'genericx86-64' | 
 | i686 | intel 32 bit systems | expect image tagged with 'intel-core2-32' |
 
 
-### required Programs
+### Required Programs
 The stage 1 script will also make sure, that all the software required 
 to perform the migration is available.  
 Required software depends on the architecture and OS and includes the following:
@@ -81,6 +86,8 @@ Required software depends on the architecture and OS and includes the following:
 | Program  | Architecture | Version |
 | ------------- |:-------------:|--------:|
 | **stage 1** |
+| findmnt      | all | unspecified |
+| parted      | all | unspecified |
 | lsblk      | all | unspecified |
 | readlink      | all      | unspecified | 
 | sed | all      | unspecified | 
@@ -96,8 +103,8 @@ Required software depends on the architecture and OS and includes the following:
 
 ## Configuration
 
-The main script ```balena-stage1``` uses a configuration file in ```/etc/balena-migrate.conf``` to read its configuration 
-from. 
+The script ```balena-stage1``` uses a configuration file in ```/etc/balena-migrate.conf``` to read its configuration 
+from.  
 
 Valid settings for this file are:
 

@@ -540,7 +540,7 @@ menuentry "resin-migration" {
 
   set root='$GRUB_BOOT_DEV'
   linux $KERNEL_CMD_LINE
-  initrd  ${BOOT_DIR}${INITRAMFS_NAME}
+  initrd  ${BOOT_DIR}/${INITRAMFS_NAME}
 }
 EOI
     chmod +x /etc/grub.d/42_resin
