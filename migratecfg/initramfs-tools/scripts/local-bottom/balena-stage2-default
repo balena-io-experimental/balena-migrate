@@ -181,7 +181,8 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	log "attempting grub install with type $GRUB_BOOT_TYPE"
 	if [ -f grub.cfg ] ; then
 		log "copying grub.cfg"
-		cp grub.cfg ${BOOT_MNT_DIR}/grub/ || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+		mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
+		cp grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
 	else
 		fail "no grub config found"
 	fi
