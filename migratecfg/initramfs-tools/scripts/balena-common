@@ -72,15 +72,15 @@ mount_device() {
 	done
 
 	if [ -b "${MNT_FS_NAME}" ] ; then
-		mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} || fail "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
-		log "mounted device ${MNT_FS_NAME} on ${MNT_DIR}"
-		return 0
-	else
-		if [ "$TOLERATE" = "TRUE" ] ; then
-			log "device not present: ${MNT_FS_NAME}"
+		if ! mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} >>"$LOG_TO" 2>&1  ; then
+		  log "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
 			return 1
 		else
-			fail "device not present: ${MNT_FS_NAME}"
-		fi
+			log "mounted device ${MNT_FS_NAME} on ${MNT_DIR}"
+			return 0
+	  fi
+	else
+		log "device not present: ${MNT_FS_NAME}"
+		return 1
 	fi
 }

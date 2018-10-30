@@ -52,8 +52,9 @@ log_to "${MIGRATE_TMP}/${LOG_FILE}"
 log "local-bottom balena-stage2-default started"
 
 if [ -n "$LOG_DRIVE" ] ; then
-	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} "TRUE" ; then
+	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} ; then
 		log_to 	"${LOG_MOUNT_DIR}/${LOG_FILE}"
+		UMOUNT_LOG=${LOG_DRIVE}
   else
 		LOG_DRIVE=
 	fi
@@ -65,7 +66,11 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	log "attempting to restore boot configuration"
 
 	if [ "$ORIG_BOOT_PART" != "$ORIG_ROOT_PART" ] ; then
-		mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot "TRUE" >>"$LOG_TO" 2>&1 || log "failed to mount ${ORIG_BOOT_PART}"
+		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ; then
+		 	log "failed to mount ${ORIG_BOOT_PART}"
+		else
+			UMOUNT_BOOT=${ORIG_BOOT_PART}
+	 fi
 	fi
 
 	if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
@@ -78,7 +83,11 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 		log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
 	fi
 
-	umount /orig-boot >>"$LOG_TO" 2>&1 || log "failed to unmount ${ORIG_BOOT_PART}"
+	if [ -n "$UMOUNT_BOOT" ] ; then
+		umount ${UMOUNT_BOOT} >>"$LOG_TO" 2>&1 || log "failed to unmount ${ORIG_BOOT_PART}"
+		UMOUNT_BOOT=
+	fi
+
 	log "restored original boot configuration"
 fi
 
@@ -151,6 +160,7 @@ partprobe $BOOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $B
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
+UMOUNT_RESIN_DATA=$DATA_PART_NAME
 
 if [ -z "$LOG_DRIVE" ] ; then
 	log_to "$DATA_MNT_DIR/$LOG_FILE"
@@ -167,6 +177,7 @@ fi
 
 log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
 mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"
+UMOUNT_RESIN_BOOT=$BOOT_PART_NAME
 log "..done"
 
 # copy networking config
@@ -204,6 +215,21 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	fi
 fi
 
-# saveLog || true
+if [ -n "$UMOUNT_RESIN_BOOT" ] ; then
+	umount $UMOUNT_RESIN_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_BOOT"
+fi
+
+if [ -n "$UMOUNT_RESIN_DATA" ] ; then
+	umount $UMOUNT_RESIN_DATA >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_DATA"
+fi
+
+if [ -n "$UMOUNT_BOOT" ] ; then
+	umount $UMOUNT_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_BOOT"
+fi
+
+if [ -n "$UMOUNT_LOG" ] ; then
+	umount $UMOUNT_LOG || true
+fi
+
 sync || true
 reboot -f
