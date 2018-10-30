@@ -526,12 +526,28 @@ linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-
 EOI
 
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
+    local blkId=$(whereis -b blkid | awk '{ print $2}')
+    if [ -n "$blkId" ] ; then
+      while read line ;
+      do
+        local discId=$line
+        break
+      done < <($blkId $ROOT_FS -o value)
+      if [ -n "$discId" ] ; then
+        local setRoot="search --no-floppy --fs-uuid --set=root $discId"
+      fi
+    fi
+
     if [ "$GPT_TABLE" == "TRUE" ] ; then
       local partMod="part_gpt"
       GRUB_BOOT_DEV="${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}"
     else
       local partMod="part_msdos"
       GRUB_BOOT_DEV="${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}"
+    fi
+
+    if [ -z "$setRoot" ] ; then
+      local setRoot="set root='$GRUB_BOOT_DEV'"
     fi
 
     cat <<EOI > /etc/grub.d/42_resin
@@ -545,7 +561,7 @@ menuentry "resin-migration" {
   insmod $partMod
   insmod ext2
 
-  set root='$GRUB_BOOT_DEV'
+  $setRoot
   linux $KERNEL_CMD_LINE
   initrd  ${BOOT_DIR}/${INITRAMFS_NAME}
 }
