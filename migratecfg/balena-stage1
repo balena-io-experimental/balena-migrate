@@ -32,7 +32,8 @@ GRUB_BOOT_TYPE="legacy"
 
 # DEBUG end initramfs scripts before unmounting root / flashing the image
 NO_FLASH= #"TRUE"
-ERROR_EXIT= # "reboot -f"
+# what to do when terminating due to NO_FLASH=TRUE
+TERM_EXIT="exit 0" # "reboot -f"
 
 # DEBUG: do not modify config.txt, cmdline.txt, grub config if set to "TRUE"
 NO_SETUP= #{ }"TRUE"

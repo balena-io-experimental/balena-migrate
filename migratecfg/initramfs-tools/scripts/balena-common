@@ -44,12 +44,12 @@ term() {
 
 fail() {
 	logMsg "ERROR: $1"
-  if [ "$FAIL_EXIT" = "EXIT" ] ; then
+  if [[ ! "$FAIL_EXIT" =~ ^\ *reboot ]] ; then
+		log $1
 		cat "$LOG_TO"
-		panic  $1
-  else
-		reboot -f
 	fi
+
+	$FAIL_EXIT
 }
 
 mount_device() {

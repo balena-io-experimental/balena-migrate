@@ -44,7 +44,7 @@ fi
 
 # TODO: make sure required programs are actually present
 
-FAIL_EXIT="EXIT"
+FAIL_EXIT="panic"
 
 LOG_TO=
 log_to "${MIGRATE_TMP}/${LOG_FILE}"
@@ -134,10 +134,10 @@ log "..done"
 
 if [ "$NO_FLASH" = "TRUE" ] ; then
 	term "terminating prematurely"
-	if [ -n "$ERROR_EXIT" ] ; then
-		$ERROR_EXIT
+	if [ -n "$TERM_EXIT" ] ; then
+		$TERM_EXIT
 	else
-		exit 0
+		$ERROR_EXIT
 	fi
 fi
 
