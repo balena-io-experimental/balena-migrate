@@ -1,15 +1,15 @@
-#BalenaOS Migration
+# BalenaOS Migration
 
 **THIS IS WORK IN PROGRESS CODE** Project is not expected to work yet.
 
 This project attempts to provide a generic solution to migrate a range
 of different device types running linux operating systems to balenaOS.
 
-##Strategy
+## Strategy
 
 The migration is performed in two stages:
 
-###Stage 1
+### Stage 1
 
 The first stage ensures that all requirements are met. It uses a config
 file in */etc/balena-migrate.conf* to override some of the default
@@ -45,7 +45,7 @@ grub as bootloader the system is configured to have one shot at the
 modified boot configuration using grub-reboot. On RPI the
 */boot/config.txt* and */boot/cmdline.txt* files are modified.
 
-###Stage 2
+### Stage 2
 
 When booted from the newly created initramfs the contained stage 2
 scripts will attempt to store all required files inside the tmpfs that
@@ -78,7 +78,7 @@ Alternatively boot loader images can be provided and flashed or
 contained in the balenaOS image. This strategy is not yet supported
 though.
 
-##Supported Platforms
+## Supported Platforms
 
 So far the scripts are being tested and are working on the following
 platforms:
@@ -90,7 +90,7 @@ platforms:
 -   The STEM device - 32 intel running Ubuntu 14.04 in grub legacy mode
 
 
-##TODOS
+## TODOS
 
 Work is in progress on following platforms:
 
@@ -104,7 +104,7 @@ Work is in progress on following platforms:
     to store all files and warn if it exceeds the available memory.
 -   Migrate other than wifi settings eg. GSM modem settings.
 
-##Migration Stage 1 in Detail
+## Migration Stage 1 in Detail
 
 The script *balena-stage1* will check the prerequisites for migration
 before it attempts to modify the system.
@@ -123,9 +123,9 @@ not contained in that list.
 The idea is to add further architectures, OS'ses and OS versions only
 after they have been tested.
 
-###Prerequisites
+### Prerequisites
 
-####Environment
+#### Environment
 
 The stage 1 scripts expects the boot configuration to be available under
 */boot*. It expects the */boot* directory to be on the same hard drive
@@ -154,7 +154,7 @@ The following are the relevant files in *HOME\_DIR/initramfs-tools*:
     time script when using RESIZE strategy. It is not currently being
     used.
 
-####Currently accepted Platforms
+#### Currently accepted Platforms
 
 OS version extracted from */etc/os-release*:
 
@@ -173,7 +173,7 @@ Architectures taken from *uname -m*:
 
 
 
-####Required Programs
+#### Required Programs
 
 The stage 1 script will also make sure, that all the software required
 to perform the migration is available. Required software depends on the
@@ -203,14 +203,14 @@ architecture and OS and includes the following:
 
 
 
-###Configuration
+### Configuration
 
 The script *balena-stage1* uses a configuration file in
 */etc/balena-migrate.conf* to read its configuration from.
 
 Valid settings for this file are:
 
-####STRATEGY
+#### STRATEGY
 
 **Default:** *STRATEGY="DEFAULT"*
 
@@ -222,7 +222,7 @@ File system- and partition before it is mounted and use the freed space
 to create a new partition and save data there. The strategy will likely
 be abandoned.
 
-####HOME\_DIR
+#### HOME\_DIR
 
 **Default:** *HOME\_DIR=./*
 
@@ -230,7 +230,7 @@ The working directory of the migration script and the location where it
 expects to find initramfs setup and image files. The default is to use
 the current working directory.
 
-####NO\_FLASH
+#### NO\_FLASH
 
 **Default:** *NO\_FLASH=TRUE*
 
@@ -240,7 +240,7 @@ system would be unmounted and the balenaOS image would be flashed to the
 device. How to terminate is determined by the value of the variable
 *TERM\_EXIT*.
 
-####TERM\_EXIT
+#### TERM\_EXIT
 
 **Default:** *TERM\_EXIT="exit 0"*
 
@@ -249,7 +249,7 @@ is *“exit 0”* in which case the boot process is continued normally.
 Alternative is *“reboot -f”* to force a reboot. If the boot
 configuration has not been reset the later can leed to a boot loop.
 
-####NO\_SETUP
+#### NO\_SETUP
 
 Default: *NO\_SETUP=*
 
@@ -257,7 +257,7 @@ When this variable is set to *TRUE* the script does not attempt to
 modify the boot configuration. It will check the prerequisites create an
 initramfs but not create any disruptive configuration changes.
 
-####DO\_REBOOT
+#### DO\_REBOOT
 
 **Default:** *DO\_REBOOT=*
 
@@ -266,7 +266,7 @@ reboot the computer after finishing successfully. It will display a
 warning and reboot after 5 seconds. By default this option is disabled
 and the device has to be rebooted manually when stage 1 has terminated.
 
-####IMAGE\_NAME
+#### IMAGE\_NAME
 
 This option has to be specified. It specifies the balenaOS image that
 will be flashed to the devices boot device. The script will fail if the
@@ -292,7 +292,7 @@ follows:
 
 \
 
-####DEBUG
+#### DEBUG
 
 **Default:** *DEBUG=*
 
@@ -315,7 +315,7 @@ separate hard disk or a USB stick.
 
 *LOG\_FS\_TYPE=ext4*
 
-####BACKUP\_FILE, BACKUP\_SCRIPT, BACKUP\_DIRECTORIES
+#### BACKUP\_FILE, BACKUP\_SCRIPT, BACKUP\_DIRECTORIES
 
 **Default:**
 
@@ -343,7 +343,7 @@ The file specified in *BACKUP\_FILE* will be copied to the *resin-data*
 partition in stage 2.
 
 
-####GRUB\_BOOT\_DEV
+#### GRUB\_BOOT\_DEV
 
 **Default:** *GRUB\_BOOT\_DEV=hd0*
 
