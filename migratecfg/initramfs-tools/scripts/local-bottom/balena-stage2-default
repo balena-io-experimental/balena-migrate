@@ -133,7 +133,7 @@ fi
 log "..done"
 
 if [ "$NO_FLASH" = "TRUE" ] ; then
-	term "terminating prematurely"
+	term "terminating prematurely "
 	if [ -n "$TERM_EXIT" ] ; then
 		$TERM_EXIT
 	else
@@ -144,7 +144,7 @@ fi
 log "unmounting root"
 umount ${rootmnt} || fail  "failed umount ${rootmnt}"
 # TODO: remount as third exit ?
-FAIL_EXIT="REBOOT"
+FAIL_EXIT="reboot -f"
 log "..done"
 
 
@@ -190,15 +190,7 @@ log "..done"
 
 if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	log "attempting grub install with type $GRUB_BOOT_TYPE"
-	if [ -f grub.cfg ] ; then
-		log "copying grub.cfg"
-		mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
-		cp grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
-	else
-		fail "no grub config found"
-	fi
 
-	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
 	# if [ "${FLASH_BOOTLOADER}" == "TRUE" ] ; then
 	# 		inform "flashing boot.img os to ${ORIG_BOOT_DEV}"
 	# 		dd if=${BOOT_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1
@@ -206,12 +198,43 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	# 		dd if=${CORE_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1 seek=512
 	# fi
 
-#--modules="biosdisk part_msdos ext2 configfile normal multiboot" \
+	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
+		# --grub-mkdevicemap=device.map \
+
+		if [ -f grub.cfg ] ; then
+			log "copying grub.cfg"
+			mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
+			cp grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
+		else
+			fail "no grub config found"
+		fi
+
+		if [ -d "${BOOT_MNT_DIR}/EFI" ]  ; then
+			log "deleting ${BOOT_MNT_DIR}/EFI"
+			rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
+		fi
 
 		grub-install 	--no-floppy \
-									--grub-mkdevicemap=device.map \
 									--boot-directory=${BOOT_MNT_DIR} \
 									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+	else
+		# 									 \
+		log "Add UEFI boot entry for starting resinOS from internal media."
+
+		if [ -f grub.cfg ] ; then
+			log "copying grub.cfg"
+			cp grub.cfg  ${BOOT_MNT_DIR}/EFI/BOOT/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
+		else
+			fail "no grub config found"
+		fi
+
+		efibootmgr -c -d ${BOOT_DEV} -p 1 -L "resinOS" -l "\EFI\BOOT\bootx64.efi" || fail "failed to install uefi boot manager with: efibootmgr -c -d ${BOOT_DEV} -p 1 -L resinOS -l \EFI\BOOT\bootx64.efi"
+#
+#		log "attempting grub-install 	--no-floppy --efi-directory=${BOOT_MNT_DIR} --boot-directory=${BOOT_MNT_DIR}"
+#		grub-install 	--no-floppy \
+#									--efi-directory=${BOOT_MNT_DIR} \
+#									--boot-directory=${BOOT_MNT_DIR} \
+#									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
 	fi
 fi
 

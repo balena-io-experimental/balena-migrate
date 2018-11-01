@@ -314,18 +314,18 @@ function getBootInfo {
     fail "boot directory could not be found"
   fi
 
-  local rootDev=$(findmnt --noheadings --canonicalize --output SOURCE /)
-  if [ -z "$rootDev" ] ; then
+  ROOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /)
+  if [ -z "$ROOT_FS" ] ; then
     fail "root mount point could not be found"
   fi
 
-  local bootDev=$(findmnt --noheadings --canonicalize --output SOURCE /boot)
+  BOOT_FS=$(findmnt --noheadings --canonicalize --output SOURCE /boot)
 
-  if [ -n "$bootDev" ] ; then
-    echo "$rootDev $bootDev /"
-  else
-    echo "$rootDev $rootDev /boot"
+  if [ -z "$BOOT_FS" ] ; then
+    BOOT_FS=$ROOT_FS
   fi
+
+  EFI_FS=$(findmnt --noheadings --canonicalize --output SOURCE /boot/efi)
 }
 
 
@@ -444,24 +444,27 @@ function setupBootCfg_other {
   # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
   # TODO: assuming we are on debian like OS
 
-  # BOOT_IMAGE=/boot/vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro
-
-  # TODO: this is ublikely to work but I will try it
   INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
 
-  # make sure BUSYBOX is used
+  # make sure BUSYBOX is used & **most** modules are present
   inform "checking initramfs-tools config"
   sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
   sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+
+  # check if this is an uefi booted system
   local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
   if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
     GRUB_BOOT_TYPE="UEFI"
-    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr"
+    # determine EFI/boot partitions
+
+
+
+    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
   local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
   if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
-    fail "no kernel command line"
+    fail "no kernel command line found"
   fi
 
   case "$KERNEL_CMD_LINE_RAW" in
@@ -470,7 +473,18 @@ function setupBootCfg_other {
         local KERNEL_CMD_LINE=$(expr match "$KERNEL_CMD_LINE_RAW" '^BOOT_IMAGE=\(.*\)')
         # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
         local TMP=($KERNEL_CMD_LINE)
-        KBOOT_DIR=$(dirname ${TMP[0]})
+
+        #KBOOT_DIR=$(dirname ${TMP[0]})
+        #if [ "$KBOOT_DIR" != "/boot" ] ; then
+        #   # boot config does not appear to be on root partition
+        #  if [ "$KBOOT_DIR" == "." ] ; then
+        #    $KBOOT_DIR=
+        #  else
+        #     $KBOOT_DIR="$KBOOT_DIR/"
+        #  fi
+        #else
+        #  KBOOT_DIR="${KBOOT_DIR}/"
+        #fi
         ;;
         *)
           fail "not a known command line format $KERNEL_CMD_LINE_RAW"
@@ -481,7 +495,6 @@ function setupBootCfg_other {
     KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
   fi
 
-
   if [ "$DEBUG" == "TRUE" ] ; then
     if [[ ! "$KERNEL_CMD_LINE" =~ debug ]] ; then
       KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
@@ -490,17 +503,6 @@ function setupBootCfg_other {
 
   inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
   # inform "BOOT_DIR=$BOOT_DIR"
-
-  if [ "$KBOOT_DIR" != "/boot" ] ; then
-    # boot config does not appear to be on root partition
-    if [ "$KBOOT_DIR" == "." ] ; then
-      $KBOOT_DIR=
-    else
-      $KBOOT_DIR="$KBOOT_DIR/"
-    fi
-  else
-    KBOOT_DIR="${KBOOT_DIR}/"
-  fi
 
   if [ -z "$(whereis -b update-grub)" ] || [ -z "$(whereis -b grub-reboot)" ] ; then
       fail "failed to ensure required programs update-grub, grub-reboot"
@@ -513,8 +515,6 @@ function setupBootCfg_other {
 # TODO: make grub HD num from hdDev, just assuming 0 for now
 
   GRUB_INSTALL="TRUE"
-  local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
-  echo "(${grubDev}) $BOOT_DEV" > ${HOME_DIR}/device.map
 
   cat << EOI > ${HOME_DIR}/grub.cfg
 serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
@@ -525,6 +525,9 @@ menuentry 'boot'{
 linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
 }
 EOI
+
+  local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
+  echo "(${grubDev}) $BOOT_DEV" > ${HOME_DIR}/device.map
 
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
     local blkId=$(whereis -b blkid | awk '{ print $2}')
@@ -604,6 +607,7 @@ RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0
 RASPI_2_REVS="a01040 a01041 a21041 a22042"
 RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 
+ERROR_EXIT="reboot -f"
 GRUB_MIN_VER=2
 BOOT_DIR=/boot
 # script namme for logging
@@ -690,13 +694,9 @@ fi
 
 # TODO: handle gpt / msdos1 partition tables
 
-DRIVE_INFO=($(getBootInfo))
+getBootInfo
 
-ROOT_FS=${DRIVE_INFO[0]}
-BOOT_FS=${DRIVE_INFO[1]}
-BOOT_PATH=${DRIVE_INFO[2]}
-
-inform "root partition: ${ROOT_FS} boot partition: ${BOOT_FS} boot path on boot partition: ${BOOT_PATH}"
+inform "root partition: ${ROOT_FS} boot partition: ${BOOT_FS} EFI partition: ${EFI_FS}"
 
 TMP=($(splitPartName ${BOOT_FS}))
 
@@ -737,7 +737,7 @@ do
   fi
 done < <(parted -s ${BOOT_DEV} print)
 
-inform "BOOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
+inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
 ###########################
 ## create boot configuration
@@ -771,7 +771,6 @@ BOOT_DEV=${BOOT_DEV}
 
 RESTORE_BOOT=$RESTORE_BOOT
 REMOUNT_BOOT=$REMOUNT_BOOT
-ORIG_BOOT_PATH=${BOOT_PATH}
 ORIG_BOOT_PART=${BOOT_FS}
 ORIG_ROOT_PART=${ROOT_FS}
 ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}
@@ -783,15 +782,16 @@ BACKUP_FILE=${BACKUP_FILE}
 MIGRATE_TMP=/balena-migrate
 
 BOOT_MNT_DIR=/resin-boot
-BOOT_PART_NAME=${BOOT_DEV}${BOOT_PAD}1         # resinOS-boot part name
-BOOT_PART_TYPE=vfat                        # resinOS-boot fs type
+BOOT_PART_NAME=${BOOT_DEV}${BOOT_PAD}1
+BOOT_PART_TYPE=vfat
 
 DATA_MNT_DIR=/resin-data
-DATA_PART_NAME=${BOOT_DEV}${BOOT_PAD}6         # resinOS-data part name
-DATA_PART_TYPE=ext4                       # resinOS-data fs type
+DATA_PART_NAME=${BOOT_DEV}${BOOT_PAD}6
+DATA_PART_TYPE=ext4
 
 NO_FLASH=${NO_FLASH}
-ERROR_EXIT=${ERROR_EXIT}
+ERROR_EXIT="${ERROR_EXIT}"
+TERM_EXIT="${TERM_EXIT}"
 
 GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}

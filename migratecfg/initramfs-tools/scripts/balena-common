@@ -30,15 +30,19 @@ log() {
 
 term() {
 	logMsg "TERM: $1"
-	if [ "$FAIL_EXIT" = "EXIT" ] ; then
-		cat "$LOG_TO"
-		if [ -n "$ERROR_EXIT" ] ; then
-			$ERROR_EXIT
+	cat "$LOG_TO"
+	if [ -n "$UMOUNT_LOG" ] ; then
+		umount $UMOUNT_LOG || true
+	fi
+
+  if [[ ! $FAIL_EXIT =~ ^\ *reboot ]] ; then
+		if [ -n "$TERM_EXIT" ] ; then
+			$TERM_EXIT
 		else
-			panic  $1
+			$FAIL_EXIT $1
 		fi
   else
-		reboot -f
+		$FAIL_EXIT
 	fi
 }
 
