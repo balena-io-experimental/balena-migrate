@@ -54,7 +54,7 @@ log "local-bottom balena-stage2-default started"
 if [ -n "$LOG_DRIVE" ] ; then
 	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} ; then
 		log_to 	"${LOG_MOUNT_DIR}/${LOG_FILE}"
-		UMOUNT_LOG=${LOG_DRIVE}
+		UMOUNT_LOG="${LOG_MOUNT_DIR}"
   else
 		LOG_DRIVE=
 	fi
@@ -69,7 +69,7 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ; then
 		 	log "failed to mount ${ORIG_BOOT_PART}"
 		else
-			UMOUNT_BOOT=${ORIG_BOOT_PART}
+			UMOUNT_BOOT=/orig-boot
 	 fi
 	fi
 
@@ -84,7 +84,7 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	fi
 
 	if [ -n "$UMOUNT_BOOT" ] ; then
-		umount ${UMOUNT_BOOT} >>"$LOG_TO" 2>&1 || log "failed to unmount ${ORIG_BOOT_PART}"
+		umount ${UMOUNT_BOOT} >>"$LOG_TO" 2>&1 || fail "failed to unmount ${UMOUNT_BOOT}"
 		UMOUNT_BOOT=
 	fi
 
@@ -101,6 +101,12 @@ log "...done"
 log "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}/"
 cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 log "..done"
+
+if [ -n "${BALENA_CONFIG}" ] && [ -f "${rootmnt}${HOME_DIR}/${BALENA_CONFIG}" ] ; then
+	log "copying balena config from ${rootmnt}${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_TMP}/"
+	cp "${rootmnt}${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_TMP}/"
+	log "..done"
+fi
 
 if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "copying backup from ${rootmnt}${HOME_DIR}/${BACKUP_FILE} to ${MIGRATE_TMP}/"
@@ -160,7 +166,7 @@ partprobe $BOOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $B
 
 log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
 mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
-UMOUNT_RESIN_DATA=$DATA_PART_NAME
+UMOUNT_RESIN_DATA="$DATA_MNT_DIR"
 
 if [ -z "$LOG_DRIVE" ] ; then
 	log_to "$DATA_MNT_DIR/$LOG_FILE"
@@ -177,7 +183,7 @@ fi
 
 log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
 mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"
-UMOUNT_RESIN_BOOT=$BOOT_PART_NAME
+UMOUNT_RESIN_BOOT="$BOOT_MNT_DIR"
 log "..done"
 
 # copy networking config
@@ -187,6 +193,12 @@ for file in $NETWORK_CONFIGS; do
 	cp "${MIGRATE_TMP}/$file" "${BOOT_MNT_DIR}/system-connections/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
 done
 log "..done"
+
+if [ -n "$BALENA_CONFIG" ] && [ -f "${MIGRATE_TMP}/${BALENA_CONFIG}" ] ; then
+	log "copying balena config to resin-boot "
+	cp "${MIGRATE_TMP}/${BALENA_CONFIG}" "${BOOT_MNT_DIR}/config.json" >>"$LOG_TO" 2>&1  || log "no balena config copied"
+	log "..done"
+fi
 
 if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	log "attempting grub install with type $GRUB_BOOT_TYPE"
@@ -244,10 +256,6 @@ fi
 
 if [ -n "$UMOUNT_RESIN_DATA" ] ; then
 	umount $UMOUNT_RESIN_DATA >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_DATA"
-fi
-
-if [ -n "$UMOUNT_BOOT" ] ; then
-	umount $UMOUNT_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_BOOT"
 fi
 
 if [ -n "$UMOUNT_LOG" ] ; then

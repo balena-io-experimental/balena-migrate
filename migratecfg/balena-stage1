@@ -53,6 +53,9 @@ LOG_FS_TYPE=ext4
 HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
 MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
+BALENA_WIFI= # if set to TRUE attempt to extract a wifi config from config.json given in BALENA_CONFIG
+
+BALENA_CONFIG= # set to the path of a config.json file to copy to the image
 
 
 ##########################################
@@ -751,6 +754,7 @@ else
   setupBootCfg_other
 fi
 
+
 ###########################
 ## write /etc/migrate.conf
 ###########################
@@ -796,6 +800,8 @@ TERM_EXIT="${TERM_EXIT}"
 GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
+
+BALENA_CONFIG="${BALENA_CONFIG}"
 
 EOI
 
@@ -847,8 +853,29 @@ fi
 ## migrate network config
 ###########################
 
+NETWORK_CONFIGS=
+
+if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
+  inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"
+  while read line ;
+  do
+    if [[ $line =~ ,*[\ ]*\"wifiSsid\"[\ ]*\: ]] ; then
+      wifiSsid=$(expr match "$line" '.*"wifiSsid"[ ]*:[ ]*"\([^"]\+\)".*')
+    fi
+
+    if [[ $line =~ ,*[\ ]*\"wifiKey\"[\ ]*\: ]] ; then
+      wifiKey=$(expr match "$line" '.*"wifiKey"[ ]*:[ ]*"\([^"]\+\)".*')
+    fi
+  done < "${HOME_DIR}/${BALENA_CONFIG}"
+
+  if [ -n "$wifiSsid" ] ; then
+    inform "creating config for wifi $wifiSsid"
+    create_nmgr_file 1 $wifiSsid $wifiKey
+    HAS_WIFI_CFG="TRUE"
+  fi
+fi
+
 if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
-  NETWORK_CONFIGS=
   if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
     wificfg_from_wpa
   else
