@@ -395,7 +395,7 @@ The file is expected to contain one wifi name (ssid) per line. Only
 configurations referenced in the file will result in a *resin-wifiXX*
 file in */resin-boot/system-connections*.
 
-[]{#anchor-29}Migration Stage 2 in Detail
+## Migration Stage 2 in Detail
 
 Stage 2 is made up of a set of scripts that are run when the initramfs
 is started. The initramfs contains an init script that will orchestrate
