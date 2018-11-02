@@ -230,6 +230,23 @@ The working directory of the migration script and the location where it
 expects to find initramfs setup and image files. The default is to use
 the current working directory.
 
+#### BALENA\_CONFIG
+
+**Default:** *BALENA\_CONFIG=
+
+If specified , the name of a file in *HOME\_DIR* that will be interpreted as 
+config.json file and copied to the resin-boot partition.  
+
+#### BALENA\_WIFI
+
+**Default:** *BALENA\_WIFI="TRUE"
+
+If set to *TRUE* the and if *BALENA\_CONFIG* is set and points to a file in *HOME\_DIR*
+the file will be scanned for the ssid & key of a wifi network. If an SSID is found
+a network manager file will be created for this network and copied to 
+*resin-boot/system-connections* in stage 2. 
+
+
 #### NO\_FLASH
 
 **Default:** *NO\_FLASH=TRUE*
