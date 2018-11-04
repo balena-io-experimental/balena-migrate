@@ -39,8 +39,6 @@ TERM_EXIT="exit 0" # "reboot -f"
 NO_SETUP= #{ }"TRUE"
 # create initramfs in contrast to using an initramfs supplied
 MK_INITRAMFS="TRUE"
-# name of initramfs to be created/used expected in $HOMEDIR
-INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 # DEBUG verbose build process
 MK_INITRAM_VERBOSE= # "TRUE"
 # DEBUG keep initramfs layout
@@ -337,36 +335,50 @@ function getBootInfo {
 ##########################################
 
 function checkArmDevs {
-  RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
-  inform "RPI_HW_REV=$RPI_HW_REV"
-  IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
-  if [ "$IS_PI1" == "TRUE" ] ; then
-    IS_PI="TRUE"
-    inform "device is a Raspberry PI 1"
-    if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
-      fail "expected raspberrypi1 image, got $IMAGE_NAME"
-    fi
-  else
-      IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
-      if [ "$IS_PI2" == "TRUE" ] ; then
+  # local sysName=$(expr match "$(uname -a)" '^Linux \([ ]\+\)')
+  local sysName=$(expr match "$(uname -a)" '^Linux \([^ ]\+\)')
+  inform "platform is <${sysName}>"
+
+  case "$sysName" in
+    raspberrypi)
+    RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
+      inform "RPI_HW_REV=$RPI_HW_REV"
+      IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
+      if [ "$IS_PI1" == "TRUE" ] ; then
         IS_PI="TRUE"
-        inform "device is a Raspberry PI 2"
-        if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
-          fail "expected raspberrypi2 image, got $IMAGE_NAME"
+        inform "device is a Raspberry PI 1"
+        if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
+          fail "expected raspberrypi1 image, got $IMAGE_NAME"
         fi
       else
-        IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
-        if [ "$IS_PI3" == "TRUE" ] ; then
-          IS_PI="TRUE"
-          inform "device is a Raspberry PI 3"
-          if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
-            fail "expected raspberrypi3 image, got $IMAGE_NAME"
+          IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
+          if [ "$IS_PI2" == "TRUE" ] ; then
+            IS_PI="TRUE"
+            inform "device is a Raspberry PI 2"
+            if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
+              fail "expected raspberrypi2 image, got $IMAGE_NAME"
+            fi
+          else
+            IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
+            if [ "$IS_PI3" == "TRUE" ] ; then
+              IS_PI="TRUE"
+              inform "device is a Raspberry PI 3"
+              if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
+                fail "expected raspberrypi3 image, got $IMAGE_NAME"
+              fi
+            else
+              fail "no known PI revision found: $RPI_HW_REV"
+            fi
           fi
-        else
-          fail "no known PI revision found: $RPI_HW_REV"
-        fi
       fi
-  fi
+    ;;
+    # beaglebone)
+    #
+    # ;;
+    *)
+      fail "unsupported arm hardware platform: $sysName, 'uname -a' reports: $(uname -a)"
+    ;;
+  esac
 }
 
 
@@ -598,6 +610,9 @@ if [ -f /etc/balena-migrate.conf ] ; then
   # override some of the settings above
   . /etc/balena-migrate.conf
 fi
+
+# name of initramfs to be created/used expected in $HOMEDIR
+INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
