@@ -10,6 +10,7 @@
 ####################################################################
 # TODO: parted not installed on default beaglebone debian install,
 #       install or replace
+# TODO: remove non DEFAULT strategies ?
 ####################################################################
 
 STRATEGY="DEFAULT"
@@ -473,12 +474,31 @@ function setupBootCfg_rpi {
   fi
 }
 
+function undoBootCfg_rpi {
+  if [ "$RESTORE_BOOT" == "TRUE" ] ; then
+    if [ -n "$CONFIG_TXT_BACKUP" ] && [ -f "$CONFIG_TXT_BACKUP" ] ; then
+      cp $CONFIG_TXT_BACKUP $CONFIG_TXT
+    fi
+
+    if [ -n "$CMDLINE_TXT_BACKUP" ] && [ -f "$CMDLINE_TXT_BACKUP" ] ; then
+      cp $CMDLINE_TXT_BACKUP $CMDLINE_TXT
+    fi
+    RESTORE_BOOT=
+  fi
+}
+
+
 ####################################################
 ## setup beaglebone device to boot with initramfs
 ####################################################
 
 function setupBootCfg_bb {
   fail "setupBootCfg_bb not implemented"
+  # modify bbb_uEnv.txt ?
+}
+
+function undoBootCfg_bb {
+  fail "undoBootCfg_bb not implemented"
   # modify bbb_uEnv.txt ?
 }
 
@@ -502,10 +522,6 @@ function setupBootCfg_other {
   local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
   if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
     GRUB_BOOT_TYPE="UEFI"
-    # determine EFI/boot partitions
-
-
-
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
@@ -619,13 +635,22 @@ menuentry "resin-migration" {
 EOI
     chmod +x /etc/grub.d/42_resin
 
-    inform "updating grub config using ${GRUBUPDT}"
+    inform "updating grub config using update-grub"
     update-grub || fail "failed to update grub config"
     inform "calling grub-reboot resin-migration"
     grub-reboot resin-migration
 else
     inform "boot setup is disabled, NO_SETUP=$NO_SETUP"
 fi
+}
+
+function undoBootCfg_other {
+  if [ "$NO_SETUP" !=  "TRUE" ] && [ -f "/etc/grub.d/42_resin" ] ; then
+    inform "undoing grub boot configuration"
+    rm /etc/grub.d/42_resin || fail "failed to delete /etc/grub.d/42_resin"
+    inform "updating grub config using update-grub"
+    update-grub || fail "failed to update grub config"
+  fi
 }
 
 ####################################################################################
@@ -669,8 +694,8 @@ inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
 
-INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm stat touch"
-REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt parted" #  gzip
+INITRAM_REQUIRED_PGMS="dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
+REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -743,8 +768,6 @@ fi
 if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
   fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
-
-# TODO: handle gpt / msdos1 partition tables
 
 getBootInfo
 
@@ -963,7 +986,24 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     fi
 
     inform "creating initramfs: mkinitramfs $OPTS"
-    mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
+    if ! mkinitramfs $OPTS ; then
+      inform "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME} , attempting to undo boot setup"
+      case "$devType" in
+          armv7_rpi*)
+            inform "undoing boot setup for RPI: $devType"
+            undoBootCfg_rpi
+          ;;
+          armv7_bb*)
+            inform "undoing boot setup for Beaglebone: $devType"
+            undoBootCfg_bb
+          ;;
+          *)
+            inform "undoing boot setup for other: $devType"
+            undoBootCfg_other
+          ;;
+      esac
+      fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
+    fi
 
     inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
     cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"

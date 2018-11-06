@@ -17,7 +17,7 @@ checkMem() {
 	freeMem=`expr $freeMem \* 1024` || true
 	leftMem=$freeMem
 
-	log "free memory: $freeMem"
+	log "free memory:  $freeMem"
 
 	if [ -f "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" ] ; then
 	  tmp=`stat -c %s "${rootmnt}${HOME_DIR}/${IMAGE_FILE}"`
@@ -79,11 +79,19 @@ log() {
 	logMsg "LOG: $1"
 }
 
+#################################################################################
+# log a debug message
+#################################################################################
+
 debug() {
 	if [ -n "$DEBUG_STAGE2" ] ; then
 		logMsg "DEBUG: $1"
   fi
 }
+
+#################################################################################
+# log & terminate 'normally' - prematurely
+#################################################################################
 
 term() {
 	logMsg "TERM: $1"
@@ -107,6 +115,10 @@ term() {
 	fi
 }
 
+#################################################################################
+# log & fail
+#################################################################################
+
 fail() {
 	logMsg "ERROR: $1"
 	logMsg "ERROR: terminating with $FAIL_EXIT"
@@ -123,11 +135,15 @@ fail() {
 	$FAIL_EXIT
 }
 
+
+#################################################################################
+# mount a device, waiting for it to show up
+#################################################################################
+
 mount_device() {
 	MNT_FS_NAME=$1
 	MNT_FS_TYPE=$2
 	MNT_DIR=$3
-	TOLERATE=$4
 
 	if [ ! -d ${MNT_DIR} ] ; then
 	  mkdir -p ${MNT_DIR} || fail "failed to create mount dir ${MNT_DIR}"

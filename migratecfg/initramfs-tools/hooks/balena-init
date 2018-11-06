@@ -21,15 +21,25 @@ copyPgm() {
 
     local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
 
-    # echo "$pgm: -> $pgmPath"
     if [ -z "${pgmPath}" ] ; then
         echo "could not find ${pgmPath}"
     fi
 
-    echo "[balena-init] copy ${pgmPath}"
+    log "copy ${pgmPath}"
 
     copy_exec ${pgmPath}
 }
+
+log() {
+	echo "[$(date +%T) balena-init] $1"
+}
+
+fail() {
+	echo "[$(date +%T) balena-init] $1"
+	echo "[$(date +%T) balena-init] terminating"
+	exit 1
+}
+
 
 ##############################
 # main                       #
@@ -51,24 +61,50 @@ do
     copyPgm ${pgmName}
 done
 
-echo "[balena-init] dest dir ${DESTDIR}"
+log "dest dir ${DESTDIR}"
 
+log "copy /etc/balena-migrate-stage2.conf"
 cp /etc/balena-migrate-stage2.conf "${DESTDIR}/etc/"
+
+MIGRATE_DIR="${DESTDIR}${MIGRATE_TMP}"
+log "creating migrate dir ${MIGRATE_DIR}"
+mkdir -p "$MIGRATE_DIR" || fail "failed to create directory ${MIGRATE_DIR}"
+log "...done"
+
+if [ -n "${BALENA_CONFIG}" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] ; then
+	log "copying balena config from ${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_DIR}/"
+	cp "${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_DIR}/"
+	log "..done"
+fi
+
+log "copying network config files to initramfs"
+for file in $NETWORK_CONFIGS; do
+	if [ -f "${HOME_DIR}/$file" ] ; then
+		log "copying ${HOME_DIR}/$file"
+		cp "${HOME_DIR}/$file" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/$fileto ${MIGRATE_DIR}/"
+	else
+		fail "could not find  ${HOME_DIR}/$file"
+	fi
+done
 
 if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	if [ -d /usr/lib/grub ] ; then
+		log "copy grub env from /usr/lib/grub"
 		mkdir -p ${DESTDIR}/usr/lib/grub
-		cp -r /usr/lib/grub/* ${DESTDIR}/usr/lib/grub
-  fi
+		cp -r /usr/lib/grub/* ${DESTDIR}/usr/lib/grub || fail "failed to copy /usr/lib/grub"
+	else
+		log "/usr/lib/grub does not exist"
+		exit 1
+	fi
 
 	if [ -f ${HOME_DIR}/grub.cfg ] ; then
-		echo "[balena-init] copying ${HOME_DIR}/grub.cfg"
-		cp ${HOME_DIR}/grub.cfg "${DESTDIR}/"
+		log "copying ${HOME_DIR}/grub.cfg"
+		cp ${HOME_DIR}/grub.cfg "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/grub.cfg"
 	fi
 
 	if [ -f ${HOME_DIR}/device.map ] ; then
-		echo "[balena-init] copying ${HOME_DIR}/device.map"
-		cp ${HOME_DIR}/device.map "${DESTDIR}/"
+		log "copying ${HOME_DIR}/device.map"
+		cp ${HOME_DIR}/device.map "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/device.map"
 	fi
 fi
 

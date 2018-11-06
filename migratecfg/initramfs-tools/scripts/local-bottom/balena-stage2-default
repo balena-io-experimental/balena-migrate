@@ -19,9 +19,9 @@ if [ -f /scripts/functions ] ; then
     . /scripts/functions
 fi
 
-if [ -f /scripts/local ] ; then
-    . /scripts/local
-fi
+# if [ -f /scripts/local ] ; then
+#     . /scripts/local
+# fi
 
 if [ -f /etc/balena-migrate-stage2.conf ] ; then
     . /etc/balena-migrate-stage2.conf
@@ -36,20 +36,21 @@ else
 fi
 
 if [  "$STRATEGY" != "DEFAULT" ] ; then
-    log "local-premount balena-stage2-default not enabled"
+    log "balena-stage2-default not enabled"
     exit 0
 fi
 
-# TODO: make sure required programs are actually present
-
-DEBUG_STAGE2="TRUE"
+# Enable DEBUB output (debug function in balena-common)
+DEBUG_STAGE2=	#"TRUE"
+# Set Failure exit to panic
 FAIL_EXIT="panic"
-
+# initialize log destination
 LOG_TO=
 log_to "${MIGRATE_TMP}/${LOG_FILE}"
 
-log "local-bottom balena-stage2-default started"
+log "balena-stage2-default started"
 
+# enable logging to external destination
 if [ -n "$LOG_DRIVE" ] ; then
 	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} ; then
 		log_to 	"${LOG_MOUNT_DIR}/${LOG_FILE}"
@@ -59,12 +60,14 @@ if [ -n "$LOG_DRIVE" ] ; then
 	fi
 fi
 
-# TODO: restore former boot configuration on raspian
-
+#############################################################
+# Restore former boot configuration on non grub systems
+#############################################################
 if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	log "attempting to restore boot configuration"
 
 	if [ "$ORIG_BOOT_PART" != "$ORIG_ROOT_PART" ] ; then
+		# attempt to mount boot device
 		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ; then
 		 	log "failed to mount ${ORIG_BOOT_PART}"
 		else
@@ -73,11 +76,13 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	fi
 
 	if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
+		# attempt restore config.txt on RPI's
 		cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CONFIG_TXT_BACKUP}"
 		log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
 	fi
 
 	if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
+		# attempt restore cmdline.txt on RPI's
 		cp /orig-boot/${CMDLINE_TXT_BACKUP} /orig-boot/${CMDLINE_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CMDLINE_TXT_BACKUP}"
 		log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
 	fi
@@ -87,43 +92,27 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 		UMOUNT_BOOT=
 	fi
 
-	log "restored original boot configuration"
+	log "done restoring original boot configuration"
 fi
 
+######################################################################
+# make sure we have enough meeory to copy files to initramfs
+######################################################################
 checkMem
 
-log "creating migrate dir ${MIGRATE_TMP}"
-mkdir -p ${MIGRATE_TMP} || fail "failed to create directory ${MIGRATE_TMP}"
 if [ ! -d ${MIGRATE_TMP} ] ; then
-     fail  "failed to create directory in ${MIGRATE_TMP}"
+     fail  "could not find migrate dir: ${MIGRATE_TMP}"
 fi
-log "...done"
 
 log "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}/"
 cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 log "..done"
-
-if [ -n "${BALENA_CONFIG}" ] && [ -f "${rootmnt}${HOME_DIR}/${BALENA_CONFIG}" ] ; then
-	log "copying balena config from ${rootmnt}${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_TMP}/"
-	cp "${rootmnt}${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_TMP}/"
-	log "..done"
-fi
 
 if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "copying backup from ${rootmnt}${HOME_DIR}/${BACKUP_FILE} to ${MIGRATE_TMP}/"
 	cp "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 	log "..done"
 fi
-
-log "copying network config files to initramfs"
-if [ -f "${rootmnt}${HOME_DIR}/resin-wifi-01" ] ; then
-	cp "${rootmnt}${HOME_DIR}/resin-wifi-01" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1  || log "no network config copied"
-fi
-
-for file in $NETWORK_CONFIGS; do
-	log "copying ${rootmnt}${HOME_DIR}/$file"
-	cp "${rootmnt}${HOME_DIR}/$file" "${MIGRATE_TMP}/$file" >>"$LOG_TO" 2>&1  || log "no network config copied"
-done
 
 log "creating mountpoint on ${BOOT_MNT_DIR}"
 mkdir -p ${BOOT_MNT_DIR} || fail "failed to create directory ${BOOT_MNT_DIR}"
@@ -209,10 +198,10 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
 		# --grub-mkdevicemap=device.map \
 
-		if [ -f grub.cfg ] ; then
+		if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
 			log "copying grub.cfg"
 			mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
-			cp grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
+			cp ${MIGRATE_TMP}/grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
 		else
 			fail "no grub config found"
 		fi
