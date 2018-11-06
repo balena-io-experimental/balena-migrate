@@ -6,6 +6,12 @@
 # RESIZE:  unfinished - resize root file system & partition in local-premount
 #          use the space to store balenaOS image & backup
 ####################################################################
+
+####################################################################
+# TODO: parted not installed on default beaglebone debian install,
+#       install or replace
+####################################################################
+
 STRATEGY="DEFAULT"
 # where everything is
 # TODO: establish & use an absolute path to a set home directory that is not
@@ -341,27 +347,28 @@ function checkArmDevs {
 
   case "$sysName" in
     raspberrypi)
-    RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
+      inform "detected raspberry PI"
+      RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
       inform "RPI_HW_REV=$RPI_HW_REV"
-      IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
+      local IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
       if [ "$IS_PI1" == "TRUE" ] ; then
-        IS_PI="TRUE"
+        devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
         if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
           fail "expected raspberrypi1 image, got $IMAGE_NAME"
         fi
       else
-          IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
+          local IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
           if [ "$IS_PI2" == "TRUE" ] ; then
-            IS_PI="TRUE"
+            devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
             if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
               fail "expected raspberrypi2 image, got $IMAGE_NAME"
             fi
           else
-            IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
+            local IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
             if [ "$IS_PI3" == "TRUE" ] ; then
-              IS_PI="TRUE"
+              devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
               if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
                 fail "expected raspberrypi3 image, got $IMAGE_NAME"
@@ -372,11 +379,27 @@ function checkArmDevs {
           fi
       fi
     ;;
-    # beaglebone)
-    #
-    # ;;
+    beaglebone)
+      # eg.: TI AM335x BeagleBone Green
+      local tmp=$(cat /proc/device-tree/model)
+      local variant=$(expr match "$tmp" '.* BeagleBone \([^ ]\+\)')
+
+      inform "detected Beaglebone $variant device"
+
+      case "$variant" in
+        Green)
+          if [[ ! $IMAGE_NAME =~ beaglebone-green ]] ; then
+            fail "expected beaglebone-green image, got $IMAGE_NAME"
+          fi
+          devType="armv7_bb_green"
+        ;;
+        *)
+          fail "not a supported Beaglebone variant: $variant"
+        ;;
+      esac
+    ;;
     *)
-      fail "unsupported arm hardware platform: $sysName, 'uname -a' reports: $(uname -a)"
+      fail "unrecognized arm hardware platform: $sysName, 'uname -a' reports: $(uname -a)"
     ;;
   esac
 }
@@ -448,6 +471,15 @@ function setupBootCfg_rpi {
   else
       inform "boot setup is disabled, NO_SETUP=$NO_SETUP"
   fi
+}
+
+####################################################
+## setup beaglebone device to boot with initramfs
+####################################################
+
+function setupBootCfg_bb {
+  fail "setupBootCfg_bb not implemented"
+  # modify bbb_uEnv.txt ?
 }
 
 ####################################################
@@ -613,12 +645,12 @@ fi
 
 # name of initramfs to be created/used expected in $HOMEDIR
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
-
+MEM_MIN_FREE=67108864   # 64 MB
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
 # raspi cmdline.txt to modify
 CMDLINE_TXT="/boot/cmdline.txt"
-SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04 raspbian-9"
+SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04 raspbian-9 debian-9"
 SUPPORTED_ARCHS="x86_64 armv7l i686"
 
 RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
@@ -637,7 +669,7 @@ inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
 
-INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm"
+INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm stat"
 REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt parted" #  gzip
 checkPgms $REQUIRED_PGMS
 
@@ -677,11 +709,13 @@ case $ARCH in
     ;;
   x86_64)
     inform "ARCH=$ARCH"
+    devType="x86_64"
     if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
         fail "expected genericx86-64 image, got $IMAGE_NAME"
     fi
     ;;
   i686)
+    devType="i686"
     inform "ARCH=$ARCH"
     if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] ; then
         fail "expected intel-core2-32 image, got $IMAGE_NAME"
@@ -761,14 +795,20 @@ inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 ## create boot configuration
 ###########################
 
-if [ "$IS_PI" == "TRUE" ] ; then
-  inform "performing boot setup for RPI: $IS_PI"
-  setupBootCfg_rpi
-else
-  inform "performing boot setup for other: $IS_PI"
-  setupBootCfg_other
-fi
-
+case "$devType" in
+    armv7_rpi*)
+      inform "performing boot setup for RPI: $devType"
+      setupBootCfg_rpi
+    ;;
+    armv7_bb*)
+      inform "performing boot setup for Beaglebone: $devType"
+      setupBootCfg_bb
+    ;;
+    *)
+      inform "performing boot setup for other: $devType"
+      setupBootCfg_other
+    ;;
+esac
 
 ###########################
 ## write /etc/migrate.conf
@@ -817,6 +857,7 @@ GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
+MEM_MIN_FREE=$MEM_MIN_FREE
 
 EOI
 
@@ -944,7 +985,26 @@ if [ -n "$BACKUP_DIRECTORIES" ] ; then
 fi
 
 ###########################
-## create backup
+## check memory
+###########################
+
+#spaceReq=$(stat --format=%s ${HOME_DIR}/${INITRAMFS_NAME})
+#if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
+#  tmp=$(stat --format=%s ${HOME_DIR}/${BACKUP_FILE})
+#  spaceReq=$(($spaceReq + $tmp))
+#fi
+
+#while read line ;
+#do
+#  if [[ $line =~ ^Mem:.* ]] ; then
+#    totMem=$(expr match "$line" 'Mem:[ ]\+\([^ ]\+\).*')
+#    inform "readin line $line, totMem: $totMem"
+#  fi
+#done < <(free -b)
+
+
+###########################
+## reboot
 ###########################
 
 if [ "$DO_REBOOT" == "TRUE" ] ; then

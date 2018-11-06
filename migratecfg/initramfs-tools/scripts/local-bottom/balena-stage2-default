@@ -91,6 +91,8 @@ if [ "$RESTORE_BOOT" = "TRUE" ] ; then
 	log "restored original boot configuration"
 fi
 
+checkMem
+
 log "creating migrate dir ${MIGRATE_TMP}"
 mkdir -p ${MIGRATE_TMP} || fail "failed to create directory ${MIGRATE_TMP}"
 if [ ! -d ${MIGRATE_TMP} ] ; then

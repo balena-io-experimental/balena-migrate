@@ -1,7 +1,7 @@
-/images
 /resin-init
 /.idea
 /flasher_img
+/flasher-scripts
 /scripts/test
 /test
 *.img
@@ -10,4 +10,3 @@
 *.vdi
 *.zip
 *.tgz
-
