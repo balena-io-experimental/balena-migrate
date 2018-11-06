@@ -669,7 +669,7 @@ inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
 
-INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm stat"
+INITRAM_REQUIRED_PGMS="mkdir dd gzip df parted echo reboot partprobe sync dirname lsblk udevadm stat touch"
 REQUIRED_PGMS="lsblk readlink mkinitramfs sed findmnt parted" #  gzip
 checkPgms $REQUIRED_PGMS
 

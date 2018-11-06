@@ -23,8 +23,6 @@ if [ -f /scripts/local ] ; then
     . /scripts/local
 fi
 
-# reboot -f
-
 if [ -f /etc/balena-migrate-stage2.conf ] ; then
     . /etc/balena-migrate-stage2.conf
 else
@@ -44,6 +42,7 @@ fi
 
 # TODO: make sure required programs are actually present
 
+DEBUG_STAGE2="TRUE"
 FAIL_EXIT="panic"
 
 LOG_TO=
@@ -142,11 +141,6 @@ log "..done"
 
 if [ "$NO_FLASH" = "TRUE" ] ; then
 	term "terminating prematurely "
-	if [ -n "$TERM_EXIT" ] ; then
-		$TERM_EXIT
-	else
-		$ERROR_EXIT
-	fi
 fi
 
 log "unmounting root"
