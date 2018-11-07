@@ -14,14 +14,6 @@
 ################################################################################
 
 ################################################################################
-# strategy
-# DEFAULT: copy os image & backup to initramfs, unmount root, reflash drive,
-#          partprobe and mount resin-data to copy backup, reboot
-# RESIZE:  unfinished - resize root file system & partition in local-premount
-#          use the space to store balenaOS image & backup
-STRATEGY="DEFAULT"
-
-################################################################################
 # attempt to mount and log initramfs logs to external drive if set
 LOG_DRIVE=/dev/sdb1
 LOG_FS_TYPE=ext4
@@ -283,7 +275,7 @@ function wificfg_from_wpa {
   debug "wificfg_from_wpa" "cfgNo=${cfgNo} file=${WPA_SUPP_CONF}"
 
   while read line ;
-  do    
+  do
     if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
       local network="TRUE"
       local ssid=
@@ -962,7 +954,6 @@ LOG_FS_TYPE=${LOG_FS_TYPE}
 LOG_MOUNT_DIR=/extlog
 LOG_FILE=migrate.log
 
-STRATEGY=${STRATEGY}
 BOOT_DEV=${BOOT_DEV}
 
 RESTORE_BOOT=$RESTORE_BOOT
@@ -1013,34 +1004,6 @@ if [ -n "$CMDLINE_TXT_BACKUP" ] ; then
 CMDLINE_TXT=$(basename $CMDLINE_TXT)
 CMDLINE_TXT_BACKUP=$(basename ${CMDLINE_TXT_BACKUP})
 
-EOI
-fi
-
-#####################################
-## USE: resize strategy - unfinished
-#####################################
-
-if [ "$STRATEGY" == "RESIZE" ] ; then
-  cat <<EOI >> ${MIGRATE_CONF}
-MEM_MIN_AVAIL=600000
-MEM_TMPFS_SIZE=512M
-RESIZE_FS="${ROOT_FS}"
-RESIZE_DEV=${BOOT_DEV}
-RESIZE_PART_NO=${TMP[2]}
-# TODO: actually calculate this
-RESIZE_PART_START=94208
-RESIZE_PART_END=31116287
-RESIZE_PART_TYPE=primary
-RESIZE_PART_FS=ext4
-RESIZE_PART_TO=26921984
-RESIZE_PART_SIZE=26827777
-
-NEW_PART_TYPE="primary"
-NEW_PART_FS="ext2"
-NEW_PART_START=26926080
-NEW_PART_TO=31022087
-NEW_PART_NAME=/dev/mmcblk0p3
-REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
 fi
 

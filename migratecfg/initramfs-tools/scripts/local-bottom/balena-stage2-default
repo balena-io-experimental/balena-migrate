@@ -35,10 +35,11 @@ else
 		panic  "/scripts/balena-common not found"
 fi
 
-if [  "$STRATEGY" != "DEFAULT" ] ; then
-    log "balena-stage2-default not enabled"
-    exit 0
-fi
+# STRATEGY removed, there is only DEFAULT
+# if [  "$STRATEGY" != "DEFAULT" ] ; then
+#    log "balena-stage2-default not enabled"
+#    exit 0
+#fi
 
 # Enable DEBUB output (debug function in balena-common)
 DEBUG_STAGE2=	#"TRUE"
