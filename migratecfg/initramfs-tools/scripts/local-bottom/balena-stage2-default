@@ -100,6 +100,11 @@ fi
 ######################################################################
 checkMem
 
+
+######################################################################
+# copy image file and backup file to initramfs
+######################################################################
+
 if [ ! -d ${MIGRATE_TMP} ] ; then
      fail  "could not find migrate dir: ${MIGRATE_TMP}"
 fi
@@ -113,6 +118,10 @@ if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	cp "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 	log "..done"
 fi
+
+######################################################################
+# create mountpoints for resin-boot & resin-data
+######################################################################
 
 log "creating mountpoint on ${BOOT_MNT_DIR}"
 mkdir -p ${BOOT_MNT_DIR} || fail "failed to create directory ${BOOT_MNT_DIR}"
@@ -128,9 +137,17 @@ if [ ! -d ${DATA_MNT_DIR} ] ; then
 fi
 log "..done"
 
+######################################################################
+# terminate if in NO_FLASH / test mode
+######################################################################
+
 if [ "$NO_FLASH" = "TRUE" ] ; then
 	term "terminating prematurely "
 fi
+
+######################################################################
+# unmount root and set exit strategy to reboot
+######################################################################
 
 log "unmounting root"
 umount ${rootmnt} || fail  "failed umount ${rootmnt}"
@@ -138,38 +155,33 @@ umount ${rootmnt} || fail  "failed umount ${rootmnt}"
 FAIL_EXIT="reboot -f"
 log "..done"
 
+######################################################################
+# flash the balenaOS image
+######################################################################
 
 log "flashing image from ${MIGRATE_TMP}/${IMAGE_FILE} to ${BOOT_DEV} "
 log "attempting gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${BOOT_DEV} bs=4M \n"
 gzip -d -c "${MIGRATE_TMP}/${IMAGE_FILE}" | dd of=${BOOT_DEV} bs=4194304 || fail  "failed with gzip -d -c ${MIGRATE_TMP}/${IMAGE_FILE} | dd of=${BOOT_DEV} bs=4194304"
 log "..done"
 
+######################################################################
+# make kernel aware of the new partition table
+######################################################################
+
 partprobe $BOOT_DEV >>"$LOG_TO" 2>&1 || fail  "failed to reread partitions on $BOOT_DEV"
 
-# DEVS=$(lsblk)
-# log "devices after partprobe: $DEVS"
-
-log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
-mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
-UMOUNT_RESIN_DATA="$DATA_MNT_DIR"
-
-if [ -z "$LOG_DRIVE" ] ; then
-	log_to "$DATA_MNT_DIR/$LOG_FILE"
-fi
-
-log "..done"
-
-if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
-	log "copying backup to resin-data"
-	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail "failed to create backup"
-	sync
-	log "...done"
-fi
+######################################################################
+# mount resin-boot
+######################################################################
 
 log "mounting resin-boot using: mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME $BOOT_MNT_DIR"
 mount -w -t $BOOT_PART_TYPE $BOOT_PART_NAME "$BOOT_MNT_DIR" >>"$LOG_TO" 2>&1 || fail  "failed to mount resin-boot partition"
 UMOUNT_RESIN_BOOT="$BOOT_MNT_DIR"
 log "..done"
+
+######################################################################
+# copy config.json & system-connections
+######################################################################
 
 # copy networking config
 log "copying network config to resin-boot "
@@ -185,6 +197,11 @@ if [ -n "$BALENA_CONFIG" ] && [ -f "${MIGRATE_TMP}/${BALENA_CONFIG}" ] ; then
 	log "..done"
 fi
 
+
+######################################################################
+# install grub bootloader if required
+######################################################################
+
 if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	log "attempting grub install with type $GRUB_BOOT_TYPE"
 
@@ -196,7 +213,9 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	# fi
 
 	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
-		# --grub-mkdevicemap=device.map \
+		######################################################################
+		# install grub legacy bootloader
+		######################################################################
 
 		if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
 			log "copying grub.cfg"
@@ -211,16 +230,21 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 			rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
 		fi
 
-		grub-install 	--no-floppy \
-									--boot-directory=${BOOT_MNT_DIR} \
-									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+		GRUB_CMD="grub-install 	--no-floppy --boot-directory=${BOOT_MNT_DIR}"
+		GRUB_CMD="${GRUB_CMD} ${BOOT_DEV}"
+
+		$GRUB_CMD >>"$LOG_TO" 2>&1 || fail "failed to install grub with $GRUB_CMD"
 	else
 		# 									 \
+		######################################################################
+		# install grub UEFI bootloader
+		######################################################################
+
 		log "Add UEFI boot entry for starting resinOS from internal media."
 
-		if [ -f grub.cfg ] ; then
+		if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
 			log "copying grub.cfg"
-			cp grub.cfg  ${BOOT_MNT_DIR}/EFI/BOOT/ >>$LOG_TO 2>&1 || fail "failed to copy grub.cfg"
+			cp ${MIGRATE_TMP}/grub.cfg  ${BOOT_MNT_DIR}/EFI/BOOT/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
 		else
 			fail "no grub config found"
 		fi
@@ -235,6 +259,38 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 	fi
 fi
 
+######################################################################
+# mount resin-data
+######################################################################
+
+log "mounting resin-data using: mount -w -t $DATA_PART_TYPE $DATA_PART_NAME $DATA_MNT_DIR"
+mount -w -t $DATA_PART_TYPE $DATA_PART_NAME "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail  "failed to mount resin-data partition"
+UMOUNT_RESIN_DATA="$DATA_MNT_DIR"
+log "..done"
+
+############################################################################
+# redirect logging to resin-data if no external log drive is set & mounted
+############################################################################
+
+if [ -z "$UMOUNT_LOG" ] ; then
+	log_to "$DATA_MNT_DIR/$LOG_FILE"
+fi
+
+######################################################################
+# copy backup file to resin-data
+######################################################################
+
+if [ -f "${MIGRATE_TMP}/${BACKUP_FILE}" ] ; then
+	log "copying backup to resin-data"
+	cp "$MIGRATE_TMP/$BACKUP_FILE" "$DATA_MNT_DIR" >>$LOG_TO 2>&1 || fail "failed to create backup"
+	sync
+	log "...done"
+fi
+
+######################################################################
+# unmount all mounted drives
+######################################################################
+
 if [ -n "$UMOUNT_RESIN_BOOT" ] ; then
 	umount $UMOUNT_RESIN_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_BOOT"
 fi
@@ -247,5 +303,8 @@ if [ -n "$UMOUNT_LOG" ] ; then
 	umount $UMOUNT_LOG || true
 fi
 
-sync || true
+######################################################################
+# finished
+######################################################################
+
 reboot -f

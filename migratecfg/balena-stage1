@@ -1,11 +1,4 @@
 #!/bin/bash
-####################################################################
-# strategy
-# DEFAULT: copy os image & backup to initramfs, unmount root, reflash drive,
-#          partprobe and mount resin-data to copy backup, reboot
-# RESIZE:  unfinished - resize root file system & partition in local-premount
-#          use the space to store balenaOS image & backup
-####################################################################
 
 ####################################################################
 # TODO: parted not installed on default beaglebone debian install,
@@ -13,55 +6,115 @@
 # TODO: remove non DEFAULT strategies ?
 ####################################################################
 
+
+################################################################################
+################################################################################
+# All of the following variables can be overridden in /etc/balena-migrate.conf
+################################################################################
+################################################################################
+
+################################################################################
+# strategy
+# DEFAULT: copy os image & backup to initramfs, unmount root, reflash drive,
+#          partprobe and mount resin-data to copy backup, reboot
+# RESIZE:  unfinished - resize root file system & partition in local-premount
+#          use the space to store balenaOS image & backup
 STRATEGY="DEFAULT"
-# where everything is
-# TODO: establish & use an absolute path to a set home directory that is not
-#       necessarily PWD
-HOME_DIR=./
-# reboot automatically after script has finished by setting to "TRUE"
-DO_REBOOT= # "TRUE"
-# name of the balenaOS image to flash (expected in $HOMEDIR)
-# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
-# IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
-# switch on initramfs / kernel debug mode by seting to "TRUE"
-DEBUG= # "TRUE"
-
-# name of backup file to create/transfer to balena-data
-BACKUP_FILE=backup.tgz
-# TODO: customer defined backup script to call
-BACKUP_SCRIPT=
-BACKUP_DIRECTORIES="/etc"
-
-# Grub boot devices
-GRUB_BOOT_DEV="hd0"
-GRUB_BOOT_TYPE="legacy"
-
-# DEBUG end initramfs scripts before unmounting root / flashing the image
-NO_FLASH= #"TRUE"
-# what to do when terminating due to NO_FLASH=TRUE
-TERM_EXIT="exit 0" # "reboot -f"
-
-# DEBUG: do not modify config.txt, cmdline.txt, grub config if set to "TRUE"
-NO_SETUP= #{ }"TRUE"
-# create initramfs in contrast to using an initramfs supplied
-MK_INITRAMFS="TRUE"
-# DEBUG verbose build process
-MK_INITRAM_VERBOSE= # "TRUE"
-# DEBUG keep initramfs layout
-MK_INITRAM_RETAIN= # "TRUE"
-
+################################################################################
 # attempt to mount and log initramfs logs to external drive if set
 LOG_DRIVE=/dev/sdb1
 LOG_FS_TYPE=ext4
 
+################################################################################
+# where everything is
+# TODO: establish & use an absolute path to a set home directory that is not
+#       necessarily PWD
+HOME_DIR=./
+
+################################################################################
+# reboot automatically after script has finished by setting to "TRUE"
+DO_REBOOT= # "TRUE"
+
+################################################################################
+# name of the balenaOS image to flash (expected in $HOMEDIR)
+# must be set in /etc/balena-migrate.conf
+# IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
+# IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
+
+################################################################################
+# Use wifi config provided in image if set to TRUE
 HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
+
+################################################################################
+# create NM configs from all configs found in this system
 MIGRATE_ALL_WIFIS="FALSE" # migrate all wifis if set to "TRUE"
-MIGRATE_WIFI_CFG="migrate-wifis" # file with a list of wifi networks to migrate, one per line
-BALENA_WIFI= # if set to TRUE attempt to extract a wifi config from config.json given in BALENA_CONFIG
 
-BALENA_CONFIG= # set to the path of a config.json file to copy to the image
+################################################################################
+# only create NM wifi configs for ssids listed in this file
+# file with a list of wifi networks to migrate, one per line
+MIGRATE_WIFI_CFG="migrate-wifis"
 
+################################################################################
+# inject the config.json provided under the given filename into resin-boot
+# set to the path of a config.json file to copy to the image
+BALENA_CONFIG=
+
+################################################################################
+# if set to TRUE attempt to extract a wifi config from config.json given in
+# BALENA_CONFIG
+BALENA_WIFI=
+
+################################################################################
+# switch on initramfs / kernel debug mode by seting to "TRUE"
+DEBUG= # "TRUE"
+
+################################################################################
+# name of backup file to create/transfer to balena-data
+BACKUP_FILE=backup.tgz
+
+################################################################################
+# TODO: customer defined backup script to call
+BACKUP_SCRIPT=
+
+################################################################################
+# arguments to tar -czf $BACKUP_FILE if no backup script is given
+BACKUP_DIRECTORIES="/etc"
+
+################################################################################
+# Grub boot device in grub notation - usually not nee
+GRUB_BOOT_DEV="hd0"
+
+################################################################################
+# minimum free memory in stage 2
+# stage 2 script reads free memory
+#   subtracts size of image file & backup files
+#   fails if remaining space is less than the value given in MEM_MIN_FREE
+MEM_MIN_FREE=67108864   # 64 MB
+
+################################################################################
+# DEBUG end initramfs scripts before unmounting root / flashing the image
+NO_FLASH= #"TRUE"
+
+################################################################################
+# DEBUG: do not modify config.txt, cmdline.txt, grub config if set to "TRUE"
+NO_SETUP= #{ }"TRUE"
+
+################################################################################
+# create initramfs in contrast to using an initramfs supplied
+MK_INITRAMFS="TRUE"
+
+################################################################################
+# DEBUG verbose build process
+MK_INITRAM_VERBOSE= # "TRUE"
+
+################################################################################
+# DEBUG keep initramfs layout
+MK_INITRAM_RETAIN= # "TRUE"
+
+################################################################################
+# DEBUG enable DEBUG messages if set to TRUE
+LOG_DEBUG="TRUE"
 
 ##########################################
 # log functions
@@ -73,6 +126,12 @@ function inform {
 
 function warn {
     echo "[$(date +%T) ${SCRIPT_NAME}] WARN: $1"
+}
+
+function debug {
+    if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
+      echo "[$(date +%T) ${SCRIPT_NAME}] DEBUG: ${1}: ${2}"
+    fi
 }
 
 function simulate {
@@ -101,15 +160,13 @@ function fail {
 # careful how you call it, should be
 # eg.: listContains "$SUPPORTED_OSTYPES" $OSTYPE
 function listContains {
-    local res="FALSE"
     for curr in $1
     do
         if [ "$2" == "$curr" ]; then
-            res="TRUE"
-            break;
+            return 0
         fi
     done
-    echo $res
+    return 1
 }
 
 ##########################################
@@ -141,8 +198,8 @@ checkOs() {
         # lsb_release -a
         # add methods as you add osses that need different methods from above
         VERSION=
+        fail "unable to retrieve OS version"
     fi
-
     echo "$VERSION"
 }
 
@@ -191,22 +248,25 @@ fi
 
 function migrate_this_wifi {
   local ssid="$*"
-  # inform "migrate_this_wifi: ssid=<${ssid}>"
-  local res="FALSE"
+  debug "migrate_this_wifi" "ssid=<${ssid}> MIGRATE_ALL_WIFIS=${MIGRATE_ALL_WIFIS} MIGRATE_WIFI_CFG=${MIGRATE_WIFI_CFG} "
   if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] ; then
-    res="TRUE"
+    debug "migrate_this_wifi" "migrate ALL, return 0"
+    return 0
   else
-      if [ -f "$MIGRATE_WIFI_CFG" ] ; then
+      if [ -n "$MIGRATE_WIFI_CFG" ] && [ -f "${HOME_DIR}/${MIGRATE_WIFI_CFG}" ] ; then
+          # debug "migrate_this_wifi: looking at ${HOME_DIR}/${MIGRATE_WIFI_CFG}"
           while read line
           do
+            # debug "migrate_this_wifi: compare to: <$line>"
             if [ "$line" == "$ssid" ] ; then
-              res="TRUE"
-              break
+              debug "migrate_this_wifi" "wifi found in ${HOME_DIR}/${MIGRATE_WIFI_CFG}, return 0"
+              return 0
             fi
-          done < "$MIGRATE_WIFI_CFG"
+          done < "${HOME_DIR}/${MIGRATE_WIFI_CFG}"
       fi
   fi
-  echo $res
+  debug "migrate_this_wifi" " wifi not found, return 1"
+  return 1
 }
 
 ####################################################################################
@@ -215,54 +275,58 @@ function migrate_this_wifi {
 
 function wificfg_from_wpa {
   local cfgNo=1
+
   if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
     cfgNo=2
   fi
 
+  debug "wificfg_from_wpa" "cfgNo=${cfgNo} file=${WPA_SUPP_CONF}"
+
   while read line ;
-  do
-      if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
-        # inform "wificfg_from_wpa: found network in <${line}>"
-        local network="TRUE"
-        local ssid=
-        local psk=
-      else
-        if [ "$network" == "TRUE" ] ; then
-          if [[ $line =~ ^\s*} ]] ; then
-            if [ -n "$ssid" ] && [ -n "$psk" ] ; then
-                create_nmgr_file $cfgNo "$ssid" "$psk"
-                cfgNo=$((cfgNo + 1))
-                ssid=
-                psk=
-            fi
-            continue
+  do    
+    if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
+      local network="TRUE"
+      local ssid=
+      local psk=
+    else
+      if [ "$network" == "TRUE" ] ; then
+        if [[ $line =~ ^\s*} ]] ; then
+          if [ -n "$ssid" ]  ; then
+              debug "wificfg_from_wpa" "create_nmgr_file $cfgNo $ssid $psk"
+              create_nmgr_file $cfgNo "$ssid" "$psk"
+              cfgNo=$((cfgNo + 1))
+              ssid=
+              psk=
+              network=
+          fi
+          continue
+        fi
+
+        if [[ $line =~ ^\s*ssid\s*= ]] ; then
+
+          local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
+
+          if [ -z "$tmpSsid" ] ; then
+            tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
           fi
 
-          if [[ $line =~ ^\s*ssid\s*= ]] ; then
-            local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
-
-            if [ -z "$tmpSsid" ] ; then
-              tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
-            fi
-            local res=$(migrate_this_wifi $tmpSsid)
-            if [ "$res" == "TRUE" ] ; then
-              ssid=$tmpSsid
-            fi
-            continue
+          if migrate_this_wifi $tmpSsid ; then
+            ssid=${tmpSsid}
           fi
+          continue
+        fi
 
-          if [[ $line =~ ^\s*psk\s*= ]] ; then
-            # inform "wificfg_from_wpa: psk in line : <${line}>"
-            psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
-            if [ -z "$psk" ] ; then
-              psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
-            fi
-            # inform "wificfg_from_wpa: psk: <${psk}>"
-            continue
+        if [[ $line =~ ^\s*psk\s*= ]] ; then
+          # debug "wificfg_from_wpa" "psk in line : <${line}>"
+          psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
+          if [ -z "$psk" ] ; then
+            psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
           fi
+          continue
         fi
       fi
-  done < /etc/wpa_supplicant/wpa_supplicant.conf
+    fi
+  done < $WPA_SUPP_CONF
 }
 
 ##########################################
@@ -275,7 +339,11 @@ function wificfg_from_nmgr {
     cfgNo=2
   fi
 
-  for file in /etc/NetworkManager/system-connections/*; do
+  debug "wificfg_from_nmgr" "cfgNo=${cfgNo}"
+
+  for file in ${NMGR_DIR}/* ; do
+    debug "wificfg_from_nmgr" "processing file: $file"
+
     local grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
     if [ -z "$grepRes" ] ; then
       continue
@@ -283,9 +351,7 @@ function wificfg_from_nmgr {
     grepRes=$(grep -E "^\s*ssid\s*=.*" "$file")
     local currSsid=$(expr match "$grepRes" 'ssid\s*=\s*\(.*\)')
 
-    local res="$(migrate_this_wifi $currSsid)"
-
-    if [ "$res" == "TRUE" ] ; then
+    if  migrate_this_wifi $currSsid ; then
       inform "migrating wifi config for $currSsid"
       # TODO: only extract certain params or copy the whole thing ?
       local fileName="resin-wifi-`printf %02d $cfgNo`"
@@ -351,24 +417,21 @@ function checkArmDevs {
       inform "detected raspberry PI"
       RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
       inform "RPI_HW_REV=$RPI_HW_REV"
-      local IS_PI1=$(listContains "${RASPI_1_REVS}" ${RPI_HW_REV})
-      if [ "$IS_PI1" == "TRUE" ] ; then
+      if listContains "${RASPI_1_REVS}" ${RPI_HW_REV} ; then
         devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
         if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
           fail "expected raspberrypi1 image, got $IMAGE_NAME"
         fi
       else
-          local IS_PI2=$(listContains "${RASPI_2_REVS}" ${RPI_HW_REV})
-          if [ "$IS_PI2" == "TRUE" ] ; then
+          if listContains "${RASPI_2_REVS}" ${RPI_HW_REV} ; then
             devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
             if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
               fail "expected raspberrypi2 image, got $IMAGE_NAME"
             fi
           else
-            local IS_PI3=$(listContains "${RASPI_3_REVS}" ${RPI_HW_REV})
-            if [ "$IS_PI3" == "TRUE" ] ; then
+            if listContains "${RASPI_3_REVS}" ${RPI_HW_REV} ; then
               devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
               if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
@@ -589,34 +652,28 @@ linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-
 }
 EOI
 
-  local grubDev=$(expr match "$GRUB_BOOT_DEV" '^\([^,]\+\),.*')
-  echo "(${grubDev}) $BOOT_DEV" > ${HOME_DIR}/device.map
-
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
-    local blkId=$(whereis -b blkid | awk '{ print $2}')
-    if [ -n "$blkId" ] ; then
-      while read line ;
-      do
-        local discId=$line
-        break
-      done < <($blkId $ROOT_FS -o value)
-      if [ -n "$discId" ] ; then
-        local setRoot="search --no-floppy --fs-uuid --set=root $discId"
-      fi
+    while read line ;
+    do
+      local discId=$line
+      break
+    done < <($blkId $ROOT_FS -o value)
+
+    if [ -n "$discId" ] ; then
+      local setRoot="search --no-floppy --fs-uuid --set=root $discId"
     fi
 
     if [ "$GPT_TABLE" == "TRUE" ] ; then
       local partMod="part_gpt"
-      GRUB_BOOT_DEV="${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}"
+      if [ -z "$setRoot" ] ; then
+        local setRoot="set root='${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}'"
+      fi
     else
       local partMod="part_msdos"
-      GRUB_BOOT_DEV="${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}"
+      if [ -z "$setRoot" ] ; then
+        local setRoot="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
+      fi
     fi
-
-    if [ -z "$setRoot" ] ; then
-      local setRoot="set root='$GRUB_BOOT_DEV'"
-    fi
-
     cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
 exec tail -n +3 \$0
@@ -668,34 +725,49 @@ if [ -f /etc/balena-migrate.conf ] ; then
   . /etc/balena-migrate.conf
 fi
 
+# default grub config type
+GRUB_BOOT_TYPE="legacy"
+
 # name of initramfs to be created/used expected in $HOMEDIR
 INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
-MEM_MIN_FREE=67108864   # 64 MB
+
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
 # raspi cmdline.txt to modify
 CMDLINE_TXT="/boot/cmdline.txt"
+# supported / tested OSSE's so far
 SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04 raspbian-9 debian-9"
+# supported / tested platforms so far
 SUPPORTED_ARCHS="x86_64 armv7l i686"
 
+# mappings of RPi rev numbers to device types
 RASPI_1_REVS="0002 0003 0004 0005 0006 0007 0008 0009 000d 000e 000f 0010 0011 0012 0013 0014 0015 900092 900093	920093 9000c1 900021 900032 900092 900093 920093 9000c1"
 RASPI_2_REVS="a01040 a01041 a21041 a22042"
 RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 
-ERROR_EXIT="reboot -f"
+# minimum supported grub version
 GRUB_MIN_VER=2
+# default boot directory
 BOOT_DIR=/boot
 # script namme for logging
 SCRIPT_NAME="balena-stage1"
 # where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
 
+# DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
+DEBUG_FUNCTS="wificfg_from_wpa wificfg_from_nmgr"
+
+# WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
+WPA_SUPP_CONF="./wpa_supp.conf"
+NMGR_DIR="/etc/NetworkManager/system-connections"
+
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
+#       possible candidates: parted (on debian, beaglebone) blkid
 
 INITRAM_REQUIRED_PGMS="dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
-REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
+REQUIRED_PGMS="awk blkid findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -724,7 +796,7 @@ fi
 
 ARCH=$(uname -m)
 
-if [ ! "$(listContains "$SUPPORTED_ARCHS" $ARCH)" == "TRUE" ] ; then
+if ! listContains "$SUPPORTED_ARCHS" $ARCH ; then
   fail "not a supported architecture: $ARCH"
 fi
 
@@ -759,9 +831,7 @@ inform "KERNEL_VER=$KERNEL_VER"
 OS_VERSION=$(checkOs)
 inform "OS_VERSION=$OS_VERSION"
 
-RES=$(listContains "${SUPPORTED_OSSES}" ${OS_VERSION})
-# inform "listContains \"${SUPPORTED_OSSES}\" ${OS_VERSION} = <${RES}>"
-if [ "$RES" != "TRUE" ] ; then
+if ! listContains "${SUPPORTED_OSSES}" ${OS_VERSION} ; then
     fail "not a supported OS ${OS_VERSION}"
 fi
 
@@ -834,6 +904,50 @@ case "$devType" in
 esac
 
 ###########################
+## migrate network config
+###########################
+
+NETWORK_CONFIGS=
+
+if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
+  inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"
+  while read line ;
+  do
+    if [[ $line =~ ,*[\ ]*\"wifiSsid\"[\ ]*\: ]] ; then
+      wifiSsid=$(expr match "$line" '.*"wifiSsid"[ ]*:[ ]*"\([^"]\+\)".*')
+    fi
+
+    if [[ $line =~ ,*[\ ]*\"wifiKey\"[\ ]*\: ]] ; then
+      wifiKey=$(expr match "$line" '.*"wifiKey"[ ]*:[ ]*"\([^"]\+\)".*')
+    fi
+  done < "${HOME_DIR}/${BALENA_CONFIG}"
+
+  if [ -n "$wifiSsid" ] ; then
+    inform "creating config for wifi $wifiSsid"
+    create_nmgr_file 1 $wifiSsid $wifiKey
+    HAS_WIFI_CFG="TRUE"
+  fi
+fi
+
+if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
+  if [ -f "$WPA_SUPP_CONF" ] ; then
+    wificfg_from_wpa
+  else
+    if [ -d "$NMGR_DIR" ] ; then
+      wificfg_from_nmgr
+    else
+      warn "no supported wifi config found"
+    fi
+  fi
+
+  if [ -n "$NETWORK_CONFIGS" ] ; then
+    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
+    echo "" >> ${MIGRATE_CONF}
+  fi
+fi
+
+
+###########################
 ## write /etc/migrate.conf
 ###########################
 
@@ -872,7 +986,7 @@ DATA_PART_NAME=${BOOT_DEV}${BOOT_PAD}6
 DATA_PART_TYPE=ext4
 
 NO_FLASH=${NO_FLASH}
-ERROR_EXIT="${ERROR_EXIT}"
+
 TERM_EXIT="${TERM_EXIT}"
 
 GRUB_INSTALL=${GRUB_INSTALL}
@@ -881,6 +995,8 @@ GRUB_PART_GPT=${GPT_TABLE}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
 MEM_MIN_FREE=$MEM_MIN_FREE
+
+NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
 EOI
 
@@ -928,48 +1044,6 @@ REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS"
 EOI
 fi
 
-###########################
-## migrate network config
-###########################
-
-NETWORK_CONFIGS=
-
-if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
-  inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"
-  while read line ;
-  do
-    if [[ $line =~ ,*[\ ]*\"wifiSsid\"[\ ]*\: ]] ; then
-      wifiSsid=$(expr match "$line" '.*"wifiSsid"[ ]*:[ ]*"\([^"]\+\)".*')
-    fi
-
-    if [[ $line =~ ,*[\ ]*\"wifiKey\"[\ ]*\: ]] ; then
-      wifiKey=$(expr match "$line" '.*"wifiKey"[ ]*:[ ]*"\([^"]\+\)".*')
-    fi
-  done < "${HOME_DIR}/${BALENA_CONFIG}"
-
-  if [ -n "$wifiSsid" ] ; then
-    inform "creating config for wifi $wifiSsid"
-    create_nmgr_file 1 $wifiSsid $wifiKey
-    HAS_WIFI_CFG="TRUE"
-  fi
-fi
-
-if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
-  if [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] ; then
-    wificfg_from_wpa
-  else
-    if [ -d /etc/NetworkManager/system-connections/ ] ; then
-      wificfg_from_nmgr
-    else
-      warn "no supported wifi config found"
-    fi
-  fi
-
-  if [ -n "$NETWORK_CONFIGS" ] ; then
-    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
-    echo "" >> ${MIGRATE_CONF}
-  fi
-fi
 
 ###########################
 ## create initramfs
