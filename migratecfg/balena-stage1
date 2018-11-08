@@ -1,4 +1,8 @@
 #!/bin/bash
+####################################################################
+# balena-stage1
+# setup migration for brown-field device to balena
+####################################################################
 
 ####################################################################
 # TODO: parted not installed on default beaglebone debian install,
@@ -82,7 +86,14 @@ GRUB_BOOT_DEV="hd0"
 # stage 2 script reads free memory
 #   subtracts size of image file & backup files
 #   fails if remaining space is less than the value given in MEM_MIN_FREE
-MEM_MIN_FREE=67108864   # 64 MB
+MEM_MIN_FREE_S2=65536   # 64 MB as kB
+
+################################################################################
+# minimum free memory in stage 1
+# stage 1 script reads total memory
+#   subtracts size of image file & backup files & initramfs
+#   fails if remaining space is less than the value given in MEM_MIN_FREE
+MEM_MIN_FREE_S1=65536   # 64 MB as kB
 
 ################################################################################
 # DEBUG end initramfs scripts before unmounting root / flashing the image
@@ -747,10 +758,10 @@ SCRIPT_NAME="balena-stage1"
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
 
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="wificfg_from_wpa wificfg_from_nmgr"
+DEBUG_FUNCTS="wificfg_from_wpa wificfg_from_nmgr main"
 
 # WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
-WPA_SUPP_CONF="./wpa_supp.conf"
+WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 NMGR_DIR="/etc/NetworkManager/system-connections"
 
 inform "establishing required programs"
@@ -758,7 +769,7 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
+INITRAM_REQUIRED_PGMS="cat dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
 REQUIRED_PGMS="awk blkid findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
@@ -985,7 +996,7 @@ GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
-MEM_MIN_FREE=$MEM_MIN_FREE
+MEM_MIN_FREE=${MEM_MIN_FREE_S2}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
@@ -1013,6 +1024,9 @@ fi
 ###########################
 
 if [ "${MK_INITRAMFS}" == TRUE ] ; then
+    # set gzip compression
+    sed -i 's/^\(COMPRESS\s*=\s*\).*$/\1gzip/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+
     OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
     if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
       OPTS="-v $OPTS"
@@ -1050,35 +1064,78 @@ fi
 ## create backup
 ###########################
 
-if [ -n "$BACKUP_DIRECTORIES" ] ; then
-  inform "creating backup in ${HOME_DIR}/$BACKUP_FILE"
-  if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
-    rm ${HOME_DIR}/$BACKUP_FILE || true
+if [ -n "$BACKUP_FILE" ] ; then
+  if [ -n "$BACKUP_SCRIPT" ] && [ -f "${HOME_DIR}/${BACKUP_SCRIPT}" ] ; then
+    inform "invoking backup script using: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
+    ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE} || fail "backup script ${HOME_DIR}/${BACKUP_SCRIPT} returned error code"
+    inform "...done"
+  else
+    if [ -n "$BACKUP_DIRECTORIES" ] ; then
+      if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
+        rm ${HOME_DIR}/$BACKUP_FILE || true
+      fi
+      inform "creating backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
+      tar -czf "${HOME_DIR}/$BACKUP_FILE" $BACKUP_DIRECTORIES > /dev/null || fail "failed to create backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
+      inform "...done"
+    fi
   fi
 
-  tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES
-  inform "done creating backup"
-  # TODO: check / restrict size of backup file
+  if [ ! -f ${HOME_DIR}/${BACKUP_FILE} ] ; then
+    warn "no backup file created in: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
+  fi
 fi
 
 ###########################
 ## check memory
 ###########################
 
-#spaceReq=$(stat --format=%s ${HOME_DIR}/${INITRAMFS_NAME})
-#if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
-#  tmp=$(stat --format=%s ${HOME_DIR}/${BACKUP_FILE})
-#  spaceReq=$(($spaceReq + $tmp))
-#fi
+totMem=`cat /proc/meminfo | grep "MemTotal:"`
+totMem=`expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
+inform "total memory:  ${totMem} kB"
 
-#while read line ;
-#do
-#  if [[ $line =~ ^Mem:.* ]] ; then
-#    totMem=$(expr match "$line" 'Mem:[ ]\+\([^ ]\+\).*')
-#    inform "readin line $line, totMem: $totMem"
-#  fi
-#done < <(free -b)
+leftMem=$totMem
 
+if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
+  tmp=`stat -c %s "${HOME_DIR}/${IMAGE_NAME}"`
+  tmp=`expr $tmp / 1024` || true
+  inform "image file size: ${tmp} kB "
+  leftMem=`expr ${leftMem} - ${tmp}`
+fi
+
+if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
+  tmp=`stat -c %s "${HOME_DIR}/${BACKUP_FILE}"`
+  tmp=`expr $tmp / 1024` || true
+  inform "backup file size: ${tmp} kB "
+  leftMem=`expr ${leftMem} - ${tmp}`
+fi
+
+
+fType=$(file "${HOME_DIR}/${INITRAMFS_NAME}")
+if [[ "$fType" =~ ^[^:]+:.*cpio\ archive.* ]] ; then
+  tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+else
+  if [[ $fType =~ ^[^:]+:[\ ]*gzip.* ]] ; then
+    while read line ;
+    do
+      if echo "$line" | grep "${INITRAMFS_NAME}" > /dev/null ; then
+        tmp=$(expr match "$line" '[0-9]\+[ ]\+\([0-9]\+\) .*')
+        break;
+      fi
+    done < <(gzip -l "${HOME_DIR}/${INITRAMFS_NAME}")
+  else
+    warn "unexpected initramfs format"
+    tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+  fi
+fi
+
+tmp=`expr $tmp / 1024` || true
+inform "initramfs est. size: ${tmp} kB "
+leftMem=`expr ${leftMem} - ${tmp}`
+
+inform "Est. memory left: ${leftMem} kB "
+if [ ${leftMem} -lt ${MEM_MIN_FREE_S1} ] ; then
+  fail "Est. memory left is less than set threshold (${MEM_MIN_FREE_S1} kB), reduce backup size or threshold in MEM_MIN_FREE_S1"
+fi
 
 ###########################
 ## reboot

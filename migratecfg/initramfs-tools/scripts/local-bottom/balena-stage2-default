@@ -51,7 +51,9 @@ log_to "${MIGRATE_TMP}/${LOG_FILE}"
 
 log "balena-stage2-default started"
 
+#############################################################
 # enable logging to external destination
+#############################################################
 if [ -n "$LOG_DRIVE" ] ; then
 	if mount_device ${LOG_DRIVE} ${LOG_FS_TYPE} ${LOG_MOUNT_DIR} ; then
 		log_to 	"${LOG_MOUNT_DIR}/${LOG_FILE}"
@@ -101,7 +103,6 @@ fi
 ######################################################################
 checkMem
 
-
 ######################################################################
 # copy image file and backup file to initramfs
 ######################################################################
@@ -137,6 +138,15 @@ if [ ! -d ${DATA_MNT_DIR} ] ; then
      fail  "failed to create mount directory in ${DATA_MNT_DIR}"
 fi
 log "..done"
+
+######################################################################
+# terminate if in NO_FLASH / test mode
+######################################################################
+
+freeMem=`cat /proc/meminfo | grep "MemFree:"` || true
+freeMem=`expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
+log "Free memory after copy to initramfs: $freeMem kB"
+
 
 ######################################################################
 # terminate if in NO_FLASH / test mode

@@ -40,11 +40,9 @@ fail() {
 	exit 1
 }
 
-
 ##############################
 # main                       #
 ##############################
-
 
 # REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
 

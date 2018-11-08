@@ -8,33 +8,35 @@
 checkMem() {
 	totMem=`cat /proc/meminfo | grep "MemTotal:"`
 	totMem=`expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
-	totMem=`expr $totMem \* 1024` || true
+	# totMem=`expr $totMem \* 1024` || true
 
-	log "total memory: $totMem"
+	log "total memory: ${totMem} kB"
 
 	freeMem=`cat /proc/meminfo | grep "MemFree:"` || true
 	freeMem=`expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
-	freeMem=`expr $freeMem \* 1024` || true
+	# freeMem=`expr $freeMem \* 1024` || true
 	leftMem=$freeMem
 
-	log "free memory:  $freeMem"
+	log "free memory:  ${freeMem} kB"
 
 	if [ -f "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" ] ; then
 	  tmp=`stat -c %s "${rootmnt}${HOME_DIR}/${IMAGE_FILE}"`
-		log "image file size: $tmp"
+		tmp=`expr $tmp / 1024` || true
+		log "image file size: ${tmp} kB "
 	  leftMem=`expr $freeMem - $tmp`
 	fi
 
 	if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	  tmp=`stat -c %s "${rootmnt}${HOME_DIR}/${BACKUP_FILE}"`
-		log "backup file size: $tmp"
+		tmp=`expr $tmp / 1024` || true
+		log "backup file size: ${tmp} kB"
 	  leftMem=`expr $leftMem - $tmp`
 	fi
 
-	log "est. memory left after subtracting image & backup size: $leftMem"
+	log "est. memory left after subtracting image & backup size: ${leftMem} kB "
 
 	if [ $leftMem -lt $MEM_MIN_FREE ] ; then
-		fail "not enough memory will be left after copying image & backup files, est.: $leftMem, currently free: $freeMem"
+		fail "not enough memory will be left after copying image & backup files, est.: ${leftMem} kB, currently free: ${freeMem} kB"
 	fi
 }
 
