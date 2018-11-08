@@ -117,7 +117,7 @@ MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG="TRUE"
+LOG_DEBUG= # "TRUE"
 
 ##########################################
 # log functions
@@ -655,15 +655,30 @@ linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-
 }
 EOI
 
-  if [ ! "$NO_SETUP" == "TRUE" ] ; then
-    while read line ;
-    do
-      local discId=$line
-      break
-    done < <($blkId $ROOT_FS -o value)
 
-    if [ -n "$discId" ] ; then
-      local setRoot="search --no-floppy --fs-uuid --set=root $discId"
+  if [ ! "$NO_SETUP" == "TRUE" ] ; then
+
+    debug setupBootCfg_other "looking for boot device blkid"
+
+    if [ -d /dev/disk/by-uuid ] ; then
+      for fname in /dev/disk/by-uuid/* ; do
+        debug setupBootCfg_other "looking at $fname"
+        linkedFile=$(readlink ${fname})
+        debug setupBootCfg_other "go <${linkedFile}>"
+        if [ "$(basename $ROOT_FS)" == "$(basename $linkedFile)" ] ; then
+          # debug setupBootCfg_other "found ${uuid} for ${ROOT_FS}"
+          partId=$(basename "$fname")
+          break
+        fi
+      done
+    fi
+
+    if [ -n "${partId}" ] ; then
+      inform "found uuid: ${partId} for boot drive ${ROOT_FS}"
+    fi
+
+    if [ -n "$partId" ] ; then
+      local setRoot="search --no-floppy --fs-uuid --set=root $partId"
     fi
 
     if [ "$GPT_TABLE" == "TRUE" ] ; then
@@ -677,6 +692,9 @@ EOI
         local setRoot="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
       fi
     fi
+
+    inform "grub config, set root: $setRoot"
+
     cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
 exec tail -n +3 \$0
@@ -758,7 +776,7 @@ SCRIPT_NAME="balena-stage1"
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
 
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="wificfg_from_wpa wificfg_from_nmgr main"
+DEBUG_FUNCTS= "main"
 
 # WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
@@ -770,7 +788,7 @@ inform "establishing required programs"
 #       possible candidates: parted (on debian, beaglebone) blkid
 
 INITRAM_REQUIRED_PGMS="cat dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
-REQUIRED_PGMS="awk blkid findmnt lsblk mkinitramfs parted readlink sed"
+REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
