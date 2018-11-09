@@ -128,6 +128,10 @@ fail() {
 		cat "$LOG_TO"
   fi
 
+	if [ -n "$UMOUNT_BOOT" ] ; then
+		umount $UMOUNT_BOOT || true
+	fi
+
 	if [ -n "$UMOUNT_LOG" ] ; then
 		umount $UMOUNT_LOG || true
 	fi
@@ -155,7 +159,7 @@ mount_device() {
 	while [ ! -b "${MNT_FS_NAME}" ] && [ $loopCount -lt 3 ] ;
 	do
 		 log "log device not present: ${MNT_FS_NAME} waiting.."
-		 udevadm settle --timeout=10
+		 udevadm settle --timeout=5
 		 sleep 10
 		 loopCount=$(($loopCount + 1))
 	done

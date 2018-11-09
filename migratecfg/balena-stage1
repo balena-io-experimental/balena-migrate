@@ -117,7 +117,7 @@ MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG= # "TRUE"
+LOG_DEBUG="TRUE"
 
 ##########################################
 # log functions
@@ -142,8 +142,8 @@ function simulate {
 }
 
 function clean {
-    if [ -n "${CONFIG_TXT_BACKUP}" ] ; then
-        cp ${CONFIG_TXT_BACKUP} ${CONFIG_TXT}
+    if [ -n "$RESTORE_BOOT_CFG_STAGE1" ] ; then
+      $RESTORE_BOOT_CFG_STAGE1
     fi
 }
 
@@ -448,7 +448,7 @@ function checkArmDevs {
     ;;
     beaglebone)
       # eg.: TI AM335x BeagleBone Green
-      local tmp=$(cat /proc/device-tree/model)
+      local tmp=$(cat "/proc/device-tree/model")
       local variant=$(expr match "$tmp" '.* BeagleBone \([^ ]\+\)')
 
       inform "detected Beaglebone $variant device"
@@ -494,13 +494,15 @@ function setupBootCfg_rpi {
   if [ "$NO_SETUP" != "TRUE" ] ; then
     RESTORE_BOOT="TRUE"
 
-    CONFIG_TXT_BACKUP="${CONFIG_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-    cp ${CONFIG_TXT}  ${CONFIG_TXT_BACKUP}
-    inform "created backup of ${CONFIG_TXT} in ${CONFIG_TXT_BACKUP}"
+    CONFIG_TXT_BACKUP="config.txt.$(date +%Y%m%d-%H-%M-%S)"
+
+    cp "${S1_BOOT_PATH}/config.txt" "${S1_BOOT_PATH}/${CONFIG_TXT_BACKUP}"
+    inform "created backup of ${S1_BOOT_PATH}/${CONFIG_TXT} in ${S1_BOOT_PATH}/${CONFIG_TXT_BACKUP}"
+    RESTORE_BOOT_CFG_STAGE1="mv ${S1_BOOT_PATH}/${CONFIG_TXT_BACKUP} ${S1_BOOT_PATH}/config.txt"
+    RESTORE_BOOT_CFG_STAGE2="cp ${S2_BOOT_PATH}/${CONFIG_TXT_BACKUP} ${S2_BOOT_PATH}/config.txt"
 
     TMP_FILE=$(mktemp)
     INITRAM_CMD="initramfs ${INITRAMFS_NAME} followkernel"
-
 
     while read -r line
     do
@@ -526,46 +528,82 @@ function setupBootCfg_rpi {
     ###########################
 
     if [ "$DEBUG" == "TRUE" ] ; then
-      CMD_LINE=$(cat ${CMDLINE_TXT})
+      CMD_LINE=$(cat "${S1_BOOT_PATH}/cmdline.txt")
       if [[ ! $CMD_LINE =~ debug ]] ; then
-        CMDLINE_TXT_BACKUP="${CMDLINE_TXT}.$(date +%Y%m%d-%H-%M-%S)"
-        inform "created backup of ${CMDLINE_TXT} in ${CMDLINE_TXT_BACKUP}"
-        cp ${CMDLINE_TXT}  ${CMDLINE_TXT_BACKUP}
+        CMDLINE_TXT_BACKUP="cmdline.txt.$(date +%Y%m%d-%H-%M-%S)"
+        inform "creating backup of ${CMDLINE_TXT} in ${CMDLINE_TXT_BACKUP}"
+        cp ${S1_BOOT_PATH}/cmdline.txt  ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP}
       	CMD_LINE="${CMD_LINE} debug"
-      	echo $CMD_LINE > ${CMDLINE_TXT}
+      	echo $CMD_LINE > ${S1_BOOT_PATH}/cmdline.txt
+
+        RESTORE_BOOT_CFG_STAGE1="${RESTORE_BOOT_CFG_STAGE1} && mv ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S1_BOOT_PATH}/cmdline.txt"
+        RESTORE_BOOT_CFG_STAGE2="${RESTORE_BOOT_CFG_STAGE2} && cp ${S2_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S2_BOOT_PATH}/cmdline.txt"
       fi
     fi
+
+    if [ -n "${RESTORE_BOOT_CFG_STAGE2}" ] ; then
+      RESTORE_BOOT_CFG_STAGE2="\"${RESTORE_BOOT_CFG_STAGE2}\""
+    fi
+
+    debug setupBootCfg_rpi "RESTORE_BOOT_CFG_STAGE1=${RESTORE_BOOT_CFG_STAGE1}"
+    debug setupBootCfg_rpi "RESTORE_BOOT_CFG_STAGE2=${RESTORE_BOOT_CFG_STAGE2}"
+
   else
       inform "boot setup is disabled, NO_SETUP=$NO_SETUP"
   fi
 }
-
-function undoBootCfg_rpi {
-  if [ "$RESTORE_BOOT" == "TRUE" ] ; then
-    if [ -n "$CONFIG_TXT_BACKUP" ] && [ -f "$CONFIG_TXT_BACKUP" ] ; then
-      cp $CONFIG_TXT_BACKUP $CONFIG_TXT
-    fi
-
-    if [ -n "$CMDLINE_TXT_BACKUP" ] && [ -f "$CMDLINE_TXT_BACKUP" ] ; then
-      cp $CMDLINE_TXT_BACKUP $CMDLINE_TXT
-    fi
-    RESTORE_BOOT=
-  fi
-}
-
 
 ####################################################
 ## setup beaglebone device to boot with initramfs
 ####################################################
 
 function setupBootCfg_bb {
-  fail "setupBootCfg_bb not implemented"
-  # modify bbb_uEnv.txt ?
-}
+  debug setupBootCfg_bb "invoked"
+  case $devType in
+    armv7_bb_green)
+      debug setupBootCfg_bb "for $devType"
+    # modify bbb_uEnv.txt ?
+    # TODO:
+    #   target boot device mmcblk1 == eMMC ?
+    #   determine current boot device mmcblk0 == SD , mmcblk1 == eMMC ?
+    #   replace initramfs file or rename /bbb_uEnv.txt to /uEnv.txt and use alt initramfs
+    #
+      ##########################################################################
+      # copy /bbb-uEnv.txt to /uEnv.txt if necessary, create restore cmd
+      # TODO: make sure it is original/unmodified or create it fromm scratch
+      ##########################################################################
+      if [ ! -f "/uEnv.txt" ] ; then
+          if [ -f "/bbb-uEnv.txt" ] ; then
+            debug setupBootCfg_bb "found /bbb-uEnv.txt"
+            cp /bbb-uEnv.txt /uEnv.txt || fail "failed to copy /bbb-uEnv.txt to /uEnv.txt"
+            RESTORE_BOOT_CFG_STAGE1="rm /uEnv.txt"
+            RESTORE_BOOT_CFG_STAGE2="\"rm ${S2_ROOTMOUNT}/uEnv.txt\""
+          fi
+      else
+        debug setupBootCfg_bb "/uEnv.txt exists"
+        local uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
+        cp /uEnv.txt "$uEnvBckup"
+        RESTORE_BOOT_CFG_STAGE1="cp $uEnvBckup /uEnv.txt"
+        if [ $ROOT_PART_NO -eq $BOOT_PART_NO ] ; then
+          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_ROOTMOUNT}${uEnvBckup} ${S2_ROOTMOUNT}/uEnv.txt\""
+        else
+          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_BOOTMOUNT}${uEnvBckup} ${S2_BOOTMOUNT}/uEnv.txt\""
+        fi
+      fi
 
-function undoBootCfg_bb {
-  fail "undoBootCfg_bb not implemented"
-  # modify bbb_uEnv.txt ?
+      if [ ! -f "/uEnv.txt" ] ; then
+        fail "setupBootCfg_bb, devType=${devType} could not find /uEnv.txt or /bbb-uEnv.txt"
+      fi
+
+      # fail "setupBootCfg_bb not implemented for devType=${devType}"
+      ;;
+    *)
+      fail "setupBootCfg_bb not implemented for devType=${devType}"
+    ;;
+  esac
+
+
+
 }
 
 ####################################################
@@ -717,18 +755,11 @@ EOI
     update-grub || fail "failed to update grub config"
     inform "calling grub-reboot resin-migration"
     grub-reboot resin-migration
+    RESTORE_BOOT_CFG_STAGE1="rm /etc/grub.d/42_resin && update-grub"
+    RESTORE_BOOT_CFG_STAGE2=
 else
     inform "boot setup is disabled, NO_SETUP=$NO_SETUP"
 fi
-}
-
-function undoBootCfg_other {
-  if [ "$NO_SETUP" !=  "TRUE" ] && [ -f "/etc/grub.d/42_resin" ] ; then
-    inform "undoing grub boot configuration"
-    rm /etc/grub.d/42_resin || fail "failed to delete /etc/grub.d/42_resin"
-    inform "updating grub config using update-grub"
-    update-grub || fail "failed to update grub config"
-  fi
 }
 
 ####################################################################################
@@ -776,22 +807,35 @@ SCRIPT_NAME="balena-stage1"
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
 
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS= "main"
+DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi"
 
 # WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 NMGR_DIR="/etc/NetworkManager/system-connections"
+
+S2_ORIG_BOOT_MNT="/orig-boot"
+S2_BOOT_PATH=
+S2_MOUNT_BOOT=
+
+S2_ROOTMOUNT='${rootmnt}'
+S2_BOOTMOUNT='${ORIG_BOOT_MNT}'
+
+RESTORE_BOOT_CFG_STAGE1=
+RESTORE_BOOT_CFG_STAGE2=
+
 
 inform "establishing required programs"
 
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="cat dd df dirname echo expr grep gzip lsblk mkdir parted partprobe reboot sync stat touch udevadm"
+INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot sync stat touch udevadm"
 REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
+
+inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
 inform "checking required files"
 if [[ ! $HOME_DIR =~ ^/.* ]] ; then
@@ -876,6 +920,19 @@ ROOT_PART_NO=${TMP[2]}
 if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
   fail "unsupported boot configuration /boot is on a separate drive from / "
 fi
+
+if [ $BOOT_PART_NO -eq $ROOT_PART_NO ] ; then
+  S2_BOOT_PATH="${S2_ROOTMOUNT}/boot"
+  S2_MOUNT_BOOT=
+  S1_BOOT_PATH="/boot"
+else
+  S2_MOUNT_BOOT="TRUE"
+  S2_BOOT_PATH="${S2_BOOTMOUNT}"
+  # TODO: determine path to /boot mount
+  S1_BOOT_PATH="/boot"
+fi
+
+debug main "S2_BOOT_PATH=$S2_BOOT_PATH S2_MOUNT_BOOT=$S2_MOUNT_BOOT"
 
 while read line ;
 do
@@ -983,10 +1040,14 @@ LOG_FS_TYPE=${LOG_FS_TYPE}
 LOG_MOUNT_DIR=/extlog
 LOG_FILE=migrate.log
 
+DEV_TYPE=$devType
+
 BOOT_DEV=${BOOT_DEV}
 
-RESTORE_BOOT=$RESTORE_BOOT
-REMOUNT_BOOT=$REMOUNT_BOOT
+ORIG_BOOT_MNT=${S2_ORIG_BOOT_MNT}
+RESTORE_BOOT=${RESTORE_BOOT_CFG_STAGE2}
+MOUNT_BOOT=${S2_MOUNT_BOOT}
+
 ORIG_BOOT_PART=${BOOT_FS}
 ORIG_ROOT_PART=${ROOT_FS}
 ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}
@@ -1018,24 +1079,9 @@ MEM_MIN_FREE=${MEM_MIN_FREE_S2}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
-EOI
 
-if [ -n "$CONFIG_TXT_BACKUP" ] ; then
-  cat <<EOI >> ${MIGRATE_CONF}
-CONFIG_TXT=$(basename $CONFIG_TXT)
-CONFIG_TXT_BACKUP=$(basename ${CONFIG_TXT_BACKUP})
 
 EOI
-fi
-
-if [ -n "$CMDLINE_TXT_BACKUP" ] ; then
-  cat <<EOI >> ${MIGRATE_CONF}
-CMDLINE_TXT=$(basename $CMDLINE_TXT)
-CMDLINE_TXT_BACKUP=$(basename ${CMDLINE_TXT_BACKUP})
-
-EOI
-fi
-
 
 ###########################
 ## create initramfs
@@ -1055,24 +1101,7 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     fi
 
     inform "creating initramfs: mkinitramfs $OPTS"
-    if ! mkinitramfs $OPTS ; then
-      inform "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME} , attempting to undo boot setup"
-      case "$devType" in
-          armv7_rpi*)
-            inform "undoing boot setup for RPI: $devType"
-            undoBootCfg_rpi
-          ;;
-          armv7_bb*)
-            inform "undoing boot setup for Beaglebone: $devType"
-            undoBootCfg_bb
-          ;;
-          *)
-            inform "undoing boot setup for other: $devType"
-            undoBootCfg_other
-          ;;
-      esac
-      fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
-    fi
+    mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
     inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
     cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"

@@ -186,7 +186,6 @@ architecture and OS and includes the following:
   |findmnt        |all                       |unspecified|
   |parted         |all                       |unspecified|
   |lsblk          |all                       |unspecified|
-  |blkid          |x86\_64, i686 with UEFI   |unspecified|
   |readlink       |all                       |unspecified|
   |sed            |all                       |unspecified|
   |mkinitramfs    |all                       |unspecified|
@@ -210,17 +209,6 @@ The script *balena-stage1* uses a configuration file in
 
 Valid settings for this file are:
 
-#### STRATEGY
-
-**Default:** *STRATEGY="DEFAULT"*
-
-The variable determines the strategy used by the stage 2 script. Only
-the *DEFAULT* strategy is actually working and tested. The alternate
-strategy *RESIZE* will attempt to resize the root
-
-File system- and partition before it is mounted and use the freed space
-to create a new partition and save data there. The strategy will likely
-be abandoned.
 
 #### HOME\_DIR
 

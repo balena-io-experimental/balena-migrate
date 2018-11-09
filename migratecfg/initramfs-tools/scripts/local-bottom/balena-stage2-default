@@ -66,29 +66,21 @@ fi
 #############################################################
 # Restore former boot configuration on non grub systems
 #############################################################
-if [ "$RESTORE_BOOT" = "TRUE" ] ; then
+
+if [ -n "$RESTORE_BOOT" ] ; then
 	log "attempting to restore boot configuration"
 
-	if [ "$ORIG_BOOT_PART" != "$ORIG_ROOT_PART" ] ; then
+	if [ "$MOUNT_BOOT" = "TRUE" ] ; then
 		# attempt to mount boot device
-		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} /orig-boot ; then
+		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} ${ORIG_BOOT_MNT} ; then
 		 	log "failed to mount ${ORIG_BOOT_PART}"
 		else
-			UMOUNT_BOOT=/orig-boot
+			UMOUNT_BOOT=${ORIG_BOOT_MNT}
 	 fi
 	fi
 
-	if [ -n "$CONFIG_TXT" ] && [ -n "$CONFIG_TXT_BACKUP" ] ; then
-		# attempt restore config.txt on RPI's
-		cp /orig-boot/${CONFIG_TXT_BACKUP} /orig-boot/${CONFIG_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CONFIG_TXT_BACKUP}"
-		log "copied /orig-boot/${CONFIG_TXT_BACKUP} to /orig-boot/${CONFIG_TXT}"
-	fi
-
-	if [ -n "$CMDLINE_TXT" ] && [ -n "$CMDLINE_TXT_BACKUP" ] ; then
-		# attempt restore cmdline.txt on RPI's
-		cp /orig-boot/${CMDLINE_TXT_BACKUP} /orig-boot/${CMDLINE_TXT} >>"$LOG_TO" 2>&1 || log "failed to copy /orig-boot/${CMDLINE_TXT_BACKUP}"
-		log "copied /orig-boot/${CMDLINE_TXT_BACKUP} to /orig-boot/${CMDLINE_TXT}"
-	fi
+	log "restoring boot with ${RESTORE_BOOT}"
+	sh -c "${RESTORE_BOOT}" >>"$LOG_TO" 2>&1 || fail "failed to restore boot configuration"
 
 	if [ -n "$UMOUNT_BOOT" ] ; then
 		umount ${UMOUNT_BOOT} >>"$LOG_TO" 2>&1 || fail "failed to unmount ${UMOUNT_BOOT}"
