@@ -123,28 +123,54 @@ LOG_DEBUG="TRUE"
 # log functions
 ##########################################
 
+function color {
+  if [ -n "$1" ] ; then
+    YELLOW='\033[1;33m'
+    BROWN='\033[0;33m'
+    GREEN='\033[0;32m'
+    RED='\033[0;31m'
+    NC='\033[0m' # No Color
+  else
+    YELLOW=
+    BROWN=
+    GREEN=
+    RED=
+    NC=
+  fi
+}
+
 function inform {
-    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: $1"
+    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} ${1}\n"
 }
 
 function warn {
-    echo "[$(date +%T) ${SCRIPT_NAME}] WARN: $1"
+    printf "${YELLOW}[$(date +%T) ${SCRIPT_NAME}] WARN: ${NC} ${1}\n"
 }
 
 function debug {
     if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
-      echo "[$(date +%T) ${SCRIPT_NAME}] DEBUG: ${1}: ${2}"
+      printf "${BROWN}[$(date +%T) ${SCRIPT_NAME}] DEBUG:${NC} ${1}: ${2}\n"
     fi
 }
 
 function simulate {
-    echo "[$(date +%T) ${SCRIPT_NAME}] INFO: would execute \"$*\""
+    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} would execute \"$*\"\n"
 }
 
 function clean {
     if [ -n "$RESTORE_BOOT_CFG_STAGE1" ] ; then
       $RESTORE_BOOT_CFG_STAGE1
     fi
+}
+
+##########################################
+# fail : try to resotore & reboot
+##########################################
+
+function fail {
+    printf "${RED}[$(date +%T) ${SCRIPT_NAME}] ERROR:${NC} $1\n"
+    clean
+    exit -1
 }
 
 ##########################################
@@ -156,11 +182,11 @@ function printHelp {
   echo "  prepare host for migration to balena-os"
   echo "  USAGE balena-stage1 [OPTIONS]"
   echo "  please run as root"
-  echo "OPTIONS: "
-  echo "  -c | --config <config file> : use given config file instead of /etc/balena-migrate.log "
-  echo "  -u | --uuid <UUID> :          use given UUID as baleanOS host id"
-  echo "  --home <HOME_DIR> :           use given path as home directory"
-  echo "  -h | --help :                 print this help and exit"
+  echo "  OPTIONS: "
+  echo "    -c <config file> | --config=<config file> : use given config file instead of /etc/balena-migrate.log "
+  echo "    -u <UUID> | --uuid=<UUID>                 : use given UUID as baleanOS host id"
+  echo "    --home=<HOME_DIR>                         : use given path as home directory"
+  echo "    -h | --help                               : print this help and exit"
   exit 0
 }
 
@@ -192,44 +218,69 @@ function getCmdArgs {
           ;;
       esac
     else
-      if [[ "$var" =~ ^-.* ]] ; then
-        debug getCmdArgs "$var starts with -"
-        case "$var" in
-          -c|--config)
-            cmd="config"
+      if [[ "$var" =~ ^--.* ]] ; then
+        cmd=$(expr match "$var" '^--\([^=]\+\).*')
+        param=$(expr match "$var" '^--[^=]\+=\(.*\)$') || true
+        case "$cmd" in
+          config)
+            if [ -n "$param" ] ; then
+              PARAM_CONFIG_FILE=$param
+            else
+              fail "missing parameter for $var"
+            fi
             ;;
-          --home)
-            cmd="home"
+          uuid)
+            if [ -n "$param" ] ; then
+              PARAM_UUID=$param
+            else
+              fail "missing parameter for $var"
+            fi
             ;;
-          -u|--uuid)
-            cmd="uuid"
+          home)
+            if [ -n "$param" ] ; then
+              PARAM_HOME_DIR=$param
+            else
+              fail "missing parameter for $var"
+            fi
             ;;
-          -h|--help)
+          help)
             printHelp
             ;;
           *)
-            fail "unrecognized command: $var"
-            cmd=
+            fail "invalid command $var"
             ;;
         esac
+        cmd=
       else
-        fail "unrecognized command: $var"
+        if [[ "$var" =~ ^-.* ]] ; then
+          debug getCmdArgs "$var starts with -"
+          case "$var" in
+            -c|--config)
+              cmd="config"
+              ;;
+            --home)
+              cmd="home"
+              ;;
+            -u|--uuid)
+              cmd="uuid"
+              ;;
+            -h|--help)
+              printHelp
+              ;;
+            *)
+              fail "unrecognized command: $var"
+              cmd=
+              ;;
+          esac
+        else
+          fail "unrecognized command: $var"
+        fi
       fi
     fi
     debug getCmdArgs "command=$cmd"
   done
 }
 
-
-##########################################
-# fail : try to resotore & reboot
-##########################################
-
-function fail {
-    echo "[$(date +%T) ${SCRIPT_NAME}] ERROR: $1"
-    clean
-    exit -1
-}
 
 ##########################################
 # check if list contains string
@@ -845,9 +896,14 @@ fi
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
 DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs"
 
-CONFIG_FILE=/etc/balena-migrate.conf
+# script namme for logging
+SCRIPT_NAME="balena-stage1"
+
+CONFIG_FILE=balena-migrate.conf
 HOME_DIR=./
 UUID=
+
+color ON
 
 debug main "checking command line args"
 
@@ -867,14 +923,24 @@ fi
 
 inform "using config file:  $CONFIG_FILE"
 
-if [ -f "$CONFIG_FILE" ] ; then
-  # override some of the settings above
-  . "$CONFIG_FILE"
+# let config file override some of the settings at the top of the file
+if [[ "$CONFIG_FILE" =~ ^/.* ]] ; then
+  # debug main " absolute path"
+  if [ -f "$CONFIG_FILE" ] ; then
+    . "$CONFIG_FILE"
+  else
+    fail "config file not found ${CONFIG_FILE}"
+  fi
 else
+  # debug main " relative path"
   if [ -f "${HOME_DIR}/${CONFIG_FILE}" ] ; then
     . "${HOME_DIR}/${CONFIG_FILE}"
   else
-    fail "config file could not be found ${CONFIG_FILE}"
+    if [ -f "${CONFIG_FILE}" ] ; then
+      . "${CONFIG_FILE}"
+    else
+      fail "config file could not be found ${CONFIG_FILE}"
+    fi
   fi
 fi
 
@@ -913,11 +979,8 @@ RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 GRUB_MIN_VER=2
 # default boot directory
 BOOT_DIR=/boot
-# script namme for logging
-SCRIPT_NAME="balena-stage1"
 # where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
-
 
 # WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
@@ -944,7 +1007,6 @@ REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
-
 
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
@@ -1187,6 +1249,7 @@ GRUB_PART_GPT=${GPT_TABLE}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
 MEM_MIN_FREE=${MEM_MIN_FREE_S2}
+BALENA_UUID=${PARAM_UUID}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
