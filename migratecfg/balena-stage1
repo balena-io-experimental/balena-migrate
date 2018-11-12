@@ -148,6 +148,80 @@ function clean {
 }
 
 ##########################################
+# print help
+##########################################
+
+function printHelp {
+  echo "balena-stage1"
+  echo "  prepare host for migration to balena-os"
+  echo "  USAGE balena-stage1 [OPTIONS]"
+  echo "  please run as root"
+  echo "OPTIONS: "
+  echo "  -c | --config <config file> : use given config file instead of /etc/balena-migrate.log "
+  echo "  -u | --uuid <UUID> :          use given UUID as baleanOS host id"
+  echo "  --home <HOME_DIR> :           use given path as home directory"
+  echo "  -h | --help :                 print this help and exit"
+  exit 0
+}
+
+##########################################
+# Evaluate command line arguments
+##########################################
+
+function getCmdArgs {
+  cmd=
+  for var in "$@"
+  do
+    debug getCmdArgs "looking at $var"
+    if [ -n "$cmd" ]  ; then
+      case $cmd in
+        config)
+          $PARAM_CONFIG_FILE=$var
+          cmd=
+          ;;
+        uuid)
+          $PARAM_UUID=$var
+          cmd=
+          ;;
+        home)
+          $PARAM_HOME_DIR=$var
+          cmd=
+          ;;
+        *)
+          fail "unrecognized parameter ${var}"
+          ;;
+      esac
+    else
+      if [[ "$var" =~ ^-.* ]] ; then
+        debug getCmdArgs "$var starts with -"
+        case "$var" in
+          -c|--config)
+            cmd="config"
+            ;;
+          --home)
+            cmd="home"
+            ;;
+          -u|--uuid)
+            cmd="uuid"
+            ;;
+          -h|--help)
+            printHelp
+            ;;
+          *)
+            fail "unrecognized command: $var"
+            cmd=
+            ;;
+        esac
+      else
+        fail "unrecognized command: $var"
+      fi
+    fi
+    debug getCmdArgs "command=$cmd"
+  done
+}
+
+
+##########################################
 # fail : try to resotore & reboot
 ##########################################
 
@@ -768,13 +842,51 @@ fi
 ####################################################################################
 ####################################################################################
 
+# DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
+DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs"
+
+CONFIG_FILE=/etc/balena-migrate.conf
+HOME_DIR=./
+UUID=
+
+debug main "checking command line args"
+
+getCmdArgs "$@"
+
 if [[ $EUID -ne 0 ]]; then
     fail "This script must be run as root"
 fi
 
-if [ -f /etc/balena-migrate.conf ] ; then
+if [ -n "$PARAM_HOME_DIR" ] ; then
+  HOME_DIR=$PARAM_HOME_DIR
+fi
+
+if [ -n "$PARAM_CONFIG_FILE" ] ; then
+  CONFIG_FILE=$PARAM_CONFIG_FILE
+fi
+
+inform "using config file:  $CONFIG_FILE"
+
+if [ -f "$CONFIG_FILE" ] ; then
   # override some of the settings above
-  . /etc/balena-migrate.conf
+  . "$CONFIG_FILE"
+else
+  if [ -f "${HOME_DIR}/${CONFIG_FILE}" ] ; then
+    . "${HOME_DIR}/${CONFIG_FILE}"
+  else
+    fail "config file could not be found ${CONFIG_FILE}"
+  fi
+fi
+
+if [ -n "$PARAM_HOME_DIR" ] ; then
+  # cmd line params take precedence over config file
+  HOME_DIR=$PARAM_HOME_DIR
+fi
+
+inform "using home dir:     $HOME_DIR"
+inform "using archive dir:  $ARCHIVE_FILE"
+if [ -n "$PARAM_UUID" ] ; then
+  inform "using UUID:  $PARAM_UUID"
 fi
 
 # default grub config type
@@ -806,8 +918,6 @@ SCRIPT_NAME="balena-stage1"
 # where the migrate conf is created - DO NOT MODIFY hardcoded in initramfs scripts
 MIGRATE_CONF=/etc/balena-migrate-stage2.conf
 
-# DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi"
 
 # WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
 WPA_SUPP_CONF="/etc/wpa_supplicant/wpa_supplicant.conf"
@@ -834,6 +944,7 @@ REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
+
 
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 

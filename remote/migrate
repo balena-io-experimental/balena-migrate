@@ -1,0 +1,68 @@
+#!/bin/bash
+# expect configurarion in local directory or in $1
+
+function makeUUID {
+  echo $(openssl rand -hex 16)
+}
+
+function sendTarCfg {
+  cfgFile="$1"
+  muser=$2
+  mhost=$3
+  mtgtdir=$4
+
+  if [ -n "$muser" ] ; then
+    local cmd="ssh ${muser}@${mhost}"
+  else
+    local cmd="ssh ${mhost}"
+  fi
+
+  local remoteCmd=
+
+  if [ -n "$mtgtdir" ] && [ "$mtgtdir" != "./" ] && [ "$mtgtdir" != "." ] ; then
+    remoteCmd="mkdir -p '${mtgtdir}' && tar -C '${mtgtdir}' -xzf -"
+  else
+    remoteCmd="tar -xzf -"
+  fi
+
+  cmd="$cmd \"$remoteCmd\" < \"${cfgFile}\""
+
+  /bin/bash -c "$cmd" || fail "failed to transmit configuration using <${cmd}>"
+}
+
+function sendCfgDir {
+  cfgDir="$1"
+  muser=$2
+  mhost=$3
+  mtgtdir=$4
+
+  if [ -n "$cfgDir" ] && [ "$cfgDir" != "./" ] &&  [ "$cfgDir" != "." ] ; then
+    local cmd="tar -C \"${cfgDir}\" -czf - ./"
+  else
+    local cmd="tar -czf - ./"
+  fi
+
+  if [ -n "$muser" ] ; then
+    local cmd="${cmd} | ssh ${muser}@${mhost}"
+  else
+    local cmd="${cmd} | ssh ${mhost}"
+  fi
+
+  local remoteCmd=
+
+  if [ -n "$mtgtdir" ] && [ "$mtgtdir" != "./" ] && [ "$mtgtdir" != "." ] ; then
+    remoteCmd="mkdir -p '${mtgtdir}' && tar -C '${mtgtdir}' -xzf -"
+  else
+    remoteCmd="tar -xzf -"
+  fi
+
+  cmd="$cmd \"$remoteCmd\""
+
+  echo "attempting <${cmd}>"
+  # exit 0
+
+  /bin/bash -c "$cmd" || fail "failed to transmit configuration using <${cmd}>"
+}
+
+
+sendCfgDir "../img/test" "thomas" "balena-nuc" "migrate2"

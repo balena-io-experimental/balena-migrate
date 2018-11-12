@@ -4,6 +4,7 @@
 /flasher-scripts
 /scripts/test
 /test
+/img
 *.img
 *.iso
 *.vmdk
