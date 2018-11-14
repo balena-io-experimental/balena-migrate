@@ -948,11 +948,11 @@ if [ -n "$PARAM_HOME_DIR" ] ; then
   # cmd line params take precedence over config file
   HOME_DIR=$PARAM_HOME_DIR
 fi
-
 inform "using home dir:     $HOME_DIR"
-inform "using archive dir:  $ARCHIVE_FILE"
+
 if [ -n "$PARAM_UUID" ] ; then
-  inform "using UUID:  $PARAM_UUID"
+  # cmd line params take precedence over config file
+  BALENA_UUID="$PARAM_UUID"
 fi
 
 # default grub config type
@@ -1002,8 +1002,8 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot sync stat touch udevadm"
-REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed"
+INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot stat sync touch udevadm"
+REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed openssl"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -1197,6 +1197,35 @@ if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
   fi
 fi
 
+######################################################
+## inject UUID into balena config
+######################################################
+
+if [ -n "$BALENA_CONFIG" ] ; then
+
+  if [ -f "${HOME_DIR}/$BALENA_CONFIG" ]  && [ -n "$BALENA_UUID" ] ; then
+    if [ "$BALENA_UUID" == "create" ] ||  [ "$BALENA_UUID" == "CREATE" ] ; then
+      BALENA_UUID=$(openssl rand -hex 16) || fail "failed to create UUID"
+    fi
+
+    inform "using UUID: $BALENA_UUID"
+
+    BALENA_TMP_FILE=$(mktemp -p ${HOME_DIR})
+    BALENA_TMP_FILE=$(basename ${BALENA_TMP_FILE})
+
+    # cp "$BALENA_CONFIG" "$BALENA_TMP_FILE" || fail "failed to copy $BALENA_CONFIG to $BALENA_TMP_FILE"
+    uuidConf='"uuid":"'$BALENA_UUID'"'
+    debug main "uuidConf=$uuidConf"
+    if grep "\"uuid\":" "$BALENA_CONFIG" >/dev/null 2>&1  ; then
+      debug main "replace UUID with $BALENA_UUID"
+      sed 's/\("uuid":"[^"]\+"\)/'$uuidConf'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
+    else
+      debug main "add UUID $BALENA_UUID"
+      sed 's/\(}\)\s*$/,'$uuidConf'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
+    fi
+    BALENA_CONFIG="$BALENA_TMP_FILE"
+  fi
+fi
 
 ###########################
 ## write /etc/migrate.conf
@@ -1249,7 +1278,7 @@ GRUB_PART_GPT=${GPT_TABLE}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
 MEM_MIN_FREE=${MEM_MIN_FREE_S2}
-BALENA_UUID=${PARAM_UUID}
+# BALENA_UUID=${BALENA_UUID}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
@@ -1279,6 +1308,10 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
 
     inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
     cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+fi
+
+if [ -n "$BALENA_TMP_FILE" ] && [ -f "$BALENA_TMP_FILE" ] ; then
+  rm "$BALENA_TMP_FILE"
 fi
 
 ###########################

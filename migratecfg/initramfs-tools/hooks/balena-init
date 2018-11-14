@@ -69,10 +69,14 @@ log "creating migrate dir ${MIGRATE_DIR}"
 mkdir -p "$MIGRATE_DIR" || fail "failed to create directory ${MIGRATE_DIR}"
 log "...done"
 
-if [ -n "${BALENA_CONFIG}" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] ; then
-	log "copying balena config from ${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_DIR}/"
-	cp "${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_DIR}/"
-	log "..done"
+if [ -n "${BALENA_CONFIG}" ] ; then
+	if [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] ; then
+		log "copying balena config from ${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_DIR}/"
+		cp "${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_DIR}/"
+		log "..done"
+	else
+		fail "could not copy ${HOME_DIR}/${BALENA_CONFIG} - file not found"
+	fi
 fi
 
 log "copying network config files to initramfs"
