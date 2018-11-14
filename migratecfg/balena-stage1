@@ -808,7 +808,13 @@ function setupBootCfg_other {
 
   GRUB_INSTALL="TRUE"
 
-  cat << EOI > ${HOME_DIR}/grub.cfg
+  if [ -n "$GRUB_CFG" ] ; then
+    if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
+      fail "grub config not found: ${GRUB_CFG}"
+    fi
+  else
+    # TODO: use up to date grub config
+    cat << EOI > ${HOME_DIR}/grub.cfg
 serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
 default=boot
 timeout=0
@@ -817,6 +823,8 @@ menuentry 'boot'{
 linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
 }
 EOI
+    GRUB_CFG="grub.cfg"
+  fi
 
 
   if [ ! "$NO_SETUP" == "TRUE" ] ; then
@@ -1273,6 +1281,7 @@ NO_FLASH=${NO_FLASH}
 TERM_EXIT="${TERM_EXIT}"
 
 GRUB_INSTALL=${GRUB_INSTALL}
+GRUB_CFG="$GRUB_CFG"
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
 
@@ -1281,8 +1290,6 @@ MEM_MIN_FREE=${MEM_MIN_FREE_S2}
 # BALENA_UUID=${BALENA_UUID}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
-
-
 
 EOI
 

@@ -99,9 +99,11 @@ if [ "$GRUB_INSTALL" = "TRUE" ] ; then
 		exit 1
 	fi
 
-	if [ -f ${HOME_DIR}/grub.cfg ] ; then
-		log "copying ${HOME_DIR}/grub.cfg"
-		cp ${HOME_DIR}/grub.cfg "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/grub.cfg"
+	if [ -n "$GRUB_CFG" ] && [ -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
+		log "copying ${HOME_DIR}/${GRUB_CFG}"
+		cp ${HOME_DIR}/${GRUB_CFG} "${MIGRATE_DIR}/grub.cfg" || fail "failed to copy ${HOME_DIR}/${GRUB_CFG}"
+	else
+		fail "grub config not found in ${HOME_DIR}/${GRUB_CFG}"
 	fi
 
 	if [ -f ${HOME_DIR}/device.map ] ; then
