@@ -224,7 +224,7 @@ function getCmdArgs {
         case "$cmd" in
           config)
             if [ -n "$param" ] ; then
-              PARAM_CONFIG_FILE=$param
+              PARAM_CONFIG_FILE="$param"
             else
               fail "missing parameter for $var"
             fi
@@ -238,7 +238,14 @@ function getCmdArgs {
             ;;
           home)
             if [ -n "$param" ] ; then
-              PARAM_HOME_DIR=$param
+              PARAM_HOME_DIR="$param"
+            else
+              fail "missing parameter for $var"
+            fi
+            ;;
+          balena-cfg)
+            if [ -n "$param" ] ; then
+              PARAM_BALENA_CONFIG="$param"
             else
               fail "missing parameter for $var"
             fi
@@ -255,16 +262,13 @@ function getCmdArgs {
         if [[ "$var" =~ ^-.* ]] ; then
           debug getCmdArgs "$var starts with -"
           case "$var" in
-            -c|--config)
+            -c)
               cmd="config"
               ;;
-            --home)
-              cmd="home"
-              ;;
-            -u|--uuid)
+            -u)
               cmd="uuid"
               ;;
-            -h|--help)
+            -h)
               printHelp
               ;;
             *)
@@ -963,6 +967,11 @@ if [ -n "$PARAM_UUID" ] ; then
   BALENA_UUID="$PARAM_UUID"
 fi
 
+if [ -n "$PARAM_BALENA_CONFIG" ] ; then
+  # cmd line params take precedence over config file
+  BALENA_CONFIG="$PARAM_BALENA_CONFIG"
+fi
+
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
 
@@ -1405,5 +1414,9 @@ fi
 if [ "$DO_REBOOT" == "TRUE" ] ; then
   inform "rebooting system in 5 seconds"
   sleep 5
+  inform "migration successful, rebooting system in 1 second"
+  sleep 1
   reboot
+else
+  inform "migration successful, please reboot system"
 fi
