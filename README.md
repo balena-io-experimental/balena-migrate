@@ -17,128 +17,76 @@ To migrate a device you will have to copy some more files into this directory an
 Therefore it might make sense to copy the entire folder to a different location. Ultimately - once your setup is complete 
 you will copy the directory to the device you want to migrate.
 
-After choosing the migration environment the next step is to create a balena-migrate.conf file, that will contain your 
-configuration. There are a several sample config files contained in the directory that you can use as a template. 
+After creating the migration environment the next step is to create a balena-migrate.conf file, that will contain your 
+configuration. There are a several sample config files contained in the directory that you can use as a template. The 
+easiest way is to copy a file that matches your platform to *balena-migrate.conf*.
+To migrate an Raspberry PI device you might invoke:
+ ```
+ cp balena-migrateRPI.conf balena-migrate.conf
+ ```   
 
-#### Choosing the OS Image
+#### Preparing the OS Image
 
 Next copy the balenaOS image that you want to install to the folder and set the *IMAGE\_FILE* variable in the config
 file to the name of the image.
 
-When migrating Raspberry PI devices you can use the image, that you have downloaded from the dashboard. 
-On intel-based devices you will have downloaded a flasher image that can not be used directly to with *balena-migrate*. 
-Please execute the following steps to extract the balenaOS image from the flasher image.
+When migrating Raspberry PI devices you can use the unmodified image, that you have downloaded from the dashboard. 
+
+On intel-based devices you will have downloaded a flasher image that can not be used directly with *balena-migrate*. 
+Please read the next section: 'Extracting the balenaOS image and grub config from a Flasher Image' to extract your balenaOS image and 
+grub config file. 
+
+The image you downloaded is typically zip compressed, internally balena-migrate works with the gzip format to be able 
+to flash images directly from the compressed archive. For this reason balena-migrate will unzip zip compressed image files 
+and recompresss them using gzip. If you are planning to use the same setup multiple time it makes sense to convert the 
+image file to gzip manually to save time and disk space when devices are actually migrated. To do this use unzip 
+to unpack the zip archive containing the image and then gzip to compress the unpacked file. You can then remove the 
+zip archive and configure the gzipped file to be your image file.
+Example:
+```
+unzip balena-cloud-appname-paspberrypi3-2.26.0+rev1-dev-v8.0.0.img.zip
+gzip balena-cloud-appname-paspberrypi3-2.26.0+rev1-dev-v8.0.0.img
+rm balena-cloud-appname-paspberrypi3-2.26.0+rev1-dev-v8.0.0.img.zip
+```     
 
 ##### Extracting the balenaOS image and grub config from a Flasher Image
 
-**TODO:** integrate this into balena-migrate
+The easiest way to extract the balenaOS image and grub config is to use the extract script supplied in this repository.
+The extract script can be invoked as follows:
+```sudo ./extract --grub=<extracted grub file destination> --img=<extracted image destination> <flasher image>```
+Example:
+```
+sudo ./extract --grub=grub.cfg \
+               --img=resin-image-genericx86-64.resinos.img.gz \
+               balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img.zip
+```
+The above command will extract the grub config and the gzipped image from a zip archive containing the flasher image.
 
-To extract the balenaOS image and grub config you can either loop-mount the flasher image or flash it to a device/sd-card. 
+The extract script can work with a zip archive or with the raw flasher image. 
 
-**a) Loop Mounting**
-The easiest way to loop mount on debian/linux is to use kpartx. You might have to install kpartx, on debian based 
-systems just call 
-
-```sudo apt-get install kpartx```
-
-You will usually have to unzip the image before loop 
-mounting it. In any case you will likely need admin (sudo) access.
-
-
-Example, best executed from within the migration env folder:
+**Warning:** If working on a zip archive please make sure you have about 3GB of disk space available to unpack the image.     
  
-```
-# unzip the image 
-unzip balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img.zip 
->> Archive:  balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img.zip
->>  inflating: balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img  
 
-# loop mount the image 
-sudo kpartx -v -a balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img
->> add map loop34p1 (253:0): 0 81920 linear 7:34 8192
->> add map loop34p2 (253:1): 0 5160960 linear 7:34 90112
->> add map loop34p3 (253:2): 0 8192 linear 7:34 5251072
->> add map loop34p4 (253:3): 0 2 linear 7:34 5259264
->> add map loop34p5 (253:4): 0 8192 linear 7:34 5267456
->> add map loop34p6 (253:5): 0 16384 linear 7:34 5283840
-
-# mount the boot partition 
-sudo mkdir /mnt/balena-tmp 
-sudo mount /dev/mapper/loop34p1 /mnt/balena-tmp 
-
-# copy the grub config  to ./
-sudo cp /mnt/balena-tmp/grub.cfg_internal ./grub.intel-nuc-2.26.0+rev1.cfg
-
-# unmount the boot partition
-sudo umount /mnt/balena-tmp
-
-# mount the root partition 
-sudo mount /dev/mapper/loop34p2 /mnt/balena-tmp 
-
-# copy the image to ./
-sudo cp /mnt/balena-tmp/opt/resin-image-genericx86-64.resinos-img ./resin-image-genericx86-64.resinos-2.26.0+rev1-dev-v8.0.0.img
-
-# unmount the root partition
-sudo umount /mnt/balena-tmp
-sudo rmdir /mnt/balena-tmp
-
-# gzip the extracted image
-sudo gzip ./resin-image-genericx86-64.resinos-2.26.0+rev1-dev-v8.0.0.img
-
-# unmount the image 
-sudo kpartx -v -d balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img
->> del devmap : loop34p6
->> del devmap : loop34p5
->> del devmap : loop34p4
->> del devmap : loop34p3
->> del devmap : loop34p2
->> del devmap : loop34p1
->> loop deleted : /dev/loop34
- 
-```
-
-**b) Flashing to Device**
-
-If you decide to flash the image to an SD-card or drive instead of loop mounting it, you can use 
-[ etcher ]( https://www.balena.io/etcher/ )  to do so. 
-After flashing you will find the same partitions as above on the SD card. 
-You can use the above commands to mount partitions and extract files, using the SD cards device name (eg. /dev/sda) 
-instead of the loop devices (/dev/mapper/loop34p). Assuming your have flashed the image to */dev/sdb* the extraction would 
-look like this: 
-```
-# mount the boot partition 
-sudo mkdir /mnt/balena-tmp 
-sudo mount /dev/sdb1 /mnt/balena-tmp 
-
-# copy the grub config  to ./
-sudo cp /mnt/balena-tmp/grub.cfg_internal ./grub.intel-nuc-2.26.0+rev1.cfg
-
-# unmount the boot partition
-sudo umount /mnt/balena-tmp
-
-# mount the root partition  
-sudo mount /dev/sdb2 /mnt/balena-tmp 
-
-# copy the image to ./
-sudo cp /mnt/balena-tmp/opt/resin-image-genericx86-64.resinos-img ./resin-image-genericx86-64.resinos-2.26.0+rev1-dev-v8.0.0.img
-
-# unmount the root partition
-sudo umount /mnt/balena-tmp
-sudo rmdir /mnt/balena-tmp
-
-# gzip the extracted image
-sudo gzip ./resin-image-genericx86-64.resinos-2.26.0+rev1-dev-v8.0.0.img
-
-```
-
-After this you should have a valid gzipped balenaOS image in *resin-image-genericx86-64.resinos-2.26.0+rev1-dev-v8.0.0.img.gz* 
-and a grub config file that is compatible with the image in *grub.intel-nuc-2.26.0+rev1.cfg*.
-
- 
 ##### Setting up the Config File
 
-    
-    
+Using the a text editor like nano, vim or gedit edit your balena-migrate.conf file to contain at least the following 
+values:
+
+```
+IMAGE_NAME=<path to you zip or gzip image file>
+NO_FLASH= # when you are ready to flash the device
+```
+
+Several other options can be set that are describe in section 'Configuration'. 
+
+### Starting Migration 
+ 
+Once prepared the migration environment can be transferred to the target device. Migration is started by invoking
+balena-migrate from inside the migration environment. 
+Example:
+```
+sudo balena-migrate
+```         
 
 ## Strategy
 
