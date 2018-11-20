@@ -8,6 +8,7 @@
 # TODO: parted not installed on default beaglebone debian install,
 #       install or replace
 # TODO: add -r --reboot cmdline parameters
+# TODO: support zip archived images - convert o gzip
 #
 ####################################################################
 
@@ -159,6 +160,10 @@ function simulate {
 }
 
 function clean {
+    if [ - n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] ; then
+      rm -rf "$TMP_DIR"
+    fi
+
     if [ -n "$RESTORE_BOOT_CFG_STAGE1" ] ; then
       $RESTORE_BOOT_CFG_STAGE1
     fi
@@ -1022,7 +1027,7 @@ inform "establishing required programs"
 #       possible candidates: parted (on debian, beaglebone) blkid
 
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot stat sync touch udevadm"
-REQUIRED_PGMS="awk findmnt lsblk mkinitramfs parted readlink sed openssl"
+REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -1045,6 +1050,38 @@ inform "HOME_DIR=$HOME_DIR"
 
 if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
   fail "missing image file: $IMAGE_NAME"
+fi
+
+##########################################
+# check / repack image file
+##########################################
+
+TMP_IMG="${HOME_DIR}/${IMAGE_NAME}"
+FTYPE=$(file -b "${TMP_IMG}")
+
+if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
+  if [[ $FTYPE =~ ^Zip\ archive\ data.* ]]  ; then
+    inform "image file appears to be a zip archive, unzipping and repacking in gzip format.."
+    TMP_DIR=$(mktemp -d -p ./)
+    unzip "${TMP_IMG}" -d "$TMP_DIR" || fail "failed to unzip ${TMP_IMG}"
+    TMP_IMG="${TMP_DIR}/$(ls "$TMP_DIR")"
+    inform "got ${TMP_IMG}"
+    FTYPE=$(file -b "$TMP_IMG")
+  fi
+
+  if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+    gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
+    TMP_IMG=$(basename "${TMP_IMG}")
+    IMAGE_NAME="${TMP_DIR}/${TMP_IMG}"
+    inform "working with image $IMAGE_NAME"
+  else
+    fail "cannot make sense of unzipped image file $TMP_IMG - expecting an image file, got $FTYPE"
+  fi
+else
+  FTYPE=$(file -bz "${HOME_DIR}/${IMAGE_NAME}")
+  if [[ ! $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+    fail "cannot make sense of image file $TMP_IMG - expecting a gzipped image file, got $FTYPE"
+  fi
 fi
 
 ##########################################

@@ -88,19 +88,27 @@ if [ -z "$IMG_FILE" ] && [ -z "$GRUB_FILE" ] ; then
   fail "no output files specified, please use --img and/or --grub options to specify output files"
 fi
 
-echo "processing image $INPUT_IMG"
+FTYPE=$(file -b "$INPUT_IMG")
 
-if [[ "$INPUT_IMG" =~ .*\.zip$ ]] ; then
+if [[ $FTYPE =~ ^Zip\ archive\ data.* ]]  ; then
   echo "file appears to be a zip archive, unzipping.."
   TMP_DIR=$(mktemp -d -p ./)
   unzip "$INPUT_IMG" -d "$TMP_DIR" || fail "failed to unzip $INPUT_IMG"
   INPUT_IMG="${TMP_DIR}/$(ls "$TMP_DIR")"
   echo "got ${INPUT_IMG}"
+  FTYPE=$(file -b "$INPUT_IMG")
 fi
+
+if [[ ! $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+  fail "cannot make sense of image file $INPUT_IMG - expecting an image file, got $FTYPE"
+fi
+
 
 if [[ ! "$INPUT_IMG" =~ ^[^\ ]+\.img$ ]] ; then
   fail "cannot make sense of image file $INPUT_IMG - expecting a single file that ends with .img"
 fi
+
+echo "processing image $INPUT_IMG"
 
 while read line
 do
@@ -149,8 +157,8 @@ if [ -n "$IMG_FILE" ] ; then
   echo "mounting root-A"
   mount $LOOP_DEV "$MNT_DIR"
 
-  cp "${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img" "$IMG_FILE" || fail "failed to copy image file"
-  echo "copied ${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img $IMG_FILE"
+  gzip -c "${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img" > "$IMG_FILE" || fail "failed to copy image file"
+  echo "gzipped ${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img to $IMG_FILE"
   sleep 1 # otherwise mount dir might still be busy...
 
   umount "$MNT_DIR" || fail "failed to unmount root-A partition"
