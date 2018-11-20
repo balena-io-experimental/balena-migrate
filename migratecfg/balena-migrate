@@ -7,7 +7,8 @@
 ####################################################################
 # TODO: parted not installed on default beaglebone debian install,
 #       install or replace
-# TODO: remove non DEFAULT strategies ?
+# TODO: add -r --reboot cmdline parameters
+#
 ####################################################################
 
 
@@ -184,9 +185,10 @@ function printHelp {
   echo "  please run as root"
   echo "  OPTIONS: "
   echo "    -c <config file> | --config=<config file> : use given config file instead of /etc/balena-migrate.log "
-  echo "    -u <UUID> | --uuid=<UUID>                 : use given UUID as baleanOS host id"
   echo "    --home=<HOME_DIR>                         : use given path as home directory"
   echo "    -h | --help                               : print this help and exit"
+  echo "    -r <DELAY> | --reboot=<DELAY>             : reboot when done after a delay of DELAY seconds"
+  echo "    -u <UUID> | --uuid=<UUID>                 : use given UUID as baleanOS host id"
   exit 0
 }
 
