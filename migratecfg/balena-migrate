@@ -8,7 +8,7 @@
 # TODO: parted not installed on default beaglebone debian install,
 #       install or replace
 # TODO: add -r --reboot cmdline parameters
-# TODO: support zip archived images - convert o gzip
+# TODO: attempt to detect flasher images
 #
 ####################################################################
 
@@ -160,7 +160,7 @@ function simulate {
 }
 
 function clean {
-    if [ - n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] ; then
+    if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] ; then
       rm -rf "$TMP_DIR"
     fi
 
@@ -1062,7 +1062,7 @@ FTYPE=$(file -b "${TMP_IMG}")
 if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   if [[ $FTYPE =~ ^Zip\ archive\ data.* ]]  ; then
     inform "image file appears to be a zip archive, unzipping and repacking in gzip format.."
-    TMP_DIR=$(mktemp -d -p ./)
+    TMP_DIR=$(mktemp -d -p "${HOME_DIR}")
     unzip "${TMP_IMG}" -d "$TMP_DIR" || fail "failed to unzip ${TMP_IMG}"
     TMP_IMG="${TMP_DIR}/$(ls "$TMP_DIR")"
     inform "got ${TMP_IMG}"
@@ -1070,10 +1070,18 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   fi
 
   if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+    inform "gzipping uncompressed image file $TMP_IMG.."
     gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
-    TMP_IMG=$(basename "${TMP_IMG}")
-    IMAGE_NAME="${TMP_DIR}/${TMP_IMG}"
-    inform "working with image $IMAGE_NAME"
+    # TMP_IMG=$(basename "${TMP_IMG}")
+    IMAGE_NAME=$(expr match "${TMP_IMG}" '.*/\([^/]\+/[^/]\+\)$')
+    IMAGE_NAME="${IMAGE_NAME}.gz" 
+    # IMAGE_NAME=${TMP_IMG#"$HOME_DIR/"}.gz
+    # IMAGE_NAME="${TMP_DIR}/${TMP_IMG}.gz"
+    if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
+      inform "working with image $IMAGE_NAME"
+    else
+      fail "compressed image ${HOME_DIR}/${IMAGE_NAME} does not exist"
+    fi
   else
     fail "cannot make sense of unzipped image file $TMP_IMG - expecting an image file, got $FTYPE"
   fi
