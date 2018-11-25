@@ -17,8 +17,19 @@ function fail {
   exit 1
 }
 
-function clean {
+function printHelp {
+  echo ""
+  echo "extract - extract balena OS image and grub config from balena OS flasher image"
+  echo "  USAGE extract [OPTIONS] <image-file>"
+  echo "  please run as root."
+  echo "  OPTIONS: "
+  echo "    --grub=<output grub file> : output grub config to given path"
+  echo "    --img=<output image file> : output OS image to given path"
+  echo ""  
+  exit 0
+}
 
+function clean {
   if [ -n "$LOOP_DEV" ] && [ -b "$LOOP_DEV" ] ; then
     # echo "removing $LOOP_DEV"
     umount $LOOP_DEV || true
@@ -59,6 +70,11 @@ function getCmdArgs {
       continue
     fi
 
+    if [[ $var =~ ^(--help|-h)$ ]] ; then
+      printHelp
+      exit 0
+    fi
+
     fail "unrecognized argument $var"
   done
 }
@@ -69,18 +85,22 @@ function getCmdArgs {
 # main
 ################################################################################
 
-if [[ $EUID -ne 0 ]]; then
-  fail "This script must be run as root"
-fi
-
 getCmdArgs "$@"
 
+if [[ $EUID -ne 0 ]]; then
+  fail "Please run this script as root"
+fi
+
 if [ -z "$INPUT_IMG" ] ; then
-  fail "USAGE: extract [--grub=<grub output file>] [--img=<image output file>] <image-file>"
+  echo "ERROR: no input image file given."
+  printHelp
+  fail
 fi
 
 if [ ! -f "$INPUT_IMG" ] ; then
-  fail "file not found $INPUT_IMG"
+  echo "ERROR file not found $INPUT_IMG"
+  printHelp
+  fail
 fi
 
 if [ -z "$IMG_FILE" ] && [ -z "$GRUB_FILE" ] ; then

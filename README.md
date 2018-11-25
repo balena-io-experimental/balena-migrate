@@ -1,11 +1,11 @@
 # BalenaOS Migration
 
-This project attempts to provide a generic solution to migrate a range
-of different device types running linux operating systems to balenaOS.
+This project attempts to provide a generic solution to migrate a range of different device types running linux operating 
+systems to balenaOS.
 
 ## How to use balena-migrate
 
-When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup 
+**Warning:** When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup 
 thoroughly in a test environment before applying it to production devices. It also makes sense to read this document completely to understand 
 the concepts and the risks involved. 
 
@@ -14,13 +14,13 @@ the concepts and the risks involved.
 The *migrateCfg* folder in this repository will be your migration environment. 
 
 To migrate a device you will have to copy some more files into this directory and create / edit configuration files. 
-Therefore it might make sense to copy the entire folder to a different location. Ultimately - once your setup is complete 
+Therefore it makes sense to copy the entire folder to a different location. Ultimately - once your setup is complete 
 you will copy the directory to the device you want to migrate.
 
 After creating the migration environment the next step is to create a balena-migrate.conf file, that will contain your 
 configuration. There are a several sample config files contained in the directory that you can use as a template. The 
 easiest way is to copy a file that matches your platform to *balena-migrate.conf*.
-To migrate an Raspberry PI device you might invoke:
+To migrate a Raspberry PI device you might invoke:
  ```
  cp balena-migrateRPI.conf balena-migrate.conf
  ```   
@@ -33,10 +33,10 @@ file to the name of the image.
 When migrating Raspberry PI devices you can use the unmodified image, that you have downloaded from the dashboard. 
 
 On intel-based devices you will have downloaded a flasher image that can not be used directly with *balena-migrate*. 
-Please read the next section: 'Extracting the balenaOS image and grub config from a Flasher Image' to extract your balenaOS image and 
-grub config file. 
+Please read the next section: 'Extracting the balenaOS image and grub config from a Flasher Image' to extract your 
+balenaOS image and grub config file. 
 
-The image you downloaded is typically zip compressed, internally balena-migrate works with the gzip format to be able 
+The image you downloaded is typically zip compressed. Internally balena-migrate works with the gzip format to be able 
 to flash images directly from the compressed archive. For this reason balena-migrate will unzip zip compressed image files 
 and recompresss them using gzip. If you are planning to use the same setup multiple time it makes sense to convert the 
 image file to gzip manually to save time and disk space when devices are actually migrated. To do this use unzip 
@@ -77,7 +77,8 @@ IMAGE_NAME=<path to you zip or gzip image file>
 NO_FLASH= # when you are ready to flash the device
 ```
 
-Several other options can be set that are describe in section 'Configuration'. 
+Several other options can be set that are describe in section 'Configuration'.
+ 
 
 ### Starting Migration 
  
@@ -139,17 +140,17 @@ the system.
 
 On Intel based devices the stage 2 script will attempt to create a new boot loader configuration by copying a new 
 *grub.cfg* to the resin-boot partition and then calling grub-install on the boot device. The grub.cfg can be supplied by 
-seting the parameter *GRUB_CFG* in the config file. If this parameter is set, the script will use a simple grub.cfg created 
+seting the parameter *GRUB_CFG* in the config file. If this parameter is not set, the script will use a simple grub.cfg created 
 by the stage 1 script. Due to changes in recent versions of balenaOS the autocreated grub.cfg does not work any more. 
-The safe way is to do this is to supplpy a cfg.grub that matches the OS version that is being installed.
+The safe way is to do this is to supply a cfg.grub that matches the OS version that is being installed by extracting it 
+from the flasher image.
   
 ### TODO:
 Support user supplied boot loader images to be flashed flashed. 
 
 ## Supported Platforms
 
-So far the scripts are being tested and are working on the following
-platforms:
+So far the scripts are being tested and are working on the following platforms:
 
 -   Raspberry PI 2 on Raspian-9
 -   Raspberry PI 3 on Raspian-9
@@ -162,8 +163,8 @@ platforms:
 
 ## TODOS
 
-Work is in progress on following platforms:
--   Migrate other than wifi settings eg. GSM modem settings.
+- Work is in progress on following platforms: beaglebone green
+- Migrate other than wifi settings eg. GSM modem settings.
 
 ## Migration Stage 1 in Detail
 

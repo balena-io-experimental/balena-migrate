@@ -1074,9 +1074,8 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
     gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
     # TMP_IMG=$(basename "${TMP_IMG}")
     IMAGE_NAME=$(expr match "${TMP_IMG}" '.*/\([^/]\+/[^/]\+\)$')
-    IMAGE_NAME="${IMAGE_NAME}.gz" 
-    # IMAGE_NAME=${TMP_IMG#"$HOME_DIR/"}.gz
-    # IMAGE_NAME="${TMP_DIR}/${TMP_IMG}.gz"
+    IMAGE_NAME="${IMAGE_NAME}.gz"
+
     if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
       inform "working with image $IMAGE_NAME"
     else
