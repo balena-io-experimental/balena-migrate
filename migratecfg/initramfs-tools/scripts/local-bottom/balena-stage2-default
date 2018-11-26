@@ -294,6 +294,8 @@ fi
 # unmount all mounted drives
 ######################################################################
 
+sleep 1
+
 if [ -n "$UMOUNT_RESIN_BOOT" ] ; then
 	umount $UMOUNT_RESIN_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_BOOT"
 fi
