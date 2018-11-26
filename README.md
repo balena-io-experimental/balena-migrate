@@ -318,7 +318,7 @@ To avoid this from happening please make sure to keep the backup file as small a
 
 **Default:** *BALENA\_CONFIG=
 
-If specified , the name of a file in *HOME\_DIR* that will be interpreted as config.json file and copied to the
+If specified, the name of a file in *HOME\_DIR* that will be interpreted as config.json file and copied to the
 resin-boot partition in stage 2.
 
 The balena config.json file can be specified as a command line parameter using the *--balena-cfg* option as follows:
@@ -333,7 +333,7 @@ The balena config.json file can be specified as a command line parameter using t
 If specified this value is treated as the devices UUID and will be injected into the file specified by the
 *BALENA\_CONFIG* variable. If *BALENA\_CONFIG* is not set this parameter has no effect.    
 
-The balena config.json file can be specified as a command line parameter using the *-u / --uuid* option as follows:
+The UUID can be specified as a command line parameter using the *-u / --uuid* option as follows:
 
 *balena-migrate -u 1a9f88d13a555ba61f1c9a951fab09a3*
 
@@ -442,7 +442,8 @@ This variable can be set on the command line using the --home parameter:
 This option **must** be specified. It specifies the balenaOS image that will be flashed to the devices boot device.
 The script will fail if the file is not specified or does not exist.
 
-The script expects the image to be in gzipped format.
+The script expects the image to be in gzipped or zip format. In case of a zip archive the file will
+be unpacked and recompressed using gzip.  
 
 The script expects the file to be tagged with the target platform as follows:
 
