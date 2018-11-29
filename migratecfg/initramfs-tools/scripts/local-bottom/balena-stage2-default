@@ -205,60 +205,90 @@ fi
 # install grub bootloader if required
 ######################################################################
 
-if [ "$GRUB_INSTALL" = "TRUE" ] ; then
-	log "attempting grub install with type $GRUB_BOOT_TYPE"
+## ALT no grub install
+## taken from resin-init-flasher-board STEM ver 2.26.0-rev2
+#if [ -z $INSTALL_UEFI ]; then
+#    echo "[resin-init-flasher-board] non-UEFI installation."
+#    rm -rf "$INTERNAL_DEVICE_BOOT_PART_MOUNTPOINT/EFI"
+#    dd if=/mnt/boot/grub/boot.img of=/dev/$internal_dev conv=fdatasync bs=1M
+#    dd if=/mnt/boot/grub/core.img of=/dev/$internal_dev conv=fdatasync bs=512 seek=1
+#else
+#    echo "[resin-init-flasher-board] UEFI installation."
+#    rm -rf "$INTERNAL_DEVICE_BOOT_PART_MOUNTPOINT/grub"
+#fi
 
-	# if [ "${FLASH_BOOTLOADER}" == "TRUE" ] ; then
-	# 		inform "flashing boot.img os to ${ORIG_BOOT_DEV}"
-	# 		dd if=${BOOT_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1
-	# 		inform "flashing core.img os to ${ORIG_BOOT_DEV}"
-	# 		dd if=${CORE_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1 seek=512
-	# fi
 
-	if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
-		######################################################################
-		# install grub legacy bootloader
-		######################################################################
-
-		if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
-			log "copying grub.cfg"
-			mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
-			cp ${MIGRATE_TMP}/grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
-		else
-			fail "no grub config found"
-		fi
-
-		if [ -d "${BOOT_MNT_DIR}/EFI" ]  ; then
-			log "deleting ${BOOT_MNT_DIR}/EFI"
-			rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
-		fi
-
-		GRUB_CMD="grub-install 	--no-floppy --boot-directory=${BOOT_MNT_DIR}"
-		GRUB_CMD="${GRUB_CMD} ${BOOT_DEV}"
-
-		$GRUB_CMD >>"$LOG_TO" 2>&1 || fail "failed to install grub with $GRUB_CMD"
+if [ -n "$GRUB_INSTALL"] ; then
+	if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
+		log "copying grub.cfg"
+		mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
+		cp ${MIGRATE_TMP}/grub.cfg ${BOOT_MNT_DIR}/grub/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
 	else
-		# 									 \
-		######################################################################
-		# install grub UEFI bootloader
-		######################################################################
+		fail "no grub config found"
+	fi
 
-		log "Add UEFI boot entry for starting resinOS from internal media."
-
-		if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
-			log "copying grub.cfg"
-			cp ${MIGRATE_TMP}/grub.cfg  ${BOOT_MNT_DIR}/EFI/BOOT/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+	if [ "$GRUB_INSTALL" = "FLASH" ] ; then
+		if [ -f "${MIGRATE_TMP}/boot.img" ] && [ -f "${MIGRATE_TMP}/core.img" ] ; then
+			# install grub img files
+			if [ -d "${BOOT_MNT_DIR}/EFI" ]  ; then
+				log "deleting ${BOOT_MNT_DIR}/EFI"
+				rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
+			fi
+			dd if="${MIGRATE_TMP}/boot.img" of=dd of=${BOOT_DEV} conv=fdatasync bs=1M >>"$LOG_TO" 2>&1 || log "failed to flash ${MIGRATE_TMP}/boot.img"
+			dd if="${MIGRATE_TMP}/core.img" of=${BOOT_DEV} conv=fdatasync bs=512 seek=1	>>"$LOG_TO" 2>&1 || log "failed to flash ${MIGRATE_TMP}/core.img"
 		else
-			fail "no grub config found"
+			log "warning: grub images not found, falling back to grub-install"
+			GRUB_INSTALL="INSTALL"
 		fi
+	fi
 
-		efibootmgr -c -d ${BOOT_DEV} -p 1 -L "resinOS" -l "\EFI\BOOT\bootx64.efi" || fail "failed to install uefi boot manager with: efibootmgr -c -d ${BOOT_DEV} -p 1 -L resinOS -l \EFI\BOOT\bootx64.efi"
-#
-#		log "attempting grub-install 	--no-floppy --efi-directory=${BOOT_MNT_DIR} --boot-directory=${BOOT_MNT_DIR}"
-#		grub-install 	--no-floppy \
-#									--efi-directory=${BOOT_MNT_DIR} \
-#									--boot-directory=${BOOT_MNT_DIR} \
-#									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+	if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
+		log "attempting grub install with type $GRUB_BOOT_TYPE"
+
+		# if [ "${FLASH_BOOTLOADER}" == "TRUE" ] ; then
+		# 		inform "flashing boot.img os to ${ORIG_BOOT_DEV}"
+		# 		dd if=${BOOT_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1
+		# 		inform "flashing core.img os to ${ORIG_BOOT_DEV}"
+		# 		dd if=${CORE_IMG_FILE} of=${ORIG_BOOT_DEV} conv=fdatasync bs=1 seek=512
+		# fi
+
+		if [ "$GRUB_BOOT_TYPE" = "legacy" ] ; then
+			######################################################################
+			# install grub legacy bootloader
+			######################################################################
+
+			if [ -d "${BOOT_MNT_DIR}/EFI" ]  ; then
+				log "deleting ${BOOT_MNT_DIR}/EFI"
+				rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
+			fi
+
+			GRUB_CMD="grub-install 	--no-floppy --boot-directory=${BOOT_MNT_DIR}"
+			GRUB_CMD="${GRUB_CMD} ${BOOT_DEV}"
+
+			$GRUB_CMD >>"$LOG_TO" 2>&1 || fail "failed to install grub with $GRUB_CMD"
+		else
+			# 									 \
+			######################################################################
+			# install grub UEFI bootloader
+			######################################################################
+
+			log "Add UEFI boot entry for starting resinOS from internal media."
+
+			if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
+				log "copying grub.cfg"
+				cp ${MIGRATE_TMP}/grub.cfg  ${BOOT_MNT_DIR}/EFI/BOOT/ >>$LOG_TO 2>&1 || fail "failed to copy ${MIGRATE_TMP}/grub.cfg"
+			else
+				fail "no grub config found"
+			fi
+
+			efibootmgr -c -d ${BOOT_DEV} -p 1 -L "resinOS" -l "\EFI\BOOT\bootx64.efi" || fail "failed to install uefi boot manager with: efibootmgr -c -d ${BOOT_DEV} -p 1 -L resinOS -l \EFI\BOOT\bootx64.efi"
+	#
+	#		log "attempting grub-install 	--no-floppy --efi-directory=${BOOT_MNT_DIR} --boot-directory=${BOOT_MNT_DIR}"
+	#		grub-install 	--no-floppy \
+	#									--efi-directory=${BOOT_MNT_DIR} \
+	#									--boot-directory=${BOOT_MNT_DIR} \
+	#									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
+		fi
 	fi
 fi
 

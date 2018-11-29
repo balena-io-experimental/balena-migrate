@@ -25,7 +25,7 @@ function printHelp {
   echo "  OPTIONS: "
   echo "    --grub=<output grub file> : output grub config to given path"
   echo "    --img=<output image file> : output OS image to given path"
-  echo ""  
+  echo ""
   exit 0
 }
 
@@ -55,6 +55,18 @@ function getCmdArgs {
     if [[ ! $var =~ ^-.*$ ]] ; then
       INPUT_IMG="$var"
       echo "using input file: $INPUT_IMG"
+      continue
+    fi
+
+    if [[ $var =~ ^--grub-boot=.*$ ]] ; then
+      GRUB_BOOT_IMG=$(expr match "$var" '^--grub-boot=\(.*\)$')
+      echo "using grub boot img output file $GRUB_BOOT_IMG"
+      continue
+    fi
+
+    if [[ $var =~ ^--grub-core=.*$ ]] ; then
+      GRUB_CORE_IMG=$(expr match "$var" '^--grub-core=\(.*\)$')
+      echo "using grub boot img output file $GRUB_CORE_IMG"
       continue
     fi
 
@@ -161,6 +173,22 @@ if [ -n "$GRUB_FILE" ] ; then
 
   cp "${MNT_DIR}/grub.cfg_internal" "$GRUB_FILE" || fail "failed to copy grub config"
   echo "copied ${MNT_DIR}/grub.cfg_internal to $GRUB_FILE"
+
+  if [ -n "$GRUB_BOOT_IMG" ] ; then
+    if [ -f "${MNT_DIR}/grub/boot.img ] ; then
+      cp "${MNT_DIR}/grub/boot.img "$GRUB_BOOT_IMG"
+    else
+      fail "cannot find grub/boot.img in flasher boot partition"
+    fi
+  fi
+
+  if [ -n "$GRUB_CORE_IMG" ] ; then
+    if [ -f "${MNT_DIR}/grub/core.img ] ; then
+      cp "${MNT_DIR}/grub/core.img "$GRUB_CORE_IMG"
+    else
+      fail "cannot find grub/core.img in flasher boot partition"
+    fi
+  fi
 
   sleep 1 # otherwise mount dir might still be busy...
   umount "$MNT_DIR" || fail "failed to unmount boot partition"

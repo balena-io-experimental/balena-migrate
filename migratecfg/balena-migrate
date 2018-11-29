@@ -746,17 +746,11 @@ function setupBootCfg_bb {
 ## setup intel device to boot with initramfs
 ####################################################
 
-function setupBootCfg_other {
-  inform "setupBootCfg_other"
+function setupBootCfg_x86 {
+  inform "setupBootCfg_x86"
   # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
   # TODO: assuming we are on debian like OS
 
-  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
-
-  # make sure BUSYBOX is used & **most** modules are present
-  inform "checking initramfs-tools config"
-  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   # check if this is an uefi booted system
   local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
@@ -815,9 +809,26 @@ function setupBootCfg_other {
       fail "grub configuration not found"
   fi
 
-# TODO: make grub HD num from hdDev, just assuming 0 for now
+  if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
+    # attempt to flash boot images
+    if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
+      fail "could not locate boot images in ${HOME_DIR}/${GRUB_BOOT_IMG}, ${HOME_DIR}/${GRUB_CORE_IMG}"
+    fi
+    # might not need this at all for boot image grub
+    inform "checking initramfs-tools config"
+    sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+    GRUB_INSTALL=
+  else
+    # attempt to install grub from initramfs
+    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
+    # make sure BUSYBOX is used & **most** modules are present
 
-  GRUB_INSTALL="TRUE"
+    inform "checking initramfs-tools config"
+    sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+    sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+    GRUB_INSTALL="TRUE"
+  fi
+
 
   if [ -n "$GRUB_CFG" ] ; then
     if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
@@ -838,17 +849,17 @@ EOI
   fi
 
 
-  if [ ! "$NO_SETUP" == "TRUE" ] ; then
+  if [ "$NO_SETUP" != "TRUE" ] ; then
 
-    debug setupBootCfg_other "looking for boot device blkid"
+    debug setupBootCfg_x86 "looking for boot device blkid"
 
     if [ -d /dev/disk/by-uuid ] ; then
       for fname in /dev/disk/by-uuid/* ; do
-        debug setupBootCfg_other "looking at $fname"
+        debug setupBootCfg_x86 "looking at $fname"
         linkedFile=$(readlink ${fname})
-        debug setupBootCfg_other "go <${linkedFile}>"
+        debug setupBootCfg_x86 "go <${linkedFile}>"
         if [ "$(basename $ROOT_FS)" == "$(basename $linkedFile)" ] ; then
-          # debug setupBootCfg_other "found ${uuid} for ${ROOT_FS}"
+          # debug setupBootCfg_x86 "found ${uuid} for ${ROOT_FS}"
           partId=$(basename "$fname")
           break
         fi
@@ -1211,9 +1222,9 @@ case "$devType" in
       inform "performing boot setup for Beaglebone: $devType"
       setupBootCfg_bb
     ;;
-    *)
+    x86_64|i686)
       inform "performing boot setup for other: $devType"
-      setupBootCfg_other
+      setupBootCfg_x86
     ;;
 esac
 
@@ -1339,6 +1350,8 @@ GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_CFG="$GRUB_CFG"
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
+GRUB_BOOT_IMG=${GRUB_BOOT_IMG}
+GRUB_CORE_IMG=${GRUB_CORE_IMG}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
 MEM_MIN_FREE=${MEM_MIN_FREE_S2}
@@ -1428,7 +1441,6 @@ if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
   inform "backup file size: ${tmp} kB "
   leftMem=`expr ${leftMem} - ${tmp}`
 fi
-
 
 fType=$(file "${HOME_DIR}/${INITRAMFS_NAME}")
 if [[ "$fType" =~ ^[^:]+:.*cpio\ archive.* ]] ; then
