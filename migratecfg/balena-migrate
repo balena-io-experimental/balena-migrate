@@ -848,7 +848,6 @@ EOI
 
 
   if [ "$NO_SETUP" != "TRUE" ] ; then
-
     debug setupBootCfg_x86 "looking for boot device blkid"
 
     if [ -d /dev/disk/by-uuid ] ; then
@@ -869,22 +868,19 @@ EOI
     fi
 
     if [ -n "$partId" ] ; then
-      local setRoot="search --no-floppy --fs-uuid --set=root $partId"
+      local setRootB="search --no-floppy --fs-uuid --set=root $partId"
     fi
 
     if [ "$GPT_TABLE" == "TRUE" ] ; then
       local partMod="part_gpt"
-      if [ -z "$setRoot" ] ; then
-        local setRoot="set root='${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}'"
-      fi
+      local setRootA="set root='${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}'"
     else
       local partMod="part_msdos"
-      if [ -z "$setRoot" ] ; then
-        local setRoot="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
-      fi
+      local setRootA="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
     fi
 
-    inform "grub config, set root: $setRoot"
+    inform "grub config, root: $setRootA"
+    inform "grub config, root: $setRootB"
 
     cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
@@ -894,10 +890,12 @@ exec tail -n +3 \$0
 # the 'exec tail' line above.
 
 menuentry "resin-migration" {
+  insmod gzio
   insmod $partMod
   insmod ext2
 
-  $setRoot
+  $setRootA
+  $setRootB
   linux $KERNEL_CMD_LINE
   initrd  ${BOOT_DIR}/${INITRAMFS_NAME}
 }

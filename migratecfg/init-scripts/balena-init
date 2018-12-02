@@ -89,7 +89,7 @@ for file in $NETWORK_CONFIGS; do
 	fi
 done
 
-if [ "$GRUB_INSTALL" = "TRUE" ] ; then
+if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
 	if [ -d /usr/lib/grub ] ; then
 		log "copy grub env from /usr/lib/grub"
 		mkdir -p ${DESTDIR}/usr/lib/grub
