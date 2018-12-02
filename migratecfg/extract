@@ -23,8 +23,13 @@ function printHelp {
   echo "  USAGE extract [OPTIONS] <image-file>"
   echo "  please run as root."
   echo "  OPTIONS: "
-  echo "    --grub=<output grub file> : output grub config to given path"
-  echo "    --img=<output image file> : output OS image to given path"
+  echo "    --grub=<output grub file>              : output grub config to given path"
+  echo "    --grub-boot=<output grub core imgage>  : output grub boot image to given path"
+  echo "    --grub-core=<output grub core imgage>  : output grub core image to given path"
+  echo "    --balena-cfg=<output config.json file> : output config.json to given path"
+  echo "    --config=<output migrate config file>  : set variables corresponding to extracted files in migrate config"
+  echo "    --home=<HOME_DIR used for migrate cfg> : use this directory as HOME_DIR for migrate config"
+  echo "    --img=<output image file>              : output OS image to given path"
   echo ""
   exit 0
 }
@@ -70,6 +75,24 @@ function getCmdArgs {
       continue
     fi
 
+    if [[ $var =~ ^--config=.*$ ]] ; then
+      MIGRATE_CONFIG=$(expr match "$var" '^--config=\(.*\)$')
+      echo "modifying migrate config file $MIGRATE_CONFIG"
+      continue
+    fi
+
+    if [[ $var =~ ^--home=.*$ ]] ; then
+      HOME_DIR=$(expr match "$var" '^--home=\(.*\)$')
+      echo "using $HOME_DIR as HOME_DIR"
+      continue
+    fi
+
+    if [[ $var =~ ^--balena-cfg=.*$ ]] ; then
+      BALENA_CONFIG=$(expr match "$var" '^--balena-cfg=\(.*\)$')
+      echo "using config.json output file $BALENA_CONFIG"
+      continue
+    fi
+
     if [[ $var =~ ^--grub=.*$ ]] ; then
       GRUB_FILE=$(expr match "$var" '^--grub=\(.*\)$')
       echo "using grub output file $GRUB_FILE"
@@ -91,7 +114,34 @@ function getCmdArgs {
   done
 }
 
+function setConfig {
+  CFG_FILE=$1
+  CFG_NAME=$2
+  CFG_VALUE=$3
 
+  if [ ! -f "$CFG_FILE" ] ; then
+    echo "file not found $CFG_FILE"
+    return 1
+  fi
+
+  # TODO: make this work
+  #local baseDir=$(dirname "$CFG_VALUE")
+  #echo "is $HOME_DIR in ${baseDir}* ?"
+  #if [[ $HOME_DIR == "${baseDir}*" ]] ; then
+  #  CFG_VALUE=${baseDir#"$HOME_DIR"}/$(basename $CFG_VALUE)
+  #  echo "setting path to $CFG_VALUE"
+  #else
+  #  echo "$CFG_VALUE is not in $HOME_DIR"
+  #  return 1
+  #fi
+
+  if grep "^${CFG_NAME}=.*" "$CFG_FILE" ; then
+    sed -i "s/^${CFG_NAME}=.*\$/${CFG_NAME}=${CFG_VALUE}/g" "$CFG_FILE" || return 1
+  else
+    echo "${CFG_NAME}=${CFG_VALUE}"  >> "$CFG_FILE" || return 1
+  fi
+  return 0
+}
 
 ################################################################################
 # main
@@ -120,6 +170,11 @@ if [ -z "$IMG_FILE" ] && [ -z "$GRUB_FILE" ] ; then
   fail "no output files specified, please use --img and/or --grub options to specify output files"
 fi
 
+if [ -n "$MIGRATE_CONFIG" ] && [ -z "$HOME_DIR" ] ; then
+  HOME_DIR=$(dirname ${MIGRATE_CONFIG})
+  echo "using ${HOME_DIR} as HOME_DIR"
+fi
+
 FTYPE=$(file -b "$INPUT_IMG")
 
 if [[ $FTYPE =~ ^Zip\ archive\ data.* ]]  ; then
@@ -144,7 +199,6 @@ echo "processing image $INPUT_IMG"
 
 while read line
 do
-
   if [[ $line =~ ^1:[0-9]+s:.* ]] ; then
     bootStart=$(expr match "$line" '^1:\([0-9]\+\)s')
     bootStart=$(($bootStart*$BLOCK_SIZE))
@@ -162,7 +216,7 @@ done < <(parted -sm "$INPUT_IMG" unit s print)
 
 MNT_DIR=$(mktemp -d -p ./)
 
-if [ -n "$GRUB_FILE" ] ; then
+if [ -n "$GRUB_FILE" ] || [ -n "$BALENA_CONFIG" ]  ||  [ -n "$GRUB_BOOT_IMG" ] ||  [ -n "$GRUB_CORE_IMG" ]; then
   # echo "attempting losetup --show -o $bootStart -f $INPUT_IMG"
   LOOP_DEV=$(losetup --show -o $bootStart -f "$INPUT_IMG") || fail "failed to loopmount boot partition"
 
@@ -171,20 +225,43 @@ if [ -n "$GRUB_FILE" ] ; then
   echo "mounting boot"
   mount $LOOP_DEV "$MNT_DIR"
 
-  cp "${MNT_DIR}/grub.cfg_internal" "$GRUB_FILE" || fail "failed to copy grub config"
-  echo "copied ${MNT_DIR}/grub.cfg_internal to $GRUB_FILE"
+
+  if [ -n "$GRUB_FILE" ] ; then
+    cp "${MNT_DIR}/grub.cfg_internal" "$GRUB_FILE" || fail "failed to copy grub config"
+    echo "copied ${MNT_DIR}/grub.cfg_internal to $GRUB_FILE"
+    if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
+      setConfig "$MIGRATE_CONFIG" GRUB_CFG "$GRUB_FILE"
+    fi
+  fi
+
+  if [ -n "$BALENA_CONFIG" ] ; then
+    if [ -f "${MNT_DIR}/config.json" ] ; then
+      cp "${MNT_DIR}/config.json" "$BALENA_CONFIG"
+      if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
+        setConfig "$MIGRATE_CONFIG" BALENA_CONFIG "$BALENA_CONFIG"
+      fi
+    else
+      fail "cannot find config.json in flasher boot partition"
+    fi
+  fi
 
   if [ -n "$GRUB_BOOT_IMG" ] ; then
-    if [ -f "${MNT_DIR}/grub/boot.img ] ; then
-      cp "${MNT_DIR}/grub/boot.img "$GRUB_BOOT_IMG"
+    if [ -f "${MNT_DIR}/grub/boot.img" ] ; then
+      cp "${MNT_DIR}/grub/boot.img" "$GRUB_BOOT_IMG"
+      if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
+        setConfig "$MIGRATE_CONFIG" GRUB_BOOT_IMG "$GRUB_BOOT_IMG"
+      fi
     else
       fail "cannot find grub/boot.img in flasher boot partition"
     fi
   fi
 
   if [ -n "$GRUB_CORE_IMG" ] ; then
-    if [ -f "${MNT_DIR}/grub/core.img ] ; then
-      cp "${MNT_DIR}/grub/core.img "$GRUB_CORE_IMG"
+    if [ -f "${MNT_DIR}/grub/core.img" ] ; then
+      cp "${MNT_DIR}/grub/core.img" "$GRUB_CORE_IMG"
+      if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
+        setConfig "$MIGRATE_CONFIG" GRUB_CORE_IMG "$GRUB_CORE_IMG"
+      fi
     else
       fail "cannot find grub/core.img in flasher boot partition"
     fi
@@ -212,6 +289,37 @@ if [ -n "$IMG_FILE" ] ; then
   umount "$MNT_DIR" || fail "failed to unmount root-A partition"
   losetup -d $LOOP_DEV || fail "failed to unmount loop device"
   LOOP_DEV=
+
+  if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
+    setConfig "$MIGRATE_CONFIG" IMAGE_NAME "$IMG_FILE"
+  fi
+fi
+
+if [ -n "$MIGRATE_CONFIG" ] && [ ! -f "$MIGRATE_CONFIG" ]; then
+    echo "creating migrate config file $MIGRATE_CONFIG"
+    cat <<EOI > ${MIGRATE_CONFIG}
+IMAGE_NAME=$IMG_FILE
+DEBUG="TRUE"
+BACKUP_SCRIPT=
+BACKUP_DIRECTORIES=
+NO_FLASH=TRUE
+NO_SETUP= # "TRUE"
+DO_REBOOT= # "TRUE"
+
+LOG_DRIVE=  # /dev/sdb1
+LOG_FS_TYPE=  # ext4
+
+HAS_WIFI_CFG="FALSE"
+MIGRATE_ALL_WIFIS="FALSE"
+MIGRATE_WIFI_CFG= # "migrate-wifis" # file with a list of wifi networks to migrate, one per line
+BALENA_WIFI=  # "TRUE"
+
+BALENA_CONFIG=$BALENA_CONFIG
+
+GRUB_CFG=$GRUB_FILE
+GRUB_BOOT_IMG=$GRUB_BOOT_IMG
+GRUB_CORE_IMG=$GRUB_CORE_IMG
+EOI
 fi
 
 clean

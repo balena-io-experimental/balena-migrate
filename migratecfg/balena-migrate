@@ -809,26 +809,24 @@ function setupBootCfg_x86 {
       fail "grub configuration not found"
   fi
 
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} busybox"
+  # make sure BUSYBOX is used & **most** modules are present
+
+  inform "checking initramfs-tools config"
+  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+
   if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
     # attempt to flash boot images
     if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
       fail "could not locate boot images in ${HOME_DIR}/${GRUB_BOOT_IMG}, ${HOME_DIR}/${GRUB_CORE_IMG}"
     fi
-    # might not need this at all for boot image grub
-    inform "checking initramfs-tools config"
-    sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-    GRUB_INSTALL=
+    GRUB_INSTALL="FLASH"
   else
     # attempt to install grub from initramfs
-    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
-    # make sure BUSYBOX is used & **most** modules are present
-
-    inform "checking initramfs-tools config"
-    sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-    sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-    GRUB_INSTALL="TRUE"
+    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install"
+    GRUB_INSTALL="INSTALL"
   fi
-
 
   if [ -n "$GRUB_CFG" ] ; then
     if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
@@ -993,9 +991,6 @@ fi
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
 
-# name of initramfs to be created/used expected in $HOMEDIR
-INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
-
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
 # raspi cmdline.txt to modify
@@ -1059,13 +1054,30 @@ fi
 
 inform "HOME_DIR=$HOME_DIR"
 
-if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
-  fail "missing image file: $IMAGE_NAME"
+##########################################
+# prepare initramfs-tools dir in $HOME_DIR
+##########################################
+
+if [ -d "/etc/initramfs-tools" ] ; then
+  inform "creating a copy of /etc/initramfs-tools in $HOME_DIR/initramfs-tools and populating it with migrate scripts"
+  cp -r "/etc/initramfs-tools" "$HOME_DIR"
+  cp "${HOME_DIR}/init-scripts/balena-init" "${HOME_DIR}/initramfs-tools/hooks/" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-init to ${HOME_DIR}/initramfs-tools/hooks/"
+  cp "${HOME_DIR}/init-scripts/balena-common" "${HOME_DIR}/initramfs-tools/scripts/" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-common to ${HOME_DIR}/initramfs-tools/scripts"
+  cp "${HOME_DIR}/init-scripts/balena-stage2-default" "${HOME_DIR}/initramfs-tools/scripts/local-bottom" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-stage2-default to ${HOME_DIR}/initramfs-tools/scripts/local-bottom"
+else
+  fail "missing directory /etc/initramfs-tools"
 fi
+
+# name of initramfs to be created/used expected in $HOMEDIR
+INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 
 ##########################################
 # check / repack image file
 ##########################################
+
+if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
+  fail "missing image file: $IMAGE_NAME"
+fi
 
 TMP_IMG="${HOME_DIR}/${IMAGE_NAME}"
 FTYPE=$(file -b "${TMP_IMG}")
@@ -1097,7 +1109,7 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   fi
 else
   FTYPE=$(file -bz "${HOME_DIR}/${IMAGE_NAME}")
-  if [[ ! $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+  if [[ ! $FTYPE =~ ^[^\ ]+\ boot\ sector.* ]]  ; then
     fail "cannot make sense of image file $TMP_IMG - expecting a gzipped image file, got $FTYPE"
   fi
 fi

@@ -104,12 +104,12 @@ if [ ! -d ${MIGRATE_TMP} ] ; then
 fi
 
 log "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}/"
-cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
+cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1 || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 log "..done"
 
 if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "copying backup from ${rootmnt}${HOME_DIR}/${BACKUP_FILE} to ${MIGRATE_TMP}/"
-	cp "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" "${MIGRATE_TMP}/" || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
+	cp "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1 || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 	log "..done"
 fi
 
