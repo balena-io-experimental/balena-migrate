@@ -218,7 +218,9 @@ fi
 #fi
 
 
-if [ -n "$GRUB_INSTALL"] ; then
+if [ -n "$GRUB_INSTALL" ] ; then
+	log "setting up grub boot config: GRUB_INSTALL = $GRUB_INSTALL"
+
 	if [ -f ${MIGRATE_TMP}/grub.cfg ] ; then
 		log "copying grub.cfg"
 		mkdir -p ${BOOT_MNT_DIR}/grub >>$LOG_TO 2>&1 || fail "failed to create directory ${BOOT_MNT_DIR}/grub"
@@ -229,16 +231,16 @@ if [ -n "$GRUB_INSTALL"] ; then
 
 	if [ "$GRUB_INSTALL" = "FLASH" ] ; then
 		if [ -f "${MIGRATE_TMP}/boot.img" ] && [ -f "${MIGRATE_TMP}/core.img" ] ; then
+			log "flashing boot.img / core.img to boot device"
 			# install grub img files
 			if [ -d "${BOOT_MNT_DIR}/EFI" ]  ; then
 				log "deleting ${BOOT_MNT_DIR}/EFI"
 				rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
 			fi
-			dd if="${MIGRATE_TMP}/boot.img" of=dd of=${BOOT_DEV} conv=fdatasync bs=1M >>"$LOG_TO" 2>&1 || log "failed to flash ${MIGRATE_TMP}/boot.img"
-			dd if="${MIGRATE_TMP}/core.img" of=${BOOT_DEV} conv=fdatasync bs=512 seek=1	>>"$LOG_TO" 2>&1 || log "failed to flash ${MIGRATE_TMP}/core.img"
+			dd if="${MIGRATE_TMP}/boot.img" of=dd of=${BOOT_DEV} conv=fdatasync bs=1M >>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/boot.img"
+			dd if="${MIGRATE_TMP}/core.img" of=${BOOT_DEV} conv=fdatasync bs=512 seek=1	>>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/core.img"
 		else
-			log "warning: grub images not found, falling back to grub-install"
-			GRUB_INSTALL="INSTALL"
+			fail "grub images not found, falling back to grub-install"
 		fi
 	fi
 
@@ -290,6 +292,8 @@ if [ -n "$GRUB_INSTALL"] ; then
 	#									${BOOT_DEV} >>"$LOG_TO" 2>&1 || fail "failed to install grub"
 		fi
 	fi
+else
+	log "not a grub install"
 fi
 
 ######################################################################

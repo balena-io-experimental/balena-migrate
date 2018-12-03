@@ -89,16 +89,7 @@ for file in $NETWORK_CONFIGS; do
 	fi
 done
 
-if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
-	if [ -d /usr/lib/grub ] ; then
-		log "copy grub env from /usr/lib/grub"
-		mkdir -p ${DESTDIR}/usr/lib/grub
-		cp -r /usr/lib/grub/* ${DESTDIR}/usr/lib/grub || fail "failed to copy /usr/lib/grub"
-	else
-		log "/usr/lib/grub does not exist"
-		exit 1
-	fi
-
+if [ -n "$GRUB_INSTALL" ] ; then
 	if [ -n "$GRUB_CFG" ] && [ -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
 		log "copying ${HOME_DIR}/${GRUB_CFG}"
 		cp ${HOME_DIR}/${GRUB_CFG} "${MIGRATE_DIR}/grub.cfg" || fail "failed to copy ${HOME_DIR}/${GRUB_CFG}"
@@ -106,9 +97,34 @@ if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
 		fail "grub config not found in ${HOME_DIR}/${GRUB_CFG}"
 	fi
 
-	if [ -f ${HOME_DIR}/device.map ] ; then
-		log "copying ${HOME_DIR}/device.map"
-		cp ${HOME_DIR}/device.map "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/device.map"
+	if [ "$GRUB_INSTALL" = "FLASH" ] ; then
+		if [ -n "$GRUB_BOOT_IMG" ] && [ -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] ; then
+			cp "${HOME_DIR}/${GRUB_BOOT_IMG}" "${MIGRATE_DIR}/boot.img" || fail "failed to copy ${HOME_DIR}/${GRUB_BOOT_IMG} to ${MIGRATE_DIR}/boot.img"
+		else
+			fail "grub boot image not set or not found in ${HOME_DIR}/${GRUB_BOOT_IMG}"
+		fi
+
+		if [ -n "$GRUB_CORE_IMG" ] && [ -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
+			cp "${HOME_DIR}/${GRUB_CORE_IMG}" "${MIGRATE_DIR}/core.img" || fail "failed to copy ${HOME_DIR}/${GRUB_CORE_IMG} to ${MIGRATE_DIR}/core.img"
+		else
+			fail "grub core image not set or not found in ${HOME_DIR}/${GRUB_CORE_IMG}"
+		fi
+	fi
+
+	if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
+		if [ -d /usr/lib/grub ] ; then
+			log "copy grub env from /usr/lib/grub"
+			mkdir -p ${DESTDIR}/usr/lib/grub
+			cp -r /usr/lib/grub/* ${DESTDIR}/usr/lib/grub || fail "failed to copy /usr/lib/grub"
+		else
+			log "/usr/lib/grub does not exist"
+			exit 1
+		fi
+
+		if [ -f ${HOME_DIR}/device.map ] ; then
+			log "copying ${HOME_DIR}/device.map"
+			cp ${HOME_DIR}/device.map "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/device.map"
+		fi
 	fi
 fi
 

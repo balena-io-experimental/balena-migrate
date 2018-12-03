@@ -816,25 +816,27 @@ function setupBootCfg_x86 {
   sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
   sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
-  if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
-    # attempt to flash boot images
-    if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
-      fail "could not locate boot images in ${HOME_DIR}/${GRUB_BOOT_IMG}, ${HOME_DIR}/${GRUB_CORE_IMG}"
+  # TODO guess based on OS Version
+  if [ -n "$GRUB_INSTALL" ] ; then
+    if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
+      # attempt to flash boot images
+      if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
+        fail "could not locate boot images in ${HOME_DIR}/${GRUB_BOOT_IMG}, ${HOME_DIR}/${GRUB_CORE_IMG}"
+      fi
+      GRUB_INSTALL="FLASH"
+    else
+      # attempt to install grub from initramfs
+      INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install"
+      GRUB_INSTALL="INSTALL"
     fi
-    GRUB_INSTALL="FLASH"
-  else
-    # attempt to install grub from initramfs
-    INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install"
-    GRUB_INSTALL="INSTALL"
-  fi
 
-  if [ -n "$GRUB_CFG" ] ; then
-    if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
-      fail "grub config not found: ${GRUB_CFG}"
-    fi
-  else
-    # TODO: use up to date grub config
-    cat << EOI > ${HOME_DIR}/grub.cfg
+    if [ -n "$GRUB_CFG" ] ; then
+      if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
+        fail "grub config not found: ${GRUB_CFG}"
+      fi
+    else
+      # TODO: use up to date grub config
+      cat << EOI > ${HOME_DIR}/grub.cfg
 serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
 default=boot
 timeout=0
@@ -843,9 +845,9 @@ menuentry 'boot'{
 linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
 }
 EOI
-    GRUB_CFG="grub.cfg"
-  fi
-
+      GRUB_CFG="grub.cfg"
+    fi
+  fi 
 
   if [ "$NO_SETUP" != "TRUE" ] ; then
     debug setupBootCfg_x86 "looking for boot device blkid"

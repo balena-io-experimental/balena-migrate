@@ -368,6 +368,15 @@ The variable can be set on the command line by using the -r or --reboot paramete
 
 *balena-migrate --reboot=10*
 
+#### GRUB\_INSTALL
+
+**Default:** *GRUB\_INSTALL=*
+
+The variable is the enabling flag for grub installation. If it is set to anything other than TRUE a grub boot manager will not be
+installed. The variable is only checked in intel 32/64 bit environments as these are the only setups in which grub is used.
+The most recent balenaOS x86 images contain a valid grub boot configuration so in most cases the variable can remain unset.
+
+When setting *GRUB\_INSTALL* to *TRUE* please supply a valid setup using the GRUB variables described in the following sections.
 
 #### GRUB\_BOOT\_DEV
 
