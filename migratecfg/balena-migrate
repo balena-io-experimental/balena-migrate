@@ -817,7 +817,7 @@ function setupBootCfg_x86 {
   sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   # TODO guess based on OS Version
-  if [ -n "$GRUB_INSTALL" ] ; then
+  if [ "$GRUB_INSTALL" == "TRUE" ] ; then
     if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
       # attempt to flash boot images
       if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
@@ -847,7 +847,7 @@ linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-
 EOI
       GRUB_CFG="grub.cfg"
     fi
-  fi 
+  fi
 
   if [ "$NO_SETUP" != "TRUE" ] ; then
     debug setupBootCfg_x86 "looking for boot device blkid"

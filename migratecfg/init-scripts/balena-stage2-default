@@ -237,8 +237,9 @@ if [ -n "$GRUB_INSTALL" ] ; then
 				log "deleting ${BOOT_MNT_DIR}/EFI"
 				rm -rf ${BOOT_MNT_DIR}/EFI >>"$LOG_TO" 2>&1 || log "failed to delete ${BOOT_MNT_DIR}/EFI"
 			fi
-			dd if="${MIGRATE_TMP}/boot.img" of=dd of=${BOOT_DEV} conv=fdatasync bs=1M >>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/boot.img"
-			dd if="${MIGRATE_TMP}/core.img" of=${BOOT_DEV} conv=fdatasync bs=512 seek=1	>>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/core.img"
+			dd if="${MIGRATE_TMP}/boot.img" of=dd of=${BOOT_DEV} bs=512 >>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/boot.img"
+			dd if="${MIGRATE_TMP}/core.img" of=${BOOT_DEV} bs=512 seek=1	>>"$LOG_TO" 2>&1 || fail "failed to flash ${MIGRATE_TMP}/core.img"
+			sync
 		else
 			fail "grub images not found, falling back to grub-install"
 		fi
