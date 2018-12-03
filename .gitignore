@@ -3,8 +3,10 @@
 /flasher_img
 /flasher-scripts
 /scripts/test
+/work
 /test
 /img
+/migratecfg/balena-migrate.conf
 README.pdf
 *.img
 *.iso

@@ -282,7 +282,15 @@ if [ -n "$IMG_FILE" ] ; then
   echo "mounting root-A"
   mount $LOOP_DEV "$MNT_DIR"
 
-  gzip -c "${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img" > "$IMG_FILE" || fail "failed to copy image file"
+  RAW_IMG_FILE=$(ls ${MNT_DIR}/opt/resin-image-genericx86*.resinos-img)
+
+  if [ -n "$RAW_IMG_FILE" ] ; then
+    echo "found image file: $RAW_IMG_FILE"
+    gzip -c "${RAW_IMG_FILE}" > "$IMG_FILE" || fail "failed to copy image file"
+  else
+    fail "no image file found in flasher image"
+  fi
+
   echo "gzipped ${MNT_DIR}/opt/resin-image-genericx86-64.resinos-img to $IMG_FILE"
   sleep 1 # otherwise mount dir might still be busy...
 
