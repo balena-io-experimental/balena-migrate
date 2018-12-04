@@ -21,7 +21,7 @@
 
 ################################################################################
 # attempt to mount and log initramfs logs to external drive if set
-LOG_DRIVE=/dev/sdb1
+LOG_DRIVE= # /dev/sdb1
 LOG_FS_TYPE=ext4
 
 ################################################################################
@@ -1138,7 +1138,7 @@ case $ARCH in
   i686)
     devType="i686"
     inform "ARCH=$ARCH"
-    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] ; then
+    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
         fail "expected intel-core2-32 image, got $IMAGE_NAME"
     fi
     ;;
