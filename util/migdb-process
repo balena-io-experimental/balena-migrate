@@ -15,7 +15,7 @@ COLOR=ON
 # MIG_CFG_ARCHIVE= # "./test/mig_x86_64.tgz"
 TGT_DIR="migrate"
 
-DEBUG_FUNCTS="main process"
+DEBUG_FUNCTS="main process sendCfgDir"
 LOG_DEBUG=TRUE
 
 
@@ -33,6 +33,12 @@ function getCmdArgs {
     if [[ $var =~ ^--cfg-dir=.*$ ]] ; then
       MIG_CFG_DIR=$(expr match "$var" '^--cfg-dir=\(.*\)$')
       inform "set MIG_CFG_DIR=$MIG_CFG_DIR"
+      continue
+    fi
+
+    if [[ $var =~ ^--min-age=.*$ ]] ; then
+      MIG_MIN_AGE=$(expr match "$var" '^--min-age=\(.*\)$')
+      inform "set MIG_MIN_AGE=$MIG_MIN_AGE"
       continue
     fi
 
@@ -115,10 +121,10 @@ function process {
   local age=$(($now-$CREATE_TS))
   inform "port=$MIG_PORT, uuid=${UUID}, user=${MIG_USR}, status:${STATUS}, passwd=${PPRESENT} age=${age} sec."
 
-  if [ ${age} -lt 10 ] ; then
+  if [ -n "$MIG_MIN_AGE" ] && [ ${age} -lt ${MIG_MIN_AGE} ] ; then
     inform "giving device more time to connect"
     moveFile "$UNIT_FILE" "${UNIT_DIR}/unit-${UNIT_ID}" || fail "failed to restore order file"
-    sleep 5 
+    sleep 5
     return 0
   fi
 
