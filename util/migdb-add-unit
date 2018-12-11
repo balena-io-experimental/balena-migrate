@@ -21,7 +21,9 @@ function getCmdArgs {
     warn "no command args given"
     echo "USAGE: addHost [options] <unitId> [port] [user] [passwd]"
     echo "options are:"
+    echo "  --cfg=<migrate-config-file> - config variables in bash / sh format"
     echo "  --app=<balena-application> - balena application to register with"
+    echo "  --host=<ssh-host> - balena application to register with"
     echo "  --base=<db base dir> - base directory of order db"
     echo "  --color=<ON/OFF> - Anything other than ON switches colored output off"
     echo "  --get-opts=<get-ssh-opts-script> - a script whose last output line contains the string: MIG_SSH_OPTS followed by ssh options to be used"
@@ -114,17 +116,25 @@ if [ -f ${UNIT_FILE} ] ; then
   fail "an order file for order $UNIT_ID exists"
 fi
 
+# TODO: make this more generic, eg write a file with options / host / user / password instead
 if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
-  MIG_SSH_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
-  MIG_SSH_OPTS="${MIG_SSH_RAW##*$'\n'}"
-  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
-  if [ -z "$MIG_SSH_OPTS" ] ; then
+  DYN_OPTS_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
+  DYN_SSH_OPTS="${DYN_OPTS_RAW##*$'\n'}"
+  DYN_SSH_OPTS=$(expr match "$DYN_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
+  if [ -z "$DYN_SSH_OPTS" ] ; then
     warn "failed to prepare ssh opts for device $UNIT_ID"
     warn "$MIG_GET_OPTS output:"
-    echo "$MIG_SSH_RAW"
+    echo "$DYN_OPTS_RAW"
     exit 1
   fi
+
+  if [ -n "$MIG_SSH_OPTS" ] ; then
+    MIG_SSH_OPTS="$MIG_SSH_OPTS $DYN_SSH_OPTS"
+  else
+    MIG_SSH_OPTS="$DYN_SSH_OPTS"
+  fi
 fi
+
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
 debug main "creating file ${TMP_FILE}"
