@@ -33,6 +33,13 @@ function getCmdArgs {
     debug getCmdArgs "looking at $var"
 
     if [[ $var =~ ^-.*$ ]] ; then
+      if [[ $var =~ ^--cfg=.*$ ]] ; then
+        MIG_CFG=$(expr match "$var" '^--cfg=\(.*\)$')
+        debug getCmdArgs "set MIG_CFG=$MIG_CFG"
+        continue
+      fi
+
+
       if [[ $var =~ ^--app=.*$ ]] ; then
         MIG_APP=$(expr match "$var" '^--app=\(.*\)$')
         debug getCmdArgs "set MIG_APP=$MIG_APP"
@@ -87,6 +94,11 @@ function getCmdArgs {
 
 getCmdArgs "$@"
 
+if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then 
+  echo "reading config from $MIG_CFG"
+  source "$MIG_CFG"
+fi
+
 checkInit
 
 UNIT_FILE="${UNIT_DIR}/unit-${UNIT_ID}"
@@ -97,16 +109,24 @@ if [ -f ${UNIT_FILE} ] ; then
   fail "an order file for order $UNIT_ID exists"
 fi
 
+
+echo "MIG_GET_OPTS=$MIG_GET_OPTS"
+
 if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
-  MIG_SSH_OPTS=$(${MIG_GET_OPTS} ${UNIT_ID})
-  MIG_SSH_OPTS="${MIG_SSH_OPTS##*$'\n'}"
-  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') || orderFailed $UUID "$UNIT_FILE" "failed to prepare ssh opts for device"
+  echo "calling ${MIG_GET_OPTS} ${UNIT_ID}"	
+  MIG_SSH_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
+  MIG_SSH_OPTS="${MIG_SSH_RAW##*$'\n'}"
+  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') 
   if [ -z "$MIG_SSH_OPTS" ] ; then
-    orderFailed $UUID "$UNIT_FILE" "failed to prepare ssh opts for device"
+    warn "failed to prepare ssh opts for device $UNIT_ID"
+    warn "got output $MIG_SSH_RAW"	
+    exit 1
   fi
 fi
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
+chmod 755 "$TMP_FILE"
+
 debug main "creating file ${TMP_FILE}"
 
 cat <<EOI > "${TMP_FILE}"  || fail "failed to create order file for orderid $UNIT_ID"
