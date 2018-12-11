@@ -1,0 +1,153 @@
+#!/bin/bash
+
+SCRIPT_PATH="`dirname \"${0}\"`"
+source "${SCRIPT_PATH}/migdb-common"
+
+color ON
+
+if [ -z "$MIG_DB_DIR" ] ; then
+  MIG_DB_DIR=.
+fi
+
+DEBUG_FUNCTS="main getCmdArgs checkInit"
+LOG_DEBUG="TRUE"
+SCRIPT_NAME="migdb-add-unit"
+
+function getCmdArgs {
+  local cmd=
+  local paramNo=0
+
+  if [ "$#" -lt 1 ] ; then
+    warn "no command args given"
+    echo "USAGE: addHost [options] <unitId> [port] [user] [passwd]"
+    echo "options are:"
+    echo "  --app=<balena-application> - balena application to registter with"
+    echo "  --app=<balena-application> - balena application to registter with"
+    echo "  --base=<db base dir> - base directory of order db"
+    echo "  --color=<ON/OFF> - Anything other than ON switches colored output off"
+    echo "  --get-opts=<get-ssh-opts-script> - a script whose last output line contains the string: MIG_SSH_OPTS followed by ssh options to be used"
+    exit 1
+  fi
+
+  for var in "$@"
+  do
+    debug getCmdArgs "looking at $var"
+
+    if [[ $var =~ ^-.*$ ]] ; then
+      if [[ $var =~ ^--app=.*$ ]] ; then
+        MIG_APP=$(expr match "$var" '^--app=\(.*\)$')
+        debug getCmdArgs "set MIG_APP=$MIG_APP"
+        continue
+      fi
+
+      if [[ $var =~ ^--host=.*$ ]] ; then
+        SSH_HOST=$(expr match "$var" '^--host=\(.*\)$')
+        debug getCmdArgs "set SSH_HOST=$SSH_HOST"
+        continue
+      fi
+
+      if [[ $var =~ ^--base=.*$ ]] ; then
+        MIG_DB_DIR=$(expr match "$var" '^--base=\(.*\)$')
+        debug getCmdArgs "set MIG_DB_DIR=$MIG_DB_DIR"
+        continue
+      fi
+
+      if [[ $var =~ ^--color=.*$ ]] ; then
+        COLOR=$(expr match "$var" '^--color=\(.*\)$')
+        debug getCmdArgs "set COLOR=$COLOR"
+        color $COLOR
+        continue
+      fi
+
+      if [[ $var =~ ^--get-opts=.*$ ]] ; then
+        MIG_GET_OPTS=$(expr match "$var" '^--app=\(.*\)$')
+        debug getCmdArgs "set MIG_GET_OPTS=$MIG_GET_OPTS"
+        continue
+      fi
+
+      fail "unrecognized argument $var"
+    else
+      case $paramNo in
+        0)
+          UNIT_ID="$var"
+          ;;
+        1)
+          MIG_PORT=$var
+          ;;
+        2)
+          MIG_USR="$var"
+          ;;
+        3)
+          MIG_PASSWD="$var"
+          ;;
+        *)
+          fail "unexpected argument $var"
+          ;;
+      esac
+      paramNo=$(($paramNo+1))
+      continue
+    fi
+  done
+}
+
+# debug main "base dir is: $MIG_DB_DIR, orders dir is: $ORDERS"
+
+getCmdArgs "$@"
+
+checkInit
+
+UNIT_FILE="${UNIT_DIR}/unit-${UNIT_ID}"
+
+# echo "unit file: $UNIT_FILE"
+
+if [ -f ${UNIT_FILE} ] ; then
+  fail "an order file for order $UNIT_ID exists"
+fi
+
+if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
+  MIG_SSH_OPTS=$(${MIG_GET_OPTS} ${UNIT_ID})
+  MIG_SSH_OPTS="${MIG_SSH_OPTS##*$'\n'}"
+  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') || orderFailed $UUID "$UNIT_FILE" "failed to prepare ssh opts for device"
+  if [ -z "$MIG_SSH_OPTS" ] ; then
+    orderFailed $UUID "$UNIT_FILE" "failed to prepare ssh opts for device"
+  fi
+fi
+
+TMP_FILE=$(mktemp -p "${TMP_DIR}")
+debug main "creating file ${TMP_FILE}"
+
+
+if [ $EUID -eq 0 ]; then
+  # allow non root user to modify file, otherwise migdb-process needs sudo too
+  chmod 777 "${TMP_FILE}"
+fi
+
+cat <<EOI > "${TMP_FILE}"  || fail "failed to create order file for orderid $UNIT_ID"
+UNIT_ID=${UNIT_ID}
+STATUS=INIT
+CREATE_TS=$(date +%s)
+EOI
+
+if [ -n "$MIG_PORT" ] ; then
+  echo "MIG_PORT=${MIG_PORT}" >> "${TMP_FILE}"
+fi
+
+if [ -n "$MIG_SSH_OPTS" ] ; then
+  echo "MIG_SSH_OPTS=\"${MIG_SSH_OPTS}\"" >> "${TMP_FILE}"
+fi
+
+if [ -n "$MIG_APP" ] ; then
+  echo "MIG_APP=\"${MIG_APP}\"" >> "${TMP_FILE}"
+fi
+if [ -n "$MIG_USR" ] ; then
+  echo "MIG_USR=${MIG_USR}" >> "${TMP_FILE}"
+fi
+if [ -n "$MIG_PASSWD" ] ; then
+  echo "MIG_PASSWD=\"${MIG_PASSWD}\"" >> "${TMP_FILE}"
+fi
+
+if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
+  inform "order file created for order id ${UNIT_ID},  port $MIG_PORT in ${UNIT_FILE}"
+else
+  fail "failed to create order file for order ${UNIT_ID} in ${UNIT_FILE}"
+fi
