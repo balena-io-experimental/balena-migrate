@@ -21,7 +21,7 @@ function getCmdArgs {
     warn "no command args given"
     echo "USAGE: addHost [options] <unitId> [port] [user] [passwd]"
     echo "options are:"
-    echo "  --app=<balena-application> - balena application to registter with"
+    echo "  --app=<balena-application> - balena application to register with"
     echo "  --base=<db base dir> - base directory of order db"
     echo "  --color=<ON/OFF> - Anything other than ON switches colored output off"
     echo "  --get-opts=<get-ssh-opts-script> - a script whose last output line contains the string: MIG_SSH_OPTS followed by ssh options to be used"
@@ -39,10 +39,15 @@ function getCmdArgs {
         continue
       fi
 
-
       if [[ $var =~ ^--app=.*$ ]] ; then
         MIG_APP=$(expr match "$var" '^--app=\(.*\)$')
         debug getCmdArgs "set MIG_APP=$MIG_APP"
+        continue
+      fi
+
+      if [[ $var =~ ^--host=.*$ ]] ; then
+        MIG_SSH_HOST=$(expr match "$var" '^--host=\(.*\)$')
+        debug getCmdArgs "set MIG_SSH_HOST=$MIG_SSH_HOST"
         continue
       fi
 
@@ -94,8 +99,8 @@ function getCmdArgs {
 
 getCmdArgs "$@"
 
-if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then 
-  echo "reading config from $MIG_CFG"
+if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
+  inform "loading config from $MIG_CFG"
   source "$MIG_CFG"
 fi
 
@@ -109,25 +114,25 @@ if [ -f ${UNIT_FILE} ] ; then
   fail "an order file for order $UNIT_ID exists"
 fi
 
-
-echo "MIG_GET_OPTS=$MIG_GET_OPTS"
-
 if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
-  echo "calling ${MIG_GET_OPTS} ${UNIT_ID}"	
   MIG_SSH_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
   MIG_SSH_OPTS="${MIG_SSH_RAW##*$'\n'}"
-  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') 
+  MIG_SSH_OPTS=$(expr match "$MIG_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
   if [ -z "$MIG_SSH_OPTS" ] ; then
     warn "failed to prepare ssh opts for device $UNIT_ID"
-    warn "got output $MIG_SSH_RAW"	
+    warn "$MIG_GET_OPTS output:"
+    echo "$MIG_SSH_RAW"
     exit 1
   fi
 fi
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
-chmod 755 "$TMP_FILE"
-
 debug main "creating file ${TMP_FILE}"
+
+if [ $EUID -eq 0 ]; then
+  # allow non root user to modify file, otherwise migdb-process needs sudo too
+  chmod 777 "${TMP_FILE}"
+fi
 
 cat <<EOI > "${TMP_FILE}"  || fail "failed to create order file for orderid $UNIT_ID"
 UNIT_ID=${UNIT_ID}
@@ -140,17 +145,17 @@ if [ -n "$MIG_PORT" ] ; then
 fi
 
 if [ -n "$MIG_SSH_OPTS" ] ; then
-  echo "MIG_SSH_OPTS=${MIG_SSH_OPTS}" >> "${TMP_FILE}"
+  echo "MIG_SSH_OPTS=\"${MIG_SSH_OPTS}\"" >> "${TMP_FILE}"
 fi
 
 if [ -n "$MIG_APP" ] ; then
-  echo "MIG_APP=${MIG_APP}" >> "${TMP_FILE}"
+  echo "MIG_APP=\"${MIG_APP}\"" >> "${TMP_FILE}"
 fi
 if [ -n "$MIG_USR" ] ; then
   echo "MIG_USR=${MIG_USR}" >> "${TMP_FILE}"
 fi
 if [ -n "$MIG_PASSWD" ] ; then
-  echo "MIG_PASSWD=${MIG_PASSWD}" >> "${TMP_FILE}"
+  echo "MIG_PASSWD=\"${MIG_PASSWD}\"" >> "${TMP_FILE}"
 fi
 
 if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
