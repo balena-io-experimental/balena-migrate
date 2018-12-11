@@ -130,13 +130,13 @@ function process {
 
   if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
     if ! sendTarCfg "$MIG_CFG_ARCHIVE" "$TGT_DIR" ; then
-      orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit configuration in ${CFG_ARCHIVE} to ${MIG_USR}@${SSH_HOST}:${MIG_PORT}"
+      orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit configuration in ${CFG_ARCHIVE} to ${MIG_USR}@${MIG_SSH_HOST}:${MIG_PORT}"
       return 0
     fi
   else
     if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
       if ! sendCfgDir "$MIG_CFG_DIR" "$TGT_DIR" ; then
-        orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit configuration in ${MIG_CFG_DIR} to ${MIG_USR}@${SSH_HOST}:${MIG_PORT}"
+        orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit configuration in ${MIG_CFG_DIR} to ${MIG_USR}@${MIG_SSH_HOST}:${MIG_PORT}"
         return 0
       fi
     fi
