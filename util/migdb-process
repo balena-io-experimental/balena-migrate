@@ -10,7 +10,7 @@ COLOR=ON
 TGT_DIR="migrate"
 
 DEBUG_FUNCTS="main process"
-LOG_DEBUG=FALSE
+LOG_DEBUG=TRUE
 
 
 SCRIPT_NAME="migdb-process"
@@ -292,14 +292,13 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
 fi
 
 if [ -n "MIG_LOG_TO" ] ; then
-  # Close STDOUT / STDERR FD
-  exec 1<&-
-  exec 2<&-
+  if [ ! -f "MIG_LOG_TO" ] ; then
+    touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
+  fi
 
   # Open STDOUT as $LOG_FILE file for read and write.
-  exec 1<>"$MIG_LOG_TO"
+  exec 1>>"$MIG_LOG_TO" 2>&1
   # Redirect STDERR to STDOUT
-  exec 2>&1
 fi
 
 inform "started"

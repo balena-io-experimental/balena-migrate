@@ -9,7 +9,7 @@ if [ -z "$MIG_DB_DIR" ] ; then
   MIG_DB_DIR=.
 fi
 
-DEBUG_FUNCTS="main getCmdArgs checkInit"
+DEBUG_FUNCTS="main checkInit"
 LOG_DEBUG="TRUE"
 SCRIPT_NAME="migdb-add-unit"
 
@@ -45,7 +45,7 @@ function getCmdArgs {
       fi
 
       if [[ $var =~ ^--ssh-opts=.*$ ]] ; then
-        MIG_CFG=$(expr match "$var" '^--ssh-opts=\(.*\)$')
+        MIG_SSH_OPTS=$(expr match "$var" '^--ssh-opts=\(.*\)$')
         debug getCmdArgs "set MIG_SSH_OPTS=$MIG_SSH_OPTS"
         continue
       fi
@@ -72,12 +72,6 @@ function getCmdArgs {
         COLOR=$(expr match "$var" '^--color=\(.*\)$')
         debug getCmdArgs "set COLOR=$COLOR"
         color $COLOR
-        continue
-      fi
-
-      if [[ $var =~ ^--get-opts=.*$ ]] ; then
-        MIG_GET_OPTS=$(expr match "$var" '^--app=\(.*\)$')
-        debug getCmdArgs "set MIG_GET_OPTS=$MIG_GET_OPTS"
         continue
       fi
 
