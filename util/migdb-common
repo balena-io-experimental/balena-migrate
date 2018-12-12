@@ -40,11 +40,7 @@ function listContains {
 
 function inform {
   TS=$(date +%T)
-  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
-    printf "${GREEN}[${TS} ${SCRIPT_NAME} INFO ]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
-  else
-    printf "${GREEN}[${TS} ${SCRIPT_NAME} INFO ]: $1 ${NC}\n"
-  fi
+  printf "${GREEN}[${TS} ${SCRIPT_NAME} $$ INFO ]: $1 ${NC}\n"
 }
 
 
@@ -54,11 +50,7 @@ function inform {
 
 function warn {
   TS=$(date +%T)
-  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
-    printf "[${TS} ${SCRIPT_NAME} WARN ]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
-  else
-    printf "${YELLOW}[${TS} ${SCRIPT_NAME} WARN ]: $1 ${NC}\n"
-  fi
+  printf "${YELLOW}[${TS} ${SCRIPT_NAME} $$ WARN ]: $1 ${NC}\n"
 }
 
 ##########################################
@@ -67,11 +59,7 @@ function warn {
 
 function fail {
   TS=$(date +%T)
-  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
-    printf "${RED}[${TS} ${SCRIPT_NAME} ERROR]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
-  else
-    printf "${RED}[${TS} ${SCRIPT_NAME} ERROR]: $1 ${NC}\n"
-  fi
+  printf "${RED}[${TS} ${SCRIPT_NAME} $$ ERROR]: $1 ${NC}\n"
   exit -1
 }
 
@@ -85,11 +73,7 @@ function debug {
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
     TS=$(date +%T)
-    if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
-      printf "[${TS} ${SCRIPT_NAME} DEBUG]: ${1}: ${2}${NC}\n" >> "${MIG_LOG_TO}"
-    else
-      printf "${BROWN}[${TS} ${SCRIPT_NAME} DEBUG]: ${1}: ${2}${NC}\n"
-    fi
+    printf "${BROWN}[${TS} ${SCRIPT_NAME} $$ DEBUG]: ${1}: ${2}${NC}\n"
   fi
 }
 
@@ -251,7 +235,7 @@ function mkSshCmd {
 
 ################################################################################
 # send single file to host and unpack it to specified directory
-# host: $SSH_HOST
+# host: $MIG_SSH_HOST
 # user: $USER
 # port: $PORT
 # config file in $1
@@ -282,7 +266,7 @@ function sendFile {
 
 ################################################################################
 # send gzipped tarfile to host and unpack it to specified directory
-# host: $SSH_HOST
+# host: $MIG_SSH_HOST
 # MIG_SSH_USER: $MIG_SSH_USER
 # port: $PORT
 # config file in $1

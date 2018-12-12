@@ -153,9 +153,6 @@ fi
 #  fi
 #fi
 
-if []
-
-
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
 debug main "creating file ${TMP_FILE}"
 
@@ -198,9 +195,9 @@ fi
 if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
   inform "order file created for order id ${UNIT_ID},  port $MIG_SSH_PORT in ${UNIT_FILE}"
 
-  if ! ps -av | grep migdb-process ; then
-     inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
-  fi
+  #if ! ps -av | grep migdb-process ; then
+  #   inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
+  #fi
 else
   fail "failed to create order file for order ${UNIT_ID} in ${UNIT_FILE}"
 fi

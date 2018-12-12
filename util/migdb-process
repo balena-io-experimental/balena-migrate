@@ -10,11 +10,15 @@ COLOR=ON
 TGT_DIR="migrate"
 
 DEBUG_FUNCTS="main process"
-LOG_DEBUG=TRUE
+LOG_DEBUG=FALSE
 
 
 SCRIPT_NAME="migdb-process"
 SLEEP_DURATION=5
+
+SCRIPT_PATH="`dirname \"${0}\"`"
+source "${SCRIPT_PATH}/migdb-common"
+
 
 function getCmdArgs {
   cmd=
@@ -112,9 +116,6 @@ function getCmdArgs {
   done
 }
 
-SCRIPT_PATH="`dirname \"${0}\"`"
-source "${SCRIPT_PATH}/migdb-common"
-
 ################################################################################
 # process unit file
 ################################################################################
@@ -166,6 +167,7 @@ function process {
         orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
         return 0
       fi
+    fi
   fi
 
   if [ -z "$MIG_SSH_HOST" ] ; then
@@ -212,12 +214,12 @@ function process {
     fail ""
   fi
 
-  inform "device config file appears valid, copying to $TGT_DIR/balena-migrate-config.json on ${MIG_SSH_USER}@${SSH_HOST}:${MIG_SSH_PORT}"
+  inform "device config file appears valid, copying to $TGT_DIR/balena-migrate-config.json on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
 
-  local sshCmd=$(mkSshCmd $SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT "$MIG_SSH_PASSWD")
+  local sshCmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT "$MIG_SSH_PASSWD")
 
   if ! sendFile "$cfgFile"  "$TGT_DIR/balena-migrate-config.json" ; then
-    orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit generated config file to ${MIG_SSH_USER}@${SSH_HOST}:${MIG_SSH_PORT}"
+    orderFailed $UNIT_ID "$UNIT_FILE" "failed to transmit generated config file to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
     rm "$cfgFile"
     return 0
   else
@@ -240,12 +242,12 @@ function process {
 
   debug process "attempting </bin/bash -c ${cmd}>"
   truncate -s 0 "$OUTPUT_LOG"
-  if /bin/bash -c "$cmd" 2>&1 | tee "$OUTPUT_LOG"  ; then
+  if /bin/bash -c "$cmd" 2>&1 | tee "$OUTPUT_LOG" ; then
     local successMsg=$(grep "^.*\[.*balena-stage1\] INFO:.*\+\s\+migration successful,.*" "$OUTPUT_LOG")
     if  [ -n "$successMsg" ] ; then
       if [[ "$successMsg" =~ *.please\ reboot\ system.* ]] ; then
         if ! "$sshCmd \"sudo reboot\"" >> "$OUTPUT_LOG" 2>&1 ; then
-          orderFailed $UNIT_ID "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${SSH_HOST}:${MIG_SSH_PORT}"
+          orderFailed $UNIT_ID "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
           return 0
         fi
       fi
@@ -262,11 +264,11 @@ function process {
 
       moveFile "$UNIT_FILE" "${DONE_DIR}/O${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}/unit-${UNIT_ID}"
     else
-      orderFailed $UNIT_ID "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${SSH_HOST}:${MIG_SSH_PORT}"
+      orderFailed $UNIT_ID "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
       return 0
     fi
   else
-    orderFailed $UNIT_ID "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${SSH_HOST}:${MIG_SSH_PORT}"
+    orderFailed $UNIT_ID "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
     return 0
   fi
 
@@ -289,12 +291,25 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   source "$MIG_CFG"
 fi
 
+if [ -n "MIG_LOG_TO" ] ; then
+  # Close STDOUT / STDERR FD
+  exec 1<&-
+  exec 2<&-
+
+  # Open STDOUT as $LOG_FILE file for read and write.
+  exec 1<>"$MIG_LOG_TO"
+  # Redirect STDERR to STDOUT
+  exec 2>&1
+fi
+
+inform "started"
+
 checkInit
 
 debug main "MIG_DB_DIR=$MIG_DB_DIR"
 
 if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
-    if [ -z "$MIG_CFG_DIR" ] || [ ! -f "$MIG_CFG_DIR" ] ; then
+    if [ -z "$MIG_CFG_DIR" ] || [ ! -d "$MIG_CFG_DIR" ] ; then
         fail "no migrate config given, please specify MIG_CFG_DIR / --cfg-dir or MIG_CFG_ARCHIVE / --cfg-archive"
     fi
 fi
