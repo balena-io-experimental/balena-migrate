@@ -40,7 +40,11 @@ function listContains {
 
 function inform {
   TS=$(date +%T)
-  printf "${GREEN}[${TS} ${SCRIPT_NAME} INFO ]: $1 ${NC}\n"
+  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
+    printf "${GREEN}[${TS} ${SCRIPT_NAME} INFO ]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
+  else
+    printf "${GREEN}[${TS} ${SCRIPT_NAME} INFO ]: $1 ${NC}\n"
+  fi
 }
 
 
@@ -50,7 +54,11 @@ function inform {
 
 function warn {
   TS=$(date +%T)
-  printf "${YELLOW}[${TS} ${SCRIPT_NAME} WARN ]: $1 ${NC}\n"
+  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
+    printf "[${TS} ${SCRIPT_NAME} WARN ]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
+  else
+    printf "${YELLOW}[${TS} ${SCRIPT_NAME} WARN ]: $1 ${NC}\n"
+  fi
 }
 
 ##########################################
@@ -58,9 +66,13 @@ function warn {
 ##########################################
 
 function fail {
-    TS=$(date +%T)
+  TS=$(date +%T)
+  if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
+    printf "${RED}[${TS} ${SCRIPT_NAME} ERROR]: $1 ${NC}\n" >> "${MIG_LOG_TO}"
+  else
     printf "${RED}[${TS} ${SCRIPT_NAME} ERROR]: $1 ${NC}\n"
-    exit -1
+  fi
+  exit -1
 }
 
 ##########################################
@@ -73,7 +85,11 @@ function debug {
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
     TS=$(date +%T)
-    printf "${BROWN}[${TS} ${SCRIPT_NAME} DEBUG]: ${1}: ${2}${NC}\n"
+    if [ -n "$MIG_LOG_TO" ] && [ -f "$MIG_LOG_TO" ] ; then
+      printf "[${TS} ${SCRIPT_NAME} DEBUG]: ${1}: ${2}${NC}\n" >> "${MIG_LOG_TO}"
+    else
+      printf "${BROWN}[${TS} ${SCRIPT_NAME} DEBUG]: ${1}: ${2}${NC}\n"
+    fi
   fi
 }
 
@@ -206,8 +222,8 @@ function mkSshCmd {
     #  ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no host
     #  to suppress host key errors
 
-    if [ -n "$MIG_PASSWD" ] ; then
-      local cmd="sshpass -p \"$MIG_PASSWD\" ssh"
+    if [ -n "$MIG_SSH_PASSWD" ] ; then
+      local cmd="sshpass -p \"$MIG_SSH_PASSWD\" ssh"
     else
       local cmd="ssh"
     fi
@@ -246,9 +262,9 @@ function sendFile {
   local srcFile="$1"
   local tgtFile="$2"
 
-  inform "sendFile: to ${MIG_USR}@${MIG_SSH_HOST}:${MIG_PORT}, srcFile=${srcFile}, tgtFile=${tgtFile}"
+  inform "sendFile: to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, srcFile=${srcFile}, tgtFile=${tgtFile}"
 
-  sshCmd=$(mkSshCmd $MIG_SSH_HOST $MIG_USR $MIG_PORT)
+  sshCmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT)
   local preCmd="gzip -c '$srcFile'"
   local remoteCmd="gzip -d -c > '$tgtFile'"
 
@@ -267,7 +283,7 @@ function sendFile {
 ################################################################################
 # send gzipped tarfile to host and unpack it to specified directory
 # host: $SSH_HOST
-# MIG_USR: $MIG_USR
+# MIG_SSH_USER: $MIG_SSH_USER
 # port: $PORT
 # config file in $1
 # target directory in $2
@@ -277,8 +293,8 @@ function sendTarCfg {
   local cfgFile="$1"
   local tgtDir="$2"
 
-  inform "sendTarCfg to ${MIG_USR}@${MIG_SSH_HOST}:${MIG_PORT}, cfgFile=${cfgFile}, tgtDir=${tgtDir}"
-  cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_USR $MIG_PORT)
+  inform "sendTarCfg to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgFile=${cfgFile}, tgtDir=${tgtDir}"
+  cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT)
 
   local remoteCmd=
   if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
@@ -311,8 +327,8 @@ function sendCfgDir {
   cfgDir="$1"
   tgtDir=$2
 
-  inform "sendCfgDir to ${MIG_USR}@${MIG_SSH_HOST}:${MIG_PORT}, cfgDir=${cfgDir}, tgtDir=${tgtDir}"
-  local cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_USR $MIG_PORT $MIG_GET_OPTS)
+  inform "sendCfgDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgDir=${cfgDir}, tgtDir=${tgtDir}"
+  local cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT $MIG_GET_OPTS)
 
   if [ -n "$cfgDir" ] && [ "$cfgDir" != "./" ] &&  [ "$cfgDir" != "." ] ; then
     local precmd="tar -C \"${cfgDir}\" -czf - ./"

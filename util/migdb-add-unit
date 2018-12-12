@@ -19,14 +19,17 @@ function getCmdArgs {
 
   if [ "$#" -lt 1 ] ; then
     warn "no command args given"
-    echo "USAGE: addHost [options] <unitId> [port] [user] [passwd]"
+    echo "USAGE: addHost [options] <unitId>"
     echo "options are:"
-    echo "  --cfg=<migrate-config-file> - config variables in bash / sh format"
+    echo "  --cfg=<migrate-config-file> - unit specific config variables in bash / sh format"
+    echo "  --host=<ssh-host> - unit specific ssh host"
+    echo "  --port=<ssh port> - unit specific ssh port to use"
+    echo "  --user=<ssh user> - unit specific ssh user"
+    echo "  --passwd=<ssh password> - unit specific ssh password"
     echo "  --app=<balena-application> - balena application to register with"
-    echo "  --host=<ssh-host> - balena application to register with"
+    echo "  --ssh-opts=<ssh-opts> - unit specfic ssh options"
     echo "  --base=<db base dir> - base directory of order db"
     echo "  --color=<ON/OFF> - Anything other than ON switches colored output off"
-    echo "  --get-opts=<get-ssh-opts-script> - a script whose last output line contains the string: MIG_SSH_OPTS followed by ssh options to be used"
     exit 1
   fi
 
@@ -38,6 +41,12 @@ function getCmdArgs {
       if [[ $var =~ ^--cfg=.*$ ]] ; then
         MIG_CFG=$(expr match "$var" '^--cfg=\(.*\)$')
         debug getCmdArgs "set MIG_CFG=$MIG_CFG"
+        continue
+      fi
+
+      if [[ $var =~ ^--ssh-opts=.*$ ]] ; then
+        MIG_CFG=$(expr match "$var" '^--ssh-opts=\(.*\)$')
+        debug getCmdArgs "set MIG_SSH_OPTS=$MIG_SSH_OPTS"
         continue
       fi
 
@@ -72,20 +81,29 @@ function getCmdArgs {
         continue
       fi
 
+      if [[ $var =~ ^--port=.*$ ]] ; then
+        MIG_SSH_PORT=$(expr match "$var" '^--port=\(.*\)$')
+        debug getCmdArgs "set MIG_SSH_PORT=$MIG_SSH_PORT"
+        continue
+      fi
+
+      if [[ $var =~ ^--user=.*$ ]] ; then
+        MIG_SSH_USER=$(expr match "$var" '^--user=\(.*\)$')
+        debug getCmdArgs "set MIG_SSH_USER=$MIG_SSH_USER"
+        continue
+      fi
+
+      if [[ $var =~ ^--passwd=.*$ ]] ; then
+        MIG_SSH_PASSWD=$(expr match "$var" '^--passwd=\(.*\)$')
+        debug getCmdArgs "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
+        continue
+      fi
+
       fail "unrecognized argument $var"
     else
       case $paramNo in
         0)
           UNIT_ID="$var"
-          ;;
-        1)
-          MIG_PORT=$var
-          ;;
-        2)
-          MIG_USR="$var"
-          ;;
-        3)
-          MIG_PASSWD="$var"
           ;;
         *)
           fail "unexpected argument $var"
@@ -112,28 +130,30 @@ UNIT_FILE="${UNIT_DIR}/unit-${UNIT_ID}"
 
 # echo "unit file: $UNIT_FILE"
 
-if [ -f ${UNIT_FILE} ] ; then
+if [ -f "${UNIT_FILE}" ] ; then
   fail "an order file for order $UNIT_ID exists"
 fi
 
 # TODO: make this more generic, eg write a file with options / host / user / password instead
-if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
-  DYN_OPTS_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
-  DYN_SSH_OPTS="${DYN_OPTS_RAW##*$'\n'}"
-  DYN_SSH_OPTS=$(expr match "$DYN_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
-  if [ -z "$DYN_SSH_OPTS" ] ; then
-    warn "failed to prepare ssh opts for device $UNIT_ID"
-    warn "$MIG_GET_OPTS output:"
-    echo "$DYN_OPTS_RAW"
-    exit 1
-  fi
+#if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
+#  DYN_OPTS_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
+#  DYN_SSH_OPTS="${DYN_OPTS_RAW##*$'\n'}"
+# DYN_SSH_OPTS=$(expr match "$DYN_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
+#  if [ -z "$DYN_SSH_OPTS" ] ; then
+#    warn "failed to prepare ssh opts for device $UNIT_ID"
+#    warn "$MIG_GET_OPTS output:"
+#    echo "$DYN_OPTS_RAW"
+#    exit 1
+#  fi
 
-  if [ -n "$MIG_SSH_OPTS" ] ; then
-    MIG_SSH_OPTS="$MIG_SSH_OPTS $DYN_SSH_OPTS"
-  else
-    MIG_SSH_OPTS="$DYN_SSH_OPTS"
-  fi
-fi
+#  if [ -n "$MIG_SSH_OPTS" ] ; then
+#    MIG_SSH_OPTS="$MIG_SSH_OPTS $DYN_SSH_OPTS"
+#  else
+#    MIG_SSH_OPTS="$DYN_SSH_OPTS"
+#  fi
+#fi
+
+if []
 
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
@@ -150,8 +170,20 @@ STATUS=INIT
 CREATE_TS=$(date +%s)
 EOI
 
-if [ -n "$MIG_PORT" ] ; then
-  echo "MIG_PORT=${MIG_PORT}" >> "${TMP_FILE}"
+if [ -n "$MIG_SSH_HOST" ] ; then
+  echo "MIG_SSH_HOST=${MIG_SSH_HOST}" >> "${TMP_FILE}"
+fi
+
+if [ -n "$MIG_SSH_USER" ] ; then
+  echo "MIG_SSH_USER=${MIG_SSH_USER}" >> "${TMP_FILE}"
+fi
+
+if [ -n "$MIG_SSH_PASSWD" ] ; then
+  echo "MIG_SSH_PASSWD=\"${MIG_SSH_PASSWD}\"" >> "${TMP_FILE}"
+fi
+
+if [ -n "$MIG_SSH_PORT" ] ; then
+  echo "MIG_SSH_PORT=${MIG_SSH_PORT}" >> "${TMP_FILE}"
 fi
 
 if [ -n "$MIG_SSH_OPTS" ] ; then
@@ -161,15 +193,14 @@ fi
 if [ -n "$MIG_APP" ] ; then
   echo "MIG_APP=\"${MIG_APP}\"" >> "${TMP_FILE}"
 fi
-if [ -n "$MIG_USR" ] ; then
-  echo "MIG_USR=${MIG_USR}" >> "${TMP_FILE}"
-fi
-if [ -n "$MIG_PASSWD" ] ; then
-  echo "MIG_PASSWD=\"${MIG_PASSWD}\"" >> "${TMP_FILE}"
-fi
+
 
 if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
-  inform "order file created for order id ${UNIT_ID},  port $MIG_PORT in ${UNIT_FILE}"
+  inform "order file created for order id ${UNIT_ID},  port $MIG_SSH_PORT in ${UNIT_FILE}"
+
+  if ! ps -av | grep migdb-process ; then
+     inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
+  fi
 else
   fail "failed to create order file for order ${UNIT_ID} in ${UNIT_FILE}"
 fi
