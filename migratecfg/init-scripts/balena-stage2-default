@@ -16,6 +16,7 @@ esac
 set -e
 
 if [ -f /scripts/functions ] ; then
+		# shellcheck disable=SC1091
     . /scripts/functions
 fi
 
@@ -30,6 +31,7 @@ else
 fi
 
 if [ -f /scripts/balena-common ] ; then
+	# shellcheck source=/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts/balena-common
     . /scripts/balena-common
 else
 		panic  "/scripts/balena-common not found"
@@ -42,7 +44,7 @@ fi
 #fi
 
 # Enable DEBUB output (debug function in balena-common)
-DEBUG_STAGE2=	#"TRUE"
+# DEBUG_STAGE2=	#"TRUE"
 # Set Failure exit to panic
 FAIL_EXIT="panic"
 # initialize log destination
@@ -70,9 +72,10 @@ fi
 if [ -n "$RESTORE_BOOT" ] ; then
 	log "attempting to restore boot configuration"
 
+	# shellcheck disable=SC2153
 	if [ "$MOUNT_BOOT" = "TRUE" ] ; then
 		# attempt to mount boot device
-		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} ${ORIG_BOOT_MNT} ; then
+		if ! mount_device ${ORIG_BOOT_PART} ${ORIG_BOOT_FS_TYPE} "${ORIG_BOOT_MNT}" ; then
 		 	log "failed to mount ${ORIG_BOOT_PART}"
 		else
 			UMOUNT_BOOT=${ORIG_BOOT_MNT}
@@ -83,7 +86,7 @@ if [ -n "$RESTORE_BOOT" ] ; then
 	sh -c "${RESTORE_BOOT}" >>"$LOG_TO" 2>&1 || fail "failed to restore boot configuration"
 
 	if [ -n "$UMOUNT_BOOT" ] ; then
-		umount ${UMOUNT_BOOT} >>"$LOG_TO" 2>&1 || fail "failed to unmount ${UMOUNT_BOOT}"
+		umount "${UMOUNT_BOOT}" >>"$LOG_TO" 2>&1 || fail "failed to unmount ${UMOUNT_BOOT}"
 		UMOUNT_BOOT=
 	fi
 
@@ -135,8 +138,9 @@ log "..done"
 # terminate if in NO_FLASH / test mode
 ######################################################################
 
-freeMem=`cat /proc/meminfo | grep "MemFree:"` || true
-freeMem=`expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
+freeMem=$(< /proc/meminfo grep "MemFree:") || true
+# shellcheck disable=SC2003
+freeMem=$(expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB') || true
 log "Free memory after copy to initramfs: $freeMem kB"
 
 
@@ -153,7 +157,7 @@ fi
 ######################################################################
 
 log "unmounting root"
-umount ${rootmnt} || fail  "failed umount ${rootmnt}"
+umount "${rootmnt}" || fail  "failed umount ${rootmnt}"
 # TODO: remount as third exit ?
 FAIL_EXIT="reboot -f"
 log "..done"

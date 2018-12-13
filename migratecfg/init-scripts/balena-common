@@ -6,35 +6,38 @@
 ############################################################################
 
 checkMem() {
-	totMem=`cat /proc/meminfo | grep "MemTotal:"`
-	totMem=`expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
+	totMem=$(< /proc/meminfo grep "MemTotal:")
+	# shellcheck disable=SC2003
+	totMem=$(expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB') || true
 	# totMem=`expr $totMem \* 1024` || true
 
 	log "total memory: ${totMem} kB"
 
-	freeMem=`cat /proc/meminfo | grep "MemFree:"` || true
-	freeMem=`expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
+	freeMem=$(< /proc/meminfo grep "MemFree:") || true
+	# shellcheck disable=SC2003
+	freeMem=$(expr match "$freeMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB') || true
 	# freeMem=`expr $freeMem \* 1024` || true
 	leftMem=$freeMem
 
 	log "free memory:  ${freeMem} kB"
-
+  # shellcheck disable=SC2154
 	if [ -f "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" ] ; then
-	  tmp=`stat -c %s "${rootmnt}${HOME_DIR}/${IMAGE_FILE}"`
-		tmp=`expr $tmp / 1024` || true
+	  tmp=$(stat -c %s "${rootmnt}${HOME_DIR}/${IMAGE_FILE}")
+		tmp=$((tmp / 1024))
 		log "image file size: ${tmp} kB "
-	  leftMem=`expr $freeMem - $tmp`
+	  leftMem=$((freeMem - tmp))
 	fi
 
 	if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
-	  tmp=`stat -c %s "${rootmnt}${HOME_DIR}/${BACKUP_FILE}"`
-		tmp=`expr $tmp / 1024` || true
+	  tmp=$(stat -c %s "${rootmnt}${HOME_DIR}/${BACKUP_FILE}")
+		tmp=$((tmp / 1024))
 		log "backup file size: ${tmp} kB"
-	  leftMem=`expr $leftMem - $tmp`
+	  leftMem=$((leftMem - tmp))
 	fi
 
 	log "est. memory left after subtracting image & backup size: ${leftMem} kB "
 
+	# shellcheck disable=SC2086
 	if [ $leftMem -lt $MEM_MIN_FREE ] ; then
 		fail "not enough memory will be left after copying image & backup files, est.: ${leftMem} kB, currently free: ${freeMem} kB"
 	fi
@@ -59,15 +62,15 @@ logMsg() {
 log_to() {
 	NEW_LOG=$1
 
-	LOG_DIR=$(dirname $NEW_LOG)
-	if [ ! -d $LOG_DIR ] ; then
-		mkdir -p $LOG_DIR	|| fail  "failed to create log directory $LOG_DIR"
+	LOG_DIR=$(dirname "$NEW_LOG")
+	if [ ! -d "$LOG_DIR" ] ; then
+		mkdir -p "$LOG_DIR"	|| fail  "failed to create log directory $LOG_DIR"
 	fi
 
   if [ -n "$LOG_TO" ] && [ -f "$LOG_TO" ] ; then
     cp "$LOG_TO" "$NEW_LOG" || fail  "failed to copy log file $LOG_TO to $NEW_LOG"
 	else
-		touch $NEW_LOG ||  fail  "failed to create log file $NEW_LOG"
+		touch "$NEW_LOG" ||  fail  "failed to create log file $NEW_LOG"
   fi
 
   LOG_TO=$NEW_LOG
@@ -103,10 +106,11 @@ term() {
   fi
 
 	if [ -n "$UMOUNT_LOG" ] ; then
-		umount $UMOUNT_LOG || true
+		umount "$UMOUNT_LOG" || true
 	fi
 
-	if [ `echo ${FAIL_EXIT} | grep -c reboot ` -eq 1 ] ; then
+	# shellcheck disable=SC2086
+	if [ "$(echo \"${FAIL_EXIT}\" | grep -c reboot)" -eq 1 ] ; then
 		$FAIL_EXIT
   else
 		if [ -n "$TERM_EXIT" ] ; then
@@ -129,11 +133,11 @@ fail() {
   fi
 
 	if [ -n "$UMOUNT_BOOT" ] ; then
-		umount $UMOUNT_BOOT || true
+		umount "$UMOUNT_BOOT" || true
 	fi
 
 	if [ -n "$UMOUNT_LOG" ] ; then
-		umount $UMOUNT_LOG || true
+		umount "$UMOUNT_LOG" || true
 	fi
 
 	# TODO: umount some more
@@ -151,8 +155,8 @@ mount_device() {
 	MNT_FS_TYPE=$2
 	MNT_DIR=$3
 
-	if [ ! -d ${MNT_DIR} ] ; then
-	  mkdir -p ${MNT_DIR} || fail "failed to create mount dir ${MNT_DIR}"
+	if [ ! -d "${MNT_DIR}" ] ; then
+	  mkdir -p "${MNT_DIR}" || fail "failed to create mount dir ${MNT_DIR}"
 	fi
 
 	loopCount=0
@@ -161,11 +165,11 @@ mount_device() {
 		 log "log device not present: ${MNT_FS_NAME} waiting.."
 		 udevadm settle --timeout=5
 		 sleep 10
-		 loopCount=$(($loopCount + 1))
+		 loopCount=$((loopCount + 1))
 	done
 
 	if [ -b "${MNT_FS_NAME}" ] ; then
-		if ! mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR} >>"$LOG_TO" 2>&1  ; then
+		if ! mount -w -t "${MNT_FS_TYPE}" "${MNT_FS_NAME}" "${MNT_DIR}" >>"$LOG_TO" 2>&1  ; then
 		  log "failed to mount device using  mount -w -t ${MNT_FS_TYPE} ${MNT_FS_NAME} ${MNT_DIR}"
 			return 1
 		else
