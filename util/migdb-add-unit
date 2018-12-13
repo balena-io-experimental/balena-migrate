@@ -1,6 +1,7 @@
 #!/bin/bash
-
-SCRIPT_PATH="`dirname \"${0}\"`"
+# shellcheck disable=SC2086
+SCRIPT_PATH="$(dirname \"${0}\")"
+# shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
 source "${SCRIPT_PATH}/migdb-common"
 
 color ON
@@ -13,99 +14,122 @@ DEBUG_FUNCTS="main checkInit"
 LOG_DEBUG="TRUE"
 SCRIPT_NAME="migdb-add-unit"
 
-function getCmdArgs {
-  local cmd=
-  local paramNo=0
+function printHelp {
+  cat << EOI
 
-  if [ "$#" -lt 1 ] ; then
-    warn "no command args given"
-    echo "USAGE: addHost [options] <unitId>"
-    echo "options are:"
-    echo "  --cfg=<migrate-config-file> - unit specific config variables in bash / sh format"
-    echo "  --host=<ssh-host> - unit specific ssh host"
-    echo "  --port=<ssh port> - unit specific ssh port to use"
-    echo "  --user=<ssh user> - unit specific ssh user"
-    echo "  --passwd=<ssh password> - unit specific ssh password"
-    echo "  --app=<balena-application> - balena application to register with"
-    echo "  --ssh-opts=<ssh-opts> - unit specfic ssh options"
-    echo "  --base=<db base dir> - base directory of order db"
-    echo "  --color=<ON/OFF> - Anything other than ON switches colored output off"
+  USAGE: migdb-add-unit [options] <unitId>
+  options are:
+    --cfg=<migrate-config-file> - unit specific config variables in bash / sh format
+    --host=<ssh-host> - unit specific ssh host
+    --port=<ssh port> - unit specific ssh port to use
+    --user=<ssh user> - unit specific ssh user
+    --passwd=<ssh password> - unit specific ssh password
+    --app=<balena-application> - balena application to register with
+    --ssh-opts=<ssh-opts> - unit specfic ssh options
+    --base=<db base dir> - base directory of order db
+    --color=<ON/OFF> - Anything other than ON switches colored output off
+
+EOI
+return 0
+}
+
+function getCmdArgs {
+
+  if [[ $# -eq 0 ]] ; then
+    echo "no command line arguments."
+    printHelp
     exit 1
   fi
 
-  for var in "$@"
-  do
-    debug getCmdArgs "looking at $var"
-
-    if [[ $var =~ ^-.*$ ]] ; then
-      if [[ $var =~ ^--cfg=.*$ ]] ; then
-        MIG_CFG=$(expr match "$var" '^--cfg=\(.*\)$')
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+      --cfg)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG="$2"
         debug getCmdArgs "set MIG_CFG=$MIG_CFG"
-        continue
-      fi
-
-      if [[ $var =~ ^--ssh-opts=.*$ ]] ; then
-        MIG_SSH_OPTS=$(expr match "$var" '^--ssh-opts=\(.*\)$')
+        shift
+        ;;
+      --ssh-opts)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_OPTS="$2"
         debug getCmdArgs "set MIG_SSH_OPTS=$MIG_SSH_OPTS"
-        continue
-      fi
-
-      if [[ $var =~ ^--app=.*$ ]] ; then
-        MIG_APP=$(expr match "$var" '^--app=\(.*\)$')
+        shift
+        ;;
+      --app)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_APP="$2"
         debug getCmdArgs "set MIG_APP=$MIG_APP"
-        continue
-      fi
-
-      if [[ $var =~ ^--host=.*$ ]] ; then
-        MIG_SSH_HOST=$(expr match "$var" '^--host=\(.*\)$')
+        shift
+        ;;
+      --host)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_HOST="$2"
         debug getCmdArgs "set MIG_SSH_HOST=$MIG_SSH_HOST"
-        continue
-      fi
-
-      if [[ $var =~ ^--base=.*$ ]] ; then
-        MIG_DB_DIR=$(expr match "$var" '^--base=\(.*\)$')
+        shift
+        ;;
+      --base)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_DB_DIR="$2"
         debug getCmdArgs "set MIG_DB_DIR=$MIG_DB_DIR"
-        continue
-      fi
-
-      if [[ $var =~ ^--color=.*$ ]] ; then
-        COLOR=$(expr match "$var" '^--color=\(.*\)$')
+        shift
+        ;;
+      --color)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        COLOR="$2"
         debug getCmdArgs "set COLOR=$COLOR"
-        color $COLOR
-        continue
-      fi
-
-      if [[ $var =~ ^--port=.*$ ]] ; then
-        MIG_SSH_PORT=$(expr match "$var" '^--port=\(.*\)$')
+        shift
+        ;;
+      -p|--port)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_PORT="$2"
         debug getCmdArgs "set MIG_SSH_PORT=$MIG_SSH_PORT"
-        continue
-      fi
-
-      if [[ $var =~ ^--user=.*$ ]] ; then
-        MIG_SSH_USER=$(expr match "$var" '^--user=\(.*\)$')
+        shift
+        ;;
+      -u|--user)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_USER="$2"
         debug getCmdArgs "set MIG_SSH_USER=$MIG_SSH_USER"
-        continue
-      fi
-
-      if [[ $var =~ ^--passwd=.*$ ]] ; then
-        MIG_SSH_PASSWD=$(expr match "$var" '^--passwd=\(.*\)$')
+        shift
+        ;;
+      --passwd)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_PASSWD="$2"
         debug getCmdArgs "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
-        continue
-      fi
-
-      fail "unrecognized argument $var"
-    else
-      case $paramNo in
-        0)
-          UNIT_ID="$var"
-          ;;
-        *)
-          fail "unexpected argument $var"
-          ;;
-      esac
-      paramNo=$(($paramNo+1))
-      continue
-    fi
+        shift
+        ;;
+      *)
+        if [[ $1 =~ ^-.* ]] ; then
+          fail "unrecognized option $1"
+        else
+          UNIT_ID="$1"
+          debug getCmdArgs "set UNIT_ID=$UNIT_ID"
+        fi
+      ;;
+    esac
+    shift
   done
 }
 
@@ -115,6 +139,7 @@ getCmdArgs "$@"
 
 if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"
+  # shellcheck disable=SC1090
   source "$MIG_CFG"
 fi
 
@@ -127,25 +152,6 @@ UNIT_FILE="${UNIT_DIR}/unit-${UNIT_ID}"
 if [ -f "${UNIT_FILE}" ] ; then
   fail "an order file for order $UNIT_ID exists"
 fi
-
-# TODO: make this more generic, eg write a file with options / host / user / password instead
-#if [ -n "$MIG_GET_OPTS" ] && [ -f "$MIG_GET_OPTS" ] ; then
-#  DYN_OPTS_RAW=$(${MIG_GET_OPTS} ${UNIT_ID})
-#  DYN_SSH_OPTS="${DYN_OPTS_RAW##*$'\n'}"
-# DYN_SSH_OPTS=$(expr match "$DYN_SSH_OPTS" '^SSH_OPTS \(.*\)$') || true
-#  if [ -z "$DYN_SSH_OPTS" ] ; then
-#    warn "failed to prepare ssh opts for device $UNIT_ID"
-#    warn "$MIG_GET_OPTS output:"
-#    echo "$DYN_OPTS_RAW"
-#    exit 1
-#  fi
-
-#  if [ -n "$MIG_SSH_OPTS" ] ; then
-#    MIG_SSH_OPTS="$MIG_SSH_OPTS $DYN_SSH_OPTS"
-#  else
-#    MIG_SSH_OPTS="$DYN_SSH_OPTS"
-#  fi
-#fi
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
 debug main "creating file ${TMP_FILE}"

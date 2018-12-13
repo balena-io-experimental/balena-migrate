@@ -39,8 +39,7 @@ function listContains {
 ##########################################
 
 function inform {
-  TS=$(date +%T)
-  printf "${GREEN}[${TS} ${SCRIPT_NAME} $$ INFO ]: $1 ${NC}\n"
+  printf "${GREEN}[%s %s %s INFO ]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
 }
 
 
@@ -49,8 +48,7 @@ function inform {
 ##########################################
 
 function warn {
-  TS=$(date +%T)
-  printf "${YELLOW}[${TS} ${SCRIPT_NAME} $$ WARN ]: $1 ${NC}\n"
+  printf "${YELLOW}[%s %s %s WARN ]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
 }
 
 ##########################################
@@ -58,8 +56,7 @@ function warn {
 ##########################################
 
 function fail {
-  TS=$(date +%T)
-  printf "${RED}[${TS} ${SCRIPT_NAME} $$ ERROR]: $1 ${NC}\n"
+  printf "${RED}[%s %s %s ERROR]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
   exit -1
 }
 
@@ -71,14 +68,13 @@ function debug {
   local tag=$1
   local msg=$2
 
-  if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
-    TS=$(date +%T)
-    printf "${BROWN}[${TS} ${SCRIPT_NAME} $$ DEBUG]: ${1}: ${2}${NC}\n"
+  if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
+    printf "${BROWN}[%s %s %s DEBUG]: %s: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg"
   fi
 }
 
 function makeUUID {
-  echo $(openssl rand -hex 16)
+  openssl rand -hex 16
 }
 
 ################################################################################
@@ -123,7 +119,7 @@ function moveFile {
     if [ ! -f  "${src}" ] ; then
       return 0
     else
-      mv ${src} $(mktemp -p "${FAIL_DIR}" "move-fail-XXX")
+      mv "${src}" "$(mktemp -p "${FAIL_DIR}" "move-fail-XXX")"
       return 1
     fi
   else
@@ -137,7 +133,7 @@ function moveFile {
 ################################################################################
 
 function random {
-  shuf -i ${1}-${2} -n 1
+  shuf -i "${1}-${2}" -n 1
 }
 
 ################################################################################
@@ -148,19 +144,21 @@ function getRandFile {
   local dir=$1
   local file=$2
   debug getRandFile "called on dir=$dir file=$file"
-  local tmp=$(ls "$dir")
-  local files=($tmp)
+  local tmp files count upper pick selFile
+  tmp=$(ls "$dir")
+  files=($tmp)
   count=${#files[@]}
   debug getRandFile "files: <${tmp}>, count: ${count}"
+  # shellcheck disable=SC2086
   if [ $count -eq 0 ] ; then
     debug getRandFile "fail, no files in $dir"
     return 1
   fi
 
-  local upper=$(($count - 1))
-  local pick=$(random 0 ${upper})
+  upper=$((count - 1))
+  pick=$(random 0 ${upper})
   debug getRandFile "pick: ${pick} ${files[$pick]}"
-  local selFile="${dir}/${files[$pick]}"
+  selFile="${dir}/${files[$pick]}"
   if mv -f "$selFile" "$file" ; then
       return 0
   else
@@ -176,14 +174,14 @@ function orderFailed {
   local orderId=$1
   local orderFile=$2
   local msg=$3
-
+  local now failFile
   warn "ORDER ${orderId}: $msg"
-  local now=$(date +%s)
-  local failFile=$(mktemp -p "${FAIL_DIR}" "fail-$orderId-XXX")
+  now=$(date +%s)
+  failFile=$(mktemp -p "${FAIL_DIR}" "fail-$orderId-XXX")
   mv "$orderFile" "$failFile"
-  echo "FAILT_TS=$now" >> ${failFile} || fail "failed to create fail file for order $orderId in $failFile"
-  echo "FAIL_MSG=\"$msg\"" >> ${failFile} || fail "failed to create fail file for order $orderId in $failFile"
-  echo "FAIL_LOG=\"$OUTPUT_LOG\"" >> ${failFile} || fail "failed to create fail file for order $orderId in $failFile"
+  echo "FAILT_TS=$now" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
+  echo "FAIL_MSG=\"$msg\"" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
+  echo "FAIL_LOG=\"$OUTPUT_LOG\"" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
   OUTPUT_LOG=
 }
 
@@ -199,7 +197,7 @@ function mkSshCmd {
     local host=$1
     local user=$2
     local port=$3
-    local passwd=$4
+    # local passwd=$4
 
     # debug mkSshCmd "host=${host} user=${user} port=${port}"
     # TODO: use
@@ -220,6 +218,7 @@ function mkSshCmd {
       local sshOpts="$MIG_SSH_OPTS"
     fi
 
+    # shellcheck disable=SC2086
     if [ -n "$port" ] && [ $port -ne 22 ] ; then
       local sshOpts="${sshOpts} -p ${port}"
     fi
@@ -248,7 +247,7 @@ function sendFile {
 
   inform "sendFile: to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, srcFile=${srcFile}, tgtFile=${tgtFile}"
 
-  sshCmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT)
+  sshCmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT")
   local preCmd="gzip -c '$srcFile'"
   local remoteCmd="gzip -d -c > '$tgtFile'"
 
@@ -278,7 +277,7 @@ function sendTarCfg {
   local tgtDir="$2"
 
   inform "sendTarCfg to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgFile=${cfgFile}, tgtDir=${tgtDir}"
-  cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT)
+  cmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT")
 
   local remoteCmd=
   if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
@@ -312,7 +311,9 @@ function sendCfgDir {
   tgtDir=$2
 
   inform "sendCfgDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgDir=${cfgDir}, tgtDir=${tgtDir}"
-  local cmd=$(mkSshCmd $MIG_SSH_HOST $MIG_SSH_USER $MIG_SSH_PORT $MIG_GET_OPTS)
+  local cmd remoteCmd
+
+  cmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "$MIG_GET_OPTS")
 
   if [ -n "$cfgDir" ] && [ "$cfgDir" != "./" ] &&  [ "$cfgDir" != "." ] ; then
     local precmd="tar -C \"${cfgDir}\" -czf - ./"
@@ -320,7 +321,7 @@ function sendCfgDir {
     local precmd="tar -czf - ./"
   fi
 
-  local remoteCmd=
+  remoteCmd=
   if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
     remoteCmd="mkdir -p '${tgtDir}' && tar -C '${tgtDir}' -xzf -"
   else
