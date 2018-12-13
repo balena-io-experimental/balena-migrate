@@ -142,30 +142,32 @@ function color {
 }
 
 function inform {
-    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} ${1}\n"
+    printf "${GREEN}[%s %s] INFO:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function warn {
-    printf "${YELLOW}[$(date +%T) ${SCRIPT_NAME}] WARN: ${NC} ${1}\n"
+    printf " ${YELLOW}[%s %s] WARN:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function debug {
-    if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
-      printf "${BROWN}[$(date +%T) ${SCRIPT_NAME}] DEBUG:${NC} ${1}: ${2}\n"
+    if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "${1}" ; then
+      printf "${BROWN}[%s %s] DEBUG:${NC} %s: %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}" "${2}"
     fi
 }
 
 function simulate {
-    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} would execute \"$*\"\n"
+    printf "${GREEN}[%s %s] INFO:${NC}  %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function clean {
     if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] ; then
+      debug clean "removing $TMP_DIR"
       rm -rf "$TMP_DIR"
     fi
 
     if [ -n "$RESTORE_BOOT_CFG_STAGE1" ] ; then
-      $RESTORE_BOOT_CFG_STAGE1
+      debug clean "attempting <sh -c ${RESTORE_BOOT_CFG_STAGE1}>"
+      sh -c "$RESTORE_BOOT_CFG_STAGE1"
     fi
 }
 
@@ -174,7 +176,7 @@ function clean {
 ##########################################
 
 function fail {
-    printf "${RED}[$(date +%T) ${SCRIPT_NAME}] ERROR:${NC} $1\n"
+    printf "${RED}[%s %s] ERROR:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
     clean
     exit -1
 }
@@ -184,16 +186,18 @@ function fail {
 ##########################################
 
 function printHelp {
-  echo "balena-migrate"
-  echo "  prepare host for migration to balena-os"
-  echo "  USAGE balena-stage1 [OPTIONS]"
-  echo "  please run as root"
-  echo "  OPTIONS: "
-  echo "    -c <config file> | --config=<config file> : use given config file instead of /etc/balena-migrate.log "
-  echo "    --home=<HOME_DIR>                         : use given path as home directory"
-  echo "    -h | --help                               : print this help and exit"
-  echo "    -r <DELAY> | --reboot=<DELAY>             : reboot when done after a delay of DELAY seconds"
-  echo "    -u <UUID> | --uuid=<UUID>                 : use given UUID as baleanOS host id"
+  cat << EOI
+  balena-migrate
+    prepare host for migration to balena-os
+    USAGE balena-stage1 [OPTIONS]
+    please run as root
+    OPTIONS:
+      -c <config file> | --config <config file> : use given config file instead of /etc/balena-migrate.log
+      --home <HOME_DIR>                         : use given path as home directory
+      -h | --help                               : print this help and exit
+      -r <DELAY> | --reboot <DELAY>             : reboot when done after a delay of DELAY seconds
+      -u <UUID> | --uuid <UUID>                 : use given UUID as baleanOS host id
+EOI
   exit 0
 }
 
@@ -202,93 +206,52 @@ function printHelp {
 ##########################################
 
 function getCmdArgs {
-  cmd=
-  for var in "$@"
-  do
-    debug getCmdArgs "looking at $var"
-    if [ -n "$cmd" ]  ; then
-      case $cmd in
-        config)
-          $PARAM_CONFIG_FILE=$var
-          cmd=
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
           ;;
-        uuid)
-          $PARAM_UUID=$var
-          cmd=
+        -c|--config)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_CONFIG_FILE="$2"
+          debug getCmdArgs "set PARAM_CONFIG_FILE=$PARAM_CONFIG_FILE"
+          shift
           ;;
-        home)
-          $PARAM_HOME_DIR=$var
-          cmd=
+        --uuid)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_UUID="$2"
+          debug getCmdArgs "set PARAM_UUID=$PARAM_UUID"
+          shift
+          ;;
+        --home)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_HOME_DIR="$2"
+          debug getCmdArgs "set PARAM_HOME_DIR=$PARAM_HOME_DIR"
+          shift
+          ;;
+        --balena-cfg)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_BALENA_CONFIG="$2"
+          debug getCmdArgs "set PARAM_BALENA_CONFIG=$PARAM_BALENA_CONFIG"
+          shift
           ;;
         *)
-          fail "unrecognized parameter ${var}"
+          fail "invalid command $arg"
           ;;
-      esac
-    else
-      if [[ "$var" =~ ^--.* ]] ; then
-        cmd=$(expr match "$var" '^--\([^=]\+\).*')
-        param=$(expr match "$var" '^--[^=]\+=\(.*\)$') || true
-        case "$cmd" in
-          config)
-            if [ -n "$param" ] ; then
-              PARAM_CONFIG_FILE="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          uuid)
-            if [ -n "$param" ] ; then
-              PARAM_UUID=$param
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          home)
-            if [ -n "$param" ] ; then
-              PARAM_HOME_DIR="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          balena-cfg)
-            if [ -n "$param" ] ; then
-              PARAM_BALENA_CONFIG="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          help)
-            printHelp
-            ;;
-          *)
-            fail "invalid command $var"
-            ;;
-        esac
-        cmd=
-      else
-        if [[ "$var" =~ ^-.* ]] ; then
-          debug getCmdArgs "$var starts with -"
-          case "$var" in
-            -c)
-              cmd="config"
-              ;;
-            -u)
-              cmd="uuid"
-              ;;
-            -h)
-              printHelp
-              ;;
-            *)
-              fail "unrecognized command: $var"
-              cmd=
-              ;;
-          esac
-        else
-          fail "unrecognized command: $var"
-        fi
-      fi
-    fi
-    debug getCmdArgs "command=$cmd"
+    esac
+    shift
   done
 }
 
@@ -315,7 +278,9 @@ function listContains {
 function checkPgms {
   for pgm in $*
   do
-      local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+      debug checkPgms "checking $pgm"
+      local pgmPath
+      pgmPath="$(whereis -b "$pgm" | awk '{ print $2}')"
       if [ -z "$pgmPath" ] || [ ! -f "$pgmPath" ] ; then
         fail "cannot find required program: $pgm as $pgmPath"
      fi
@@ -327,9 +292,10 @@ function checkPgms {
 # try to establish OS release
 ##########################################
 checkOs() {
+    local OS_ID, OS_VERSION, VERSION
     if [ -f /etc/os-release ]; then
-        local OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
-        local OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
+        OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
+        OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
         VERSION="$OS_ID-$OS_VERSION"
     else
         # other methods for other osses
@@ -350,9 +316,10 @@ function create_nmgr_file {
   local WIFI_NO=$1
   local WIFI_SSID=$2
   local WIFI_PSK=$3
-  local FILE_NAME="resin-wifi-`printf %02d $WIFI_NO`"
+  local FILE_NAME
+  FILE_NAME="resin-wifi-$(printf %02d $WIFI_NO)"
 
-  cat << EOI > ${FILE_NAME}
+  cat << EOI > "${FILE_NAME}"
   [connection]
   id=$FILE_NAME
   type=wifi
@@ -394,7 +361,7 @@ function migrate_this_wifi {
   else
       if [ -n "$MIGRATE_WIFI_CFG" ] && [ -f "${HOME_DIR}/${MIGRATE_WIFI_CFG}" ] ; then
           # debug "migrate_this_wifi: looking at ${HOME_DIR}/${MIGRATE_WIFI_CFG}"
-          while read line
+          while read -r line
           do
             # debug "migrate_this_wifi: compare to: <$line>"
             if [ "$line" == "$ssid" ] ; then
@@ -421,15 +388,15 @@ function wificfg_from_wpa {
 
   debug "wificfg_from_wpa" "cfgNo=${cfgNo} file=${WPA_SUPP_CONF}"
 
-  while read line ;
+  while read -r line ;
   do
-    if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
+    if [[ $line =~ ^\ *network\ *=\ *\{ ]] ; then
       local network="TRUE"
       local ssid=
       local psk=
     else
       if [ "$network" == "TRUE" ] ; then
-        if [[ $line =~ ^\s*} ]] ; then
+        if [[ $line =~ ^\ *} ]] ; then
           if [ -n "$ssid" ]  ; then
               debug "wificfg_from_wpa" "create_nmgr_file $cfgNo $ssid $psk"
               create_nmgr_file $cfgNo "$ssid" "$psk"
@@ -441,9 +408,10 @@ function wificfg_from_wpa {
           continue
         fi
 
-        if [[ $line =~ ^\s*ssid\s*= ]] ; then
+        if [[ $line =~ ^\ *ssid\ *= ]] ; then
 
-          local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
+          local tmpSsid
+          tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
 
           if [ -z "$tmpSsid" ] ; then
             tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
@@ -465,7 +433,7 @@ function wificfg_from_wpa {
         fi
       fi
     fi
-  done < $WPA_SUPP_CONF
+  done < "$WPA_SUPP_CONF"
 }
 
 ##########################################
@@ -922,7 +890,7 @@ fi
 ####################################################################################
 
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs"
+DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
 
 # script namme for logging
 SCRIPT_NAME="balena-stage1"
@@ -949,34 +917,39 @@ if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
 fi
 
-inform "using config file:  $CONFIG_FILE"
+if [ -n "$PARAM_HOME_DIR" ] ; then
+  # cmd line params take precedence over config file
+  HOME_DIR=$PARAM_HOME_DIR
+fi
+inform "using home dir:     $HOME_DIR"
 
 # let config file override some of the settings at the top of the file
 if [[ "$CONFIG_FILE" =~ ^/.* ]] ; then
   # debug main " absolute path"
   if [ -f "$CONFIG_FILE" ] ; then
-    . "$CONFIG_FILE"
+    inform "using config file: $CONFIG_FILE"
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
   else
     fail "config file not found ${CONFIG_FILE}"
   fi
 else
   # debug main " relative path"
   if [ -f "${HOME_DIR}/${CONFIG_FILE}" ] ; then
-    . "${HOME_DIR}/${CONFIG_FILE}"
+    inform "using config file: ${HOME_DIR}/$CONFIG_FILE"
+    # shellcheck source=/dev/null
+    source "${HOME_DIR}/${CONFIG_FILE}"
   else
     if [ -f "${CONFIG_FILE}" ] ; then
-      . "${CONFIG_FILE}"
+      inform "using config file: $CONFIG_FILE"
+      # shellcheck source=/dev/null
+      source "${CONFIG_FILE}"
     else
       fail "config file could not be found ${CONFIG_FILE}"
     fi
   fi
 fi
 
-if [ -n "$PARAM_HOME_DIR" ] ; then
-  # cmd line params take precedence over config file
-  HOME_DIR=$PARAM_HOME_DIR
-fi
-inform "using home dir:     $HOME_DIR"
 
 if [ -n "$PARAM_UUID" ] ; then
   # cmd line params take precedence over config file
@@ -1296,18 +1269,18 @@ if [ -n "$BALENA_CONFIG" ] ; then
 
     inform "using UUID: $BALENA_UUID"
 
-    BALENA_TMP_FILE=$(mktemp -p ${HOME_DIR})
-    BALENA_TMP_FILE=$(basename ${BALENA_TMP_FILE})
+    BALENA_TMP_FILE=$(mktemp -p "${HOME_DIR}")
+    BALENA_TMP_FILE=$(basename "${BALENA_TMP_FILE}")
 
     # cp "$BALENA_CONFIG" "$BALENA_TMP_FILE" || fail "failed to copy $BALENA_CONFIG to $BALENA_TMP_FILE"
-    uuidConf='"uuid":"'$BALENA_UUID'"'
+    uuidConf="\"uuid\":\"${BALENA_UUID}\""
     debug main "uuidConf=$uuidConf"
     if grep "\"uuid\":" "$BALENA_CONFIG" >/dev/null 2>&1  ; then
       debug main "replace UUID with $BALENA_UUID"
-      sed 's/\("uuid":"[^"]\+"\)/'$uuidConf'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
+      sed 's/\("uuid":"[^"]\+"\)/'${uuidConf}'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
     else
       debug main "add UUID $BALENA_UUID"
-      sed 's/\(}\)\s*$/,'$uuidConf'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
+      sed 's/\(}\)\s*$/,'${uuidConf}'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
     fi
     BALENA_CONFIG="$BALENA_TMP_FILE"
   fi
@@ -1394,7 +1367,7 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
     inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
-    cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+    cp "${HOME_DIR}/${INITRAMFS_NAME}" "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
 fi
 
 if [ -n "$BALENA_TMP_FILE" ] && [ -f "$BALENA_TMP_FILE" ] ; then
@@ -1409,7 +1382,7 @@ if [ -n "$BACKUP_FILE" ] ; then
   if [ -n "$BACKUP_SCRIPT" ] ; then
     if [ -f "${HOME_DIR}/${BACKUP_SCRIPT}" ] ; then
       inform "invoking backup script using: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
-      ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE} || fail "backup script ${HOME_DIR}/${BACKUP_SCRIPT} returned error code"
+      "${HOME_DIR}/${BACKUP_SCRIPT}" "${HOME_DIR}/${BACKUP_FILE}" || fail "backup script ${HOME_DIR}/${BACKUP_SCRIPT} returned error code"
       inform "...done"
     else
       fail "cannot find backup script: ${HOME_DIR}/${BACKUP_SCRIPT}"
@@ -1417,7 +1390,7 @@ if [ -n "$BACKUP_FILE" ] ; then
   else
     if [ -n "$BACKUP_DIRECTORIES" ] ; then
       if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
-        rm ${HOME_DIR}/$BACKUP_FILE || true
+        rm "${HOME_DIR}/$BACKUP_FILE" || true
       fi
       inform "creating backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
       tar -czf "${HOME_DIR}/$BACKUP_FILE" $BACKUP_DIRECTORIES > /dev/null || fail "failed to create backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
@@ -1425,7 +1398,7 @@ if [ -n "$BACKUP_FILE" ] ; then
     fi
   fi
 
-  if [ ! -f ${HOME_DIR}/${BACKUP_FILE} ] ; then
+  if [ ! -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
     warn "no backup file created in: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
   fi
 fi
@@ -1434,32 +1407,36 @@ fi
 ## check memory
 ###########################
 
-totMem=`cat /proc/meminfo | grep "MemTotal:"`
-totMem=`expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
-inform "total memory:  ${totMem} kB"
+totMem=$(< /proc/meminfo grep "MemTotal:")
+if [[ $totMem =~ ^[^:]+:\ +([0-9]+)\ .* ]] ; then
+  totMem=${BASH_REMATCH[1]}
+  inform "total memory:  ${totMem} kB"
+  leftMem=$totMem
 
-leftMem=$totMem
+  if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
+    tmp=$(stat -c %s "${HOME_DIR}/${IMAGE_NAME}")
+    tmp=$((tmp / 1024))
+    inform "image file size: ${tmp} kB "
+    leftMem=$((leftMem - tmp))
+  fi
 
-if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${IMAGE_NAME}"`
-  tmp=`expr $tmp / 1024` || true
-  inform "image file size: ${tmp} kB "
-  leftMem=`expr ${leftMem} - ${tmp}`
+  if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
+    tmp=$(stat -c %s "${HOME_DIR}/${BACKUP_FILE}")
+    tmp=$((tmp / 1024))
+    inform "backup file size: ${tmp} kB "
+    leftMem=$((leftMem - tmp))
+  fi
+else
+  warn "could not retrieve MemTotal value from <${totMem}>"
 fi
 
-if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${BACKUP_FILE}"`
-  tmp=`expr $tmp / 1024` || true
-  inform "backup file size: ${tmp} kB "
-  leftMem=`expr ${leftMem} - ${tmp}`
-fi
 
 fType=$(file "${HOME_DIR}/${INITRAMFS_NAME}")
 if [[ "$fType" =~ ^[^:]+:.*cpio\ archive.* ]] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+  tmp=$(stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}")
 else
   if [[ $fType =~ ^[^:]+:[\ ]*gzip.* ]] ; then
-    while read line ;
+    while read -r line ;
     do
       if echo "$line" | grep "${INITRAMFS_NAME}" > /dev/null ; then
         tmp=$(expr match "$line" '[0-9]\+[ ]\+\([0-9]\+\) .*')
@@ -1468,13 +1445,13 @@ else
     done < <(gzip -l "${HOME_DIR}/${INITRAMFS_NAME}")
   else
     warn "unexpected initramfs format"
-    tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+    tmp=$(stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}")
   fi
 fi
 
-tmp=`expr $tmp / 1024` || true
+tmp=$((tmp / 1024))
 inform "initramfs est. size: ${tmp} kB "
-leftMem=`expr ${leftMem} - ${tmp}`
+leftMem=$((leftMem - tmp))
 
 inform "Est. memory left: ${leftMem} kB "
 if [ ${leftMem} -lt ${MEM_MIN_FREE_S1} ] ; then
