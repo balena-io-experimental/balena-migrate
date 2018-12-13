@@ -276,6 +276,7 @@ function listContains {
 ##########################################
 
 function checkPgms {
+  # shellcheck disable=SC2048
   for pgm in $*
   do
       debug checkPgms "checking $pgm"
@@ -292,7 +293,7 @@ function checkPgms {
 # try to establish OS release
 ##########################################
 checkOs() {
-    local OS_ID, OS_VERSION, VERSION
+    local OS_ID OS_VERSION VERSION
     if [ -f /etc/os-release ]; then
         OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
         OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
@@ -317,6 +318,7 @@ function create_nmgr_file {
   local WIFI_SSID=$2
   local WIFI_PSK=$3
   local FILE_NAME
+  # shellcheck disable=SC2086
   FILE_NAME="resin-wifi-$(printf %02d $WIFI_NO)"
 
   cat << EOI > "${FILE_NAME}"
@@ -409,25 +411,30 @@ function wificfg_from_wpa {
         fi
 
         if [[ $line =~ ^\ *ssid\ *= ]] ; then
-
           local tmpSsid
-          tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
-
-          if [ -z "$tmpSsid" ] ; then
-            tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
+          if [[ $line =~ \ *ssid\ *=\ *\"([^\"]+)\" ]] ; then
+            tmpSsid="${BASH_REMATCH[1]}"
+          else
+            if [[ $line =~ \ *ssid\ *=\ *([^\ ]+)\ *$ ]] ; then
+              tmpSsid="${BASH_REMATCH[1]}"
+            fi
           fi
 
-          if migrate_this_wifi $tmpSsid ; then
-            ssid=${tmpSsid}
+          if [ -n "$tmpSsid" ] ; then
+            if migrate_this_wifi "$tmpSsid" ; then
+              ssid=${tmpSsid}
+            fi
           fi
           continue
         fi
 
-        if [[ $line =~ ^\s*psk\s*= ]] ; then
-          # debug "wificfg_from_wpa" "psk in line : <${line}>"
-          psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
-          if [ -z "$psk" ] ; then
-            psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
+        if [[ $line =~ ^\ *psk\ *= ]] ; then
+          if [[ $line =~ \ *psk\ *=\ *\"([^\"]+)\" ]] ; then
+            psk="${BASH_REMATCH[1]}"
+          else
+            if [[ $line =~ \ *psk\ *=\ *([^\ ]+)\ *$ ]] ; then
+              psk="${BASH_REMATCH[1]}"
+            fi
           fi
           continue
         fi
@@ -451,19 +458,24 @@ function wificfg_from_nmgr {
   for file in ${NMGR_DIR}/* ; do
     debug "wificfg_from_nmgr" "processing file: $file"
 
-    local grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
+    local grepRes currSsid fileName
+
+    grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
     if [ -z "$grepRes" ] ; then
       continue
     fi
     grepRes=$(grep -E "^\s*ssid\s*=.*" "$file")
-    local currSsid=$(expr match "$grepRes" 'ssid\s*=\s*\(.*\)')
 
-    if  migrate_this_wifi $currSsid ; then
-      inform "migrating wifi config for $currSsid"
-      # TODO: only extract certain params or copy the whole thing ?
-      local fileName="resin-wifi-`printf %02d $cfgNo`"
-      cp "$file" "$fileName"
-      cfgNo=$((cfgNo + 1))
+    if [[ $grepRes =~ ssid\ *=\ *(.*)\ *$ ]] ; then
+      currSsid="${BASH_REMATCH[1]}"
+
+      if [ -n "$currSsid" ] &&  migrate_this_wifi "$currSsid" ; then
+        inform "migrating wifi config for $currSsid"
+        # TODO: only extract certain params or copy the whole thing ?
+        fileName="resin-wifi-$(printf %02d $cfgNo)"
+        cp "$file" "$fileName"
+        cfgNo=$((cfgNo + 1))
+      fi
     fi
   done
 }
@@ -474,14 +486,25 @@ function wificfg_from_nmgr {
 ##########################################
 
 function splitPartName {
-    local partName=$1
-    local pathName=$(dirname "${partName}")
-    local tmpName1=$(lsblk -no kname ${partName})
-    local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
-    local devName=$(basename "${tmpName2}")
-    local tmp=${tmpName1:${#devName}}
-    local pad=$(expr match "${tmp}" '\([^0-9]*\)[0-9]\+')
-    local no=$(expr match "${tmp}" '[^0-9]*\([0-9]\+\)')
+    local partName pathName tmpName1 tmpName2 devName pad no
+    partName=$1
+    pathName=$(dirname "${partName}")
+    tmpName1=$(lsblk -no kname "${partName}")
+    tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
+    devName=$(basename "${tmpName2}")
+    tmp=${tmpName1:${#devName}}
+    if [[ $tmp =~ ([^0-9]*)[0-9]+ ]] ; then
+      pad="${BASH_REMATCH[1]}"
+    else
+      return 1
+    fi
+
+    if [[ $tmp =~ [^0-9]*([0-9]+) ]] ; then
+      no=${BASH_REMATCH[1]}
+    else
+      return 1
+    fi
+
     echo "${pathName} ${devName} ${no} ${pad}"
 }
 
@@ -516,7 +539,12 @@ function getBootInfo {
 
 function checkArmDevs {
   # local sysName=$(expr match "$(uname -a)" '^Linux \([ ]\+\)')
-  local sysName=$(expr match "$(uname -a)" '^Linux \([^ ]\+\)')
+  local sysName tmp
+  tmp="$(uname -a)"
+  if [[ $tmp =~ ^Linux\ ([^\ ]+) ]] ; then
+    sysName="${BASH_REMATCH[1]}"
+  fi
+
   inform "platform is <${sysName}>"
 
   case "$sysName" in
@@ -524,6 +552,7 @@ function checkArmDevs {
       inform "detected raspberry PI"
       RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
       inform "RPI_HW_REV=$RPI_HW_REV"
+      # shellcheck disable=SC2086
       if listContains "${RASPI_1_REVS}" ${RPI_HW_REV} ; then
         devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
@@ -531,6 +560,7 @@ function checkArmDevs {
           fail "expected raspberrypi1 image, got $IMAGE_NAME"
         fi
       else
+          # shellcheck disable=SC2086
           if listContains "${RASPI_2_REVS}" ${RPI_HW_REV} ; then
             devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
@@ -538,6 +568,7 @@ function checkArmDevs {
               fail "expected raspberrypi2 image, got $IMAGE_NAME"
             fi
           else
+            # shellcheck disable=SC2086
             if listContains "${RASPI_3_REVS}" ${RPI_HW_REV} ; then
               devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
@@ -552,8 +583,11 @@ function checkArmDevs {
     ;;
     beaglebone)
       # eg.: TI AM335x BeagleBone Green
-      local tmp=$(cat "/proc/device-tree/model")
-      local variant=$(expr match "$tmp" '.* BeagleBone \([^ ]\+\)')
+      local tmp, variant
+      tmp=$(cat "/proc/device-tree/model")
+      if [[ $tmp =~ .*\ BeagleBone\ ([^\ ]+) ]] ; then
+        variant="${BASH_REMATCH[1]}" # $(expr match "$tmp" '')
+      fi
 
       inform "detected Beaglebone $variant device"
 
@@ -596,7 +630,7 @@ function setupBootCfg_rpi {
 
 
   if [ "$NO_SETUP" != "TRUE" ] ; then
-    RESTORE_BOOT="TRUE"
+    # RESTORE_BOOT="TRUE"
 
     CONFIG_TXT_BACKUP="config.txt.$(date +%Y%m%d-%H-%M-%S)"
 
@@ -610,22 +644,22 @@ function setupBootCfg_rpi {
 
     while read -r line
     do
-      if [[ $line =~ ^\s*\# ]] ; then
-        echo $line >> $TMP_FILE
+      if [[ $line =~ ^\ *\# ]] ; then
+        echo "$line" >> "$TMP_FILE"
         continue
       fi
 
-      if [[ $line =~ ^\s*initramfs ]] ; then
+      if [[ $line =~ ^\ *initramfs ]] ; then
         if [ "$line" != "$INITRAM_CMD" ] ; then
-          echo "# $line" >> $TMP_FILE
+          echo "# $line" >> "$TMP_FILE"
         fi
       else
-        echo $line >> $TMP_FILE
+        echo "$line" >> "$TMP_FILE"
       fi
     done < "${CONFIG_TXT}"
-    echo $INITRAM_CMD >> $TMP_FILE
-    cp $TMP_FILE $CONFIG_TXT
-    rm $TMP_FILE
+    echo "$INITRAM_CMD" >> "$TMP_FILE"
+    cp "$TMP_FILE" "$CONFIG_TXT"
+    rm "$TMP_FILE"
 
     ###########################
     ## Modify /boot/cmdline.txt
@@ -636,9 +670,9 @@ function setupBootCfg_rpi {
       if [[ ! $CMD_LINE =~ debug ]] ; then
         CMDLINE_TXT_BACKUP="cmdline.txt.$(date +%Y%m%d-%H-%M-%S)"
         inform "creating backup of ${CMDLINE_TXT} in ${CMDLINE_TXT_BACKUP}"
-        cp ${S1_BOOT_PATH}/cmdline.txt  ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP}
+        cp "${S1_BOOT_PATH}/cmdline.txt"  "${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP}"
       	CMD_LINE="${CMD_LINE} debug"
-      	echo $CMD_LINE > ${S1_BOOT_PATH}/cmdline.txt
+      	echo "$CMD_LINE" > "${S1_BOOT_PATH}/cmdline.txt"
 
         RESTORE_BOOT_CFG_STAGE1="${RESTORE_BOOT_CFG_STAGE1} && mv ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S1_BOOT_PATH}/cmdline.txt"
         RESTORE_BOOT_CFG_STAGE2="${RESTORE_BOOT_CFG_STAGE2} && cp ${S2_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S2_BOOT_PATH}/cmdline.txt"
@@ -685,10 +719,11 @@ function setupBootCfg_bb {
           fi
       else
         debug setupBootCfg_bb "/uEnv.txt exists"
-        local uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
+        local uEnvBckup
+        uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
         cp /uEnv.txt "$uEnvBckup"
         RESTORE_BOOT_CFG_STAGE1="cp $uEnvBckup /uEnv.txt"
-        if [ $ROOT_PART_NO -eq $BOOT_PART_NO ] ; then
+        if [ "$ROOT_PART_NO" -eq "$BOOT_PART_NO" ] ; then
           RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_ROOTMOUNT}${uEnvBckup} ${S2_ROOTMOUNT}/uEnv.txt\""
         else
           RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_BOOTMOUNT}${uEnvBckup} ${S2_BOOTMOUNT}/uEnv.txt\""
@@ -721,13 +756,15 @@ function setupBootCfg_x86 {
 
 
   # check if this is an uefi booted system
-  local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
+  local efiBootMgr
+  efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
   if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
     GRUB_BOOT_TYPE="UEFI"
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
-  local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
+  local KERNEL_CMD_LINE_RAW
+  KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
   if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
     fail "no kernel command line found"
   fi
@@ -735,7 +772,10 @@ function setupBootCfg_x86 {
   case "$KERNEL_CMD_LINE_RAW" in
      BOOT_IMAGE=*)
         # Ubuntu version
-        local KERNEL_CMD_LINE=$(expr match "$KERNEL_CMD_LINE_RAW" '^BOOT_IMAGE=\(.*\)')
+        if [[ $KERNEL_CMD_LINE_RAW =~ ^BOOT_IMAGE=(.*) ]] ; then
+          KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
+        fi
+
         # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
         local TMP=($KERNEL_CMD_LINE)
 
@@ -823,8 +863,9 @@ EOI
     if [ -d /dev/disk/by-uuid ] ; then
       for fname in /dev/disk/by-uuid/* ; do
         debug setupBootCfg_x86 "looking at $fname"
-        linkedFile=$(readlink ${fname})
+        linkedFile=$(readlink "${fname}")
         debug setupBootCfg_x86 "go <${linkedFile}>"
+        # shellcheck disable=SC2086
         if [ "$(basename $ROOT_FS)" == "$(basename $linkedFile)" ] ; then
           # debug setupBootCfg_x86 "found ${uuid} for ${ROOT_FS}"
           partId=$(basename "$fname")
@@ -897,7 +938,7 @@ SCRIPT_NAME="balena-stage1"
 
 CONFIG_FILE=balena-migrate.conf
 HOME_DIR=./
-UUID=
+BALENA_UUID=
 
 color ON
 
@@ -979,6 +1020,8 @@ RASPI_2_REVS="a01040 a01041 a21041 a22042"
 RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 
 # minimum supported grub version
+# TODO: implement it
+# shellcheck disable=SC2034
 GRUB_MIN_VER=2
 # default boot directory
 BOOT_DIR=/boot
@@ -993,7 +1036,9 @@ S2_ORIG_BOOT_MNT="/orig-boot"
 S2_BOOT_PATH=
 S2_MOUNT_BOOT=
 
+# shellcheck disable=SC2016
 S2_ROOTMOUNT='${rootmnt}'
+# shellcheck disable=SC2016
 S2_BOOTMOUNT='${ORIG_BOOT_MNT}'
 
 RESTORE_BOOT_CFG_STAGE1=
@@ -1007,6 +1052,7 @@ inform "establishing required programs"
 
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot sleep stat sync touch udevadm"
 REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+# shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
 inform "checked required programs"
@@ -1015,10 +1061,11 @@ inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
 inform "checking required files"
 if [[ ! $HOME_DIR =~ ^/.* ]] ; then
-  CURR_DIR=$(pwd)
-  cd $HOME_DIR || fail "invalid/non existant HOME_DIR: $HOME_DIR"
+  CURR_DIR="$(pwd)"
+  cd "$HOME_DIR" || fail "invalid/non existant HOME_DIR: $HOME_DIR"
   HOME_DIR=$(pwd)
-  cd $CURR_DIR
+  # shellcheck disable=SC2164
+  cd "$CURR_DIR"
 fi
 
 if [ ! -d "$HOME_DIR" ] ; then
@@ -1068,9 +1115,10 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
     inform "gzipping uncompressed image file $TMP_IMG.."
     gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
-    # TMP_IMG=$(basename "${TMP_IMG}")
-    IMAGE_NAME=$(expr match "${TMP_IMG}" '.*/\([^/]\+/[^/]\+\)$')
-    IMAGE_NAME="${IMAGE_NAME}.gz"
+    # TMP_IMG=$(basename "${TMP_IMG}")#
+    if [[ ${TMP_IMG} =~ .*/([^/]+/[^/]+)$ ]] ; then
+      IMAGE_NAME="${BASH_REMATCH[1]}.gz"
+    fi
 
     if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
       inform "working with image $IMAGE_NAME"
@@ -1093,7 +1141,7 @@ fi
 
 ARCH=$(uname -m)
 
-if ! listContains "$SUPPORTED_ARCHS" $ARCH ; then
+if ! listContains "$SUPPORTED_ARCHS" "$ARCH" ; then
   fail "not a supported architecture: $ARCH"
 fi
 
@@ -1105,14 +1153,14 @@ case $ARCH in
     inform "ARCH=$ARCH"
     devType="x86_64"
     if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
-        fail "expected genericx86-64 image, got $IMAGE_NAME"
+        warn "expected genericx86-64 image, got $IMAGE_NAME"
     fi
     ;;
   i686)
     devType="i686"
     inform "ARCH=$ARCH"
     if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
-        fail "expected intel-core2-32 image, got $IMAGE_NAME"
+        warn "expected intel-core2-32 image, got $IMAGE_NAME"
     fi
     ;;
   *)
@@ -1120,6 +1168,7 @@ case $ARCH in
     ;;
 esac
 
+# shellcheck disable=SC2086
 checkPgms $INITRAM_REQUIRED_PGMS
 
 KERNEL_VER=$(uname -r)
@@ -1128,7 +1177,7 @@ inform "KERNEL_VER=$KERNEL_VER"
 OS_VERSION=$(checkOs)
 inform "OS_VERSION=$OS_VERSION"
 
-if ! listContains "${SUPPORTED_OSSES}" ${OS_VERSION} ; then
+if ! listContains "${SUPPORTED_OSSES}" "${OS_VERSION}" ; then
     fail "not a supported OS ${OS_VERSION}"
 fi
 
@@ -1140,20 +1189,20 @@ getBootInfo
 
 inform "root partition: ${ROOT_FS} boot partition: ${BOOT_FS} EFI partition: ${EFI_FS}"
 
-TMP=($(splitPartName ${BOOT_FS}))
+TMP=($(splitPartName "${BOOT_FS}"))
 
 BOOT_PAD=${TMP[3]}
 BOOT_DEV=${TMP[0]}/${TMP[1]}
 BOOT_PART_NO=${TMP[2]}
 
-TMP=($(splitPartName ${ROOT_FS}))
+TMP=($(splitPartName "${ROOT_FS}"))
 ROOT_PART_NO=${TMP[2]}
 
 if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
   fail "unsupported boot configuration /boot is on a separate drive from / "
 fi
 
-if [ $BOOT_PART_NO -eq $ROOT_PART_NO ] ; then
+if [ "$BOOT_PART_NO" -eq "$ROOT_PART_NO" ] ; then
   S2_BOOT_PATH="${S2_ROOTMOUNT}/boot"
   S2_MOUNT_BOOT=
   S1_BOOT_PATH="/boot"
@@ -1166,7 +1215,7 @@ fi
 
 debug main "S2_BOOT_PATH=$S2_BOOT_PATH S2_MOUNT_BOOT=$S2_MOUNT_BOOT"
 
-while read line ;
+while read -r line ;
 do
   # inform "parted line: $line"
 
@@ -1190,7 +1239,7 @@ do
     fi
     break
   fi
-done < <(parted -s ${BOOT_DEV} print)
+done < <(parted -s "${BOOT_DEV}" print)
 
 inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
@@ -1220,22 +1269,24 @@ esac
 NETWORK_CONFIGS=
 
 if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
+  # TODO: use jq instead ?
+  jqPath="$(whereis -b jq | awk '{ print $2}')"
+  if [ -z "$jqPath" ] ; then
+    fail "program jq is required to extract wifi config from balena config, please install the program"
+  fi
+
   inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"
-  while read line ;
-  do
-    if [[ $line =~ ,*[\ ]*\"wifiSsid\"[\ ]*\: ]] ; then
-      wifiSsid=$(expr match "$line" '.*"wifiSsid"[ ]*:[ ]*"\([^"]\+\)".*')
-    fi
+  wifiSsid=$(< "${HOME_DIR}/${BALENA_CONFIG}" jq .wifiSsid)
+  debug main "wifiSsid=${wifiSsid}"
 
-    if [[ $line =~ ,*[\ ]*\"wifiKey\"[\ ]*\: ]] ; then
-      wifiKey=$(expr match "$line" '.*"wifiKey"[ ]*:[ ]*"\([^"]\+\)".*')
+  if [ -n "$wifiSsid" ] && [[ $wifiSsid =~ ^\"(.+)\"$ ]] ; then
+    wifiKey=$(< "${HOME_DIR}/${BALENA_CONFIG}" jq .wifiKey)
+    debug main "wifiKey=${wifiKey}"
+    if [ -n "$wifiKey" ] && [[ $wifiKey =~ ^\"(.+)\"$ ]] ; then
+      inform "creating config for wifi $wifiSsid"
+      create_nmgr_file 1 "$wifiSsid" "$wifiKey"
+      HAS_WIFI_CFG="TRUE"
     fi
-  done < "${HOME_DIR}/${BALENA_CONFIG}"
-
-  if [ -n "$wifiSsid" ] ; then
-    inform "creating config for wifi $wifiSsid"
-    create_nmgr_file 1 $wifiSsid $wifiKey
-    HAS_WIFI_CFG="TRUE"
   fi
 fi
 
@@ -1273,14 +1324,15 @@ if [ -n "$BALENA_CONFIG" ] ; then
     BALENA_TMP_FILE=$(basename "${BALENA_TMP_FILE}")
 
     # cp "$BALENA_CONFIG" "$BALENA_TMP_FILE" || fail "failed to copy $BALENA_CONFIG to $BALENA_TMP_FILE"
+    # shellcheck disable=SC2089
     uuidConf="\"uuid\":\"${BALENA_UUID}\""
     debug main "uuidConf=$uuidConf"
     if grep "\"uuid\":" "$BALENA_CONFIG" >/dev/null 2>&1  ; then
       debug main "replace UUID with $BALENA_UUID"
-      sed 's/\("uuid":"[^"]\+"\)/'${uuidConf}'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
+      sed 's/\("uuid":"[^"]\+"\)/'"${uuidConf}"'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
     else
       debug main "add UUID $BALENA_UUID"
-      sed 's/\(}\)\s*$/,'${uuidConf}'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
+      sed 's/\(}\)\s*$/,'"${uuidConf}"'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
     fi
     BALENA_CONFIG="$BALENA_TMP_FILE"
   fi
@@ -1364,6 +1416,7 @@ if [ "${MK_INITRAMFS}" == TRUE ] ; then
     fi
 
     inform "creating initramfs: mkinitramfs $OPTS"
+    # shellcheck disable=SC2086
     mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
 
     inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
@@ -1439,7 +1492,9 @@ else
     while read -r line ;
     do
       if echo "$line" | grep "${INITRAMFS_NAME}" > /dev/null ; then
-        tmp=$(expr match "$line" '[0-9]\+[ ]\+\([0-9]\+\) .*')
+        if [[ $line =~ [0-9]+\ +([0-9]+)\ .* ]]  ; then
+          tmp="${BASH_REMATCH[1]}"
+        fi
         break;
       fi
     done < <(gzip -l "${HOME_DIR}/${INITRAMFS_NAME}")

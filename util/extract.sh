@@ -2,7 +2,6 @@
 
 set -e
 
-
 INPUT_IMG=
 LOOP_DEV=
 MNT_DIR=
@@ -18,20 +17,22 @@ function fail {
 }
 
 function printHelp {
-  echo ""
-  echo "extract - extract balena OS image and grub config from balena OS flasher image"
-  echo "  USAGE extract [OPTIONS] <image-file>"
-  echo "  please run as root."
-  echo "  OPTIONS: "
-  echo "    --grub=<output grub file>              : output grub config to given path"
-  echo "    --grub-boot=<output grub core imgage>  : output grub boot image to given path"
-  echo "    --grub-core=<output grub core imgage>  : output grub core image to given path"
-  echo "    --balena-cfg=<output config.json file> : output config.json to given path"
-  echo "    --config=<output migrate config file>  : set variables corresponding to extracted files in migrate config"
-  echo "    --home=<HOME_DIR used for migrate cfg> : use this directory as HOME_DIR for migrate config"
-  echo "    --img=<output image file>              : output OS image to given path"
-  echo ""
-  exit 0
+  cat << EOI
+
+  extract - extract balena OS image and grub config from balena OS flasher image
+    USAGE extract [OPTIONS] <image-file>
+    please run as root.
+    OPTIONS:
+      --grub <output grub file>              : output grub config to given path
+      --grub-boot <output grub core imgage>  : output grub boot image to given path
+      --grub-core <output grub core imgage>  : output grub core image to given path
+      --balena-cfg <output config.json file> : output config.json to given path
+      --config <output migrate config file>  : set variables corresponding to extracted files in migrate config
+      --home <HOME_DIR used for migrate cfg> : use this directory as HOME_DIR for migrate config
+      --img <output image file>              : output OS image to given path
+
+EOI
+  return  0
 }
 
 function clean {
@@ -54,63 +55,88 @@ function clean {
 }
 
 function getCmdArgs {
-  cmd=
-  for var in "$@"
-  do
-    if [[ ! $var =~ ^-.*$ ]] ; then
-      INPUT_IMG="$var"
-      echo "using input file: $INPUT_IMG"
-      continue
-    fi
 
-    if [[ $var =~ ^--grub-boot=.*$ ]] ; then
-      GRUB_BOOT_IMG=$(expr match "$var" '^--grub-boot=\(.*\)$')
-      echo "using grub boot img output file $GRUB_BOOT_IMG"
-      continue
-    fi
+  if [[ $# -eq 0 ]] ; then
+    echo "no command line arguments."
+    printHelp
+    exit 1
+  fi
 
-    if [[ $var =~ ^--grub-core=.*$ ]] ; then
-      GRUB_CORE_IMG=$(expr match "$var" '^--grub-core=\(.*\)$')
-      echo "using grub boot img output file $GRUB_CORE_IMG"
-      continue
-    fi
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+        --grub-boot)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          GRUB_BOOT_IMG="$2"
+          echo "using grub boot img output file $GRUB_BOOT_IMG"
+          shift
+          ;;
+        --grub-core)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          GRUB_CORE_IMG="$2"
+          echo "using grub core img output file $GRUB_CORE_IMG"
+          shift
+          ;;
+        --config)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          MIGRATE_CONFIG="$2"
+          echo "using migrate config file $MIGRATE_CONFIG"
+          shift
+          ;;
+        --home)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          HOME_DIR="$2"
+          echo "using home dir $HOME_DIR"
+          shift
+          ;;
+        --balena-cfg)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          BALENA_CONFIG="$2"
+          echo "using config.json output file $BALENA_CONFIG"
+          shift
+          ;;
+        --grub)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          GRUB_FILE="$2"
+          echo "using grub output file $GRUB_FILE"
+          shift
+          ;;
+        --img)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          IMG_FILE="$2"
+          echo "using image output file $IMG_FILE"
+          shift
+          ;;
+        *)
+          if [[ ! $1 =~ ^-.* ]] ; then
+            echo "unknown option $1"
+            printHelp
+            exit 1
+          fi
 
-    if [[ $var =~ ^--config=.*$ ]] ; then
-      MIGRATE_CONFIG=$(expr match "$var" '^--config=\(.*\)$')
-      echo "modifying migrate config file $MIGRATE_CONFIG"
-      continue
-    fi
-
-    if [[ $var =~ ^--home=.*$ ]] ; then
-      HOME_DIR=$(expr match "$var" '^--home=\(.*\)$')
-      echo "using $HOME_DIR as HOME_DIR"
-      continue
-    fi
-
-    if [[ $var =~ ^--balena-cfg=.*$ ]] ; then
-      BALENA_CONFIG=$(expr match "$var" '^--balena-cfg=\(.*\)$')
-      echo "using config.json output file $BALENA_CONFIG"
-      continue
-    fi
-
-    if [[ $var =~ ^--grub=.*$ ]] ; then
-      GRUB_FILE=$(expr match "$var" '^--grub=\(.*\)$')
-      echo "using grub output file $GRUB_FILE"
-      continue
-    fi
-
-    if [[ $var =~ ^--img=.*$ ]] ; then
-      IMG_FILE=$(expr match "$var" '^--img=\(.*\)$')
-      echo "using image output file $IMG_FILE"
-      continue
-    fi
-
-    if [[ $var =~ ^(--help|-h)$ ]] ; then
-      printHelp
-      exit 0
-    fi
-
-    fail "unrecognized argument $var"
+          INPUT_IMG="$1"
+          echo "using input file: $INPUT_IMG"
+          ;;
+    esac
+    shift
   done
 }
 
@@ -171,7 +197,7 @@ if [ -z "$IMG_FILE" ] && [ -z "$GRUB_FILE" ] ; then
 fi
 
 if [ -n "$MIGRATE_CONFIG" ] && [ -z "$HOME_DIR" ] ; then
-  HOME_DIR=$(dirname ${MIGRATE_CONFIG})
+  HOME_DIR=$(dirname "${MIGRATE_CONFIG}")
   echo "using ${HOME_DIR} as HOME_DIR"
 fi
 
@@ -197,18 +223,18 @@ fi
 
 echo "processing image $INPUT_IMG"
 
-while read line
+while read -r line
 do
-  if [[ $line =~ ^1:[0-9]+s:.* ]] ; then
-    bootStart=$(expr match "$line" '^1:\([0-9]\+\)s')
-    bootStart=$(($bootStart*$BLOCK_SIZE))
+  if [[ $line =~ ^1:([0-9]+)s:.* ]] ; then
+    bootStart="${BASH_REMATCH[1]}"
+    bootStart=$((bootStart*BLOCK_SIZE))
     # echo "got boot partition start offset $bootStart"
     continue
   fi
 
-  if [[ $line =~ ^2:[0-9]+s:.* ]] ; then
-    rootStart=$(expr match "$line" '^2:\([0-9]\+\)s')
-    rootStart=$(($rootStart*$BLOCK_SIZE))
+  if [[ $line =~ ^2:([0-9]+)s:.* ]] ; then
+    rootStart="${BASH_REMATCH[1]}"
+    rootStart=$((rootStart*BLOCK_SIZE))
     # echo "got root partition start offset $rootStart"
     break
   fi
@@ -223,7 +249,7 @@ if [ -n "$GRUB_FILE" ] || [ -n "$BALENA_CONFIG" ]  ||  [ -n "$GRUB_BOOT_IMG" ] |
   echo "boot partition attached to loop device $LOOP_DEV"
 
   echo "mounting boot"
-  mount $LOOP_DEV "$MNT_DIR"
+  mount "$LOOP_DEV" "$MNT_DIR"
 
 
   if [ -n "$GRUB_FILE" ] ; then
@@ -269,7 +295,7 @@ if [ -n "$GRUB_FILE" ] || [ -n "$BALENA_CONFIG" ]  ||  [ -n "$GRUB_BOOT_IMG" ] |
 
   sleep 1 # otherwise mount dir might still be busy...
   umount "$MNT_DIR" || fail "failed to unmount boot partition"
-  losetup -d $LOOP_DEV || fail "failed to unmount loop device"
+  losetup -d "$LOOP_DEV" || fail "failed to unmount loop device"
   LOOP_DEV=
 fi
 
@@ -280,9 +306,9 @@ if [ -n "$IMG_FILE" ] ; then
   echo "root-A partition attached to loop device $LOOP_DEV"
 
   echo "mounting root-A"
-  mount $LOOP_DEV "$MNT_DIR"
+  mount "$LOOP_DEV" "$MNT_DIR"
 
-  RAW_IMG_FILE=$(ls ${MNT_DIR}/opt/resin-image-genericx86*.resinos-img)
+  RAW_IMG_FILE=$(ls "${MNT_DIR}/opt/resin-image-genericx86*.resinos-img")
 
   if [ -n "$RAW_IMG_FILE" ] ; then
     echo "found image file: $RAW_IMG_FILE"
@@ -295,7 +321,7 @@ if [ -n "$IMG_FILE" ] ; then
   sleep 1 # otherwise mount dir might still be busy...
 
   umount "$MNT_DIR" || fail "failed to unmount root-A partition"
-  losetup -d $LOOP_DEV || fail "failed to unmount loop device"
+  losetup -d "$LOOP_DEV" || fail "failed to unmount loop device"
   LOOP_DEV=
 
   if [ -n "$MIGRATE_CONFIG" ] && [ -f "$MIGRATE_CONFIG" ] ; then
@@ -305,7 +331,7 @@ fi
 
 if [ -n "$MIGRATE_CONFIG" ] && [ ! -f "$MIGRATE_CONFIG" ]; then
     echo "creating migrate config file $MIGRATE_CONFIG"
-    cat <<EOI > ${MIGRATE_CONFIG}
+    cat <<EOI > "${MIGRATE_CONFIG}"
 IMAGE_NAME=$IMG_FILE
 DEBUG="TRUE"
 BACKUP_SCRIPT=
