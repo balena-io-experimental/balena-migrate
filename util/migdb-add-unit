@@ -1,6 +1,6 @@
 #!/bin/bash
-# shellcheck disable=SC2086
-SCRIPT_PATH="$(dirname \"${0}\")"
+
+SCRIPT_PATH=$(dirname "${0}")
 # shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
 source "${SCRIPT_PATH}/migdb-common"
 

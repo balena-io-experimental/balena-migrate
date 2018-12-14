@@ -126,7 +126,7 @@ function getCmdArgs {
           shift
           ;;
         *)
-          if [[ ! $1 =~ ^-.* ]] ; then
+          if [[ $1 =~ ^-.* ]] ; then
             echo "unknown option $1"
             printHelp
             exit 1
@@ -308,7 +308,9 @@ if [ -n "$IMG_FILE" ] ; then
   echo "mounting root-A"
   mount "$LOOP_DEV" "$MNT_DIR"
 
-  RAW_IMG_FILE=$(ls "${MNT_DIR}/opt/resin-image-genericx86*.resinos-img")
+  echo "attempting <ls \"${MNT_DIR}/opt/resin-image-genericx86*.resinos-img\">"
+  # shellcheck disable=SC2086
+  RAW_IMG_FILE=$(ls ${MNT_DIR}/opt/resin-image-genericx86*.resinos-img)
 
   if [ -n "$RAW_IMG_FILE" ] ; then
     echo "found image file: $RAW_IMG_FILE"

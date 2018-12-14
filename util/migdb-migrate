@@ -15,8 +15,8 @@ LOG_DEBUG=TRUE
 
 SCRIPT_NAME="migdb-migrate"
 SLEEP_DURATION=5
-# shellcheck disable=SC2086
-SCRIPT_PATH="$(dirname \"${0}\")"
+
+SCRIPT_PATH=$(dirname "${0}")
 # shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
 source "${SCRIPT_PATH}/migdb-common"
 
@@ -39,7 +39,7 @@ function printHelp {
     --ssh-opts <ssh-opts> - default ssh options
     -u | --user <ssh user> - default ssh user
 
-    Options can be provided in config file (via --cfg) or as ENV variables, see README.md
+    Options can  provided in config file (via --cfg) or as ENV variables, see-cEADMmn"
 
 EOI
 return 0
@@ -59,7 +59,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_CFG="$2"
-            debug getCmdArgs "set MIG_CFG=$MIG_CFG"
+            inform  "set MIG_CFG=$MIG_CFG"
             shift
             ;;
           --ssh-opts)
@@ -67,7 +67,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_DEF_SSH_OPTS="$2"
-            debug getCmdArgs "set MIG_DEF_SSH_OPTS=$MIG_DEF_SSH_OPTS"
+            inform  "set MIG_DEF_SSH_OPTS=$MIG_DEF_SSH_OPTS"
             shift
             ;;
           --logTo)
@@ -83,7 +83,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_DB_DIR="$2"
-            debug getCmdArgs "set MIG_DB_DIR=$MIG_DB_DIR"
+            inform  "set MIG_DB_DIR=$MIG_DB_DIR"
             shift
             ;;
           --color)
@@ -91,7 +91,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             COLOR="$2"
-            debug getCmdArgs "set COLOR=$COLOR"
+            inform  "set COLOR=$COLOR"
             shift
             ;;
           -p|--port)
@@ -99,7 +99,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_SSH_PORT="$2"
-            debug getCmdArgs "set MIG_SSH_PORT=$MIG_SSH_PORT"
+            inform  "set MIG_SSH_PORT=$MIG_SSH_PORT"
             shift
             ;;
           --host)
@@ -115,7 +115,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_SSH_USER="$2"
-            debug getCmdArgs "set MIG_SSH_USER=$MIG_SSH_USER"
+            inform  "set MIG_SSH_USER=$MIG_SSH_USER"
             shift
             ;;
           --passwd)
@@ -123,7 +123,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_SSH_PASSWD="$2"
-            debug getCmdArgs "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
+            inform "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
             shift
             ;;
           --cfg-dir)
@@ -155,7 +155,7 @@ function getCmdArgs {
               fail "\"$1\" argument needs a value."
             fi
             MIG_APP="$2"
-            debug getCmdArgs "set MIG_APP=$MIG_APP"
+            inform  "set MIG_APP=$MIG_APP"
             shift
             ;;
           --balena-ver)
@@ -172,6 +172,7 @@ function getCmdArgs {
             exit 1
             ;;
     esac
+    shift
   done
 }
 
@@ -307,7 +308,7 @@ function process {
     remoteCmd="cd '$TGT_DIR' && "
   fi
   # TODO: sudo needed ?
-  remoteCmd="${remoteCmd} sudo ./balena-migrate --balena-cfg=balena-migrate-config.json"
+  remoteCmd="${remoteCmd} sudo ./balena-migrate --balena-cfg balena-migrate-config.json"
   cmd="$sshCmd \"$remoteCmd\""
 
   debug process "attempting </bin/bash -c ${cmd}>"
