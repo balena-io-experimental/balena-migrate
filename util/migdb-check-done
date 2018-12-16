@@ -1,0 +1,229 @@
+#!/bin/bash
+
+if [ -z "$MIG_DB_DIR" ] ; then
+  MIG_DB_DIR=.
+fi
+
+COLOR=ON
+DEBUG_FUNCTS="main process"
+LOG_DEBUG=TRUE
+
+
+SCRIPT_NAME="migdb-check-done"
+SLEEP_DURATION=5
+
+SCRIPT_PATH=$(dirname "${0}")
+# shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
+
+if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  source "${SCRIPT_PATH}/migdb-common"
+else
+  echo "could not find ${SCRIPT_PATH}/migdb-common"
+  exit 1
+fi
+
+function printHelp {
+  cat << EOI
+
+  USAGE: migdb-check-done [options]
+  Status Worker Process for Balena Migration
+  options are:
+    --app <balena-application> - balena application to register with
+    --base <db base dir> - base directory of order db, defaults to ./
+    -c | --cfg <migrate-config-file> - config variables in bash / sh format
+    --color <ON/OFF> - Anything other than ON switches colored output off
+    --min-age <age in seconds> - minimum age of unit file before processing
+
+    Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
+
+EOI
+return 0
+}
+
+function getCmdArgs {
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+      -c|--cfg)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG="$2"
+        inform  "set MIG_CFG=$MIG_CFG"
+        shift
+        ;;
+      --logTo)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_LOG_TO="$2"
+        inform "set MIG_LOG_TO=$MIG_LOG_TO"
+        shift
+        ;;
+      --base)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_DB_DIR="$2"
+        inform  "set MIG_DB_DIR=$MIG_DB_DIR"
+        shift
+        ;;
+      --color)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        COLOR="$2"
+        inform  "set COLOR=$COLOR"
+        shift
+        ;;
+      --min-age)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_MIN_AGE="$2"
+        inform "set MIG_MIN_AGE=$MIG_MIN_AGE"
+        shift
+        ;;
+      --app)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_APP="$2"
+        inform  "set MIG_APP=$MIG_APP"
+        shift
+        ;;
+      *)
+        inform "unrecognized argument $1"
+        printHelp
+        exit 1
+        ;;
+    esac
+    shift
+  done
+}
+
+
+
+function process {
+  debug process "with $UNIT_FILE"
+
+  # shellcheck disable=SC1090
+  source "$UNIT_FILE"
+
+  local now age dueIn
+  now=$(date +%s)
+  age=$((now-CREATE_TS))
+  dueIn=$((DUE_TS - now))
+
+  inform "uuid=${DEVICE_ID}, status:${STATUS}, age ${age} sec. due in $dueIn sec."
+
+  if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
+    # shellcheck disable=SC2153
+    orderFailed "$UNIT_ID" "$UNIT_FILE" "invalid status found in unitfile $UNIT_FILE"
+    return 0
+  fi
+
+
+  # shellcheck disable=SC2086
+  if [ $dueIn -gt  0 ] ; then
+    inform "giving device more time to connect"
+    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
+    sleep 5
+    return 0
+  fi
+
+  if [ -n "$OUTPUT_LOG" ] && [ -f "$OUTPUT_LOG" ] ; then
+    rm "$OUTPUT_LOG"
+  fi
+
+  # shellcheck disable=SC2153
+  OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "s2-${UNIT_ID}-XXX")
+
+  DEVICE_ONLINE=
+  if BALENA_RES=$(balena device "$DEVICE_ID" 2>&1 | tee "$OUTPUT_LOG") ; then
+    IFS_BAK=$IFS
+    IFS=$'\n'
+    for line in $BALENA_RES
+    do
+      if [[ $line =~ ^IS\ ONLINE:\ *true$ ]] ; then
+        DEVICE_ONLINE=TRUE
+        now=$(date +%s)
+
+        sed -i 's/^\(STATUS=\).*$/\1DONE/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+
+        {
+        echo "STATUS_TS=$now"
+        echo "MIGRATE_S2_LOG=\"$OUTPUT_LOG\""
+        }  >> "$UNIT_FILE"
+
+        OUTPUT_LOG=
+
+        moveFile "$UNIT_FILE" "${DONE_DIR}/done-${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}/done-${UNIT_ID}"
+        break;
+      fi
+    done
+    IFS=$IFS_BAK
+    if [ -z "$DEVICE_ONLINE" ] ; then
+      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
+      rm "$OUTPUT_LOG"
+      OUTPUT_LOG=
+    fi
+  else
+    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"
+  	echo "failure"
+  fi
+
+  return 0
+}
+
+################################################################################
+# main
+################################################################################
+
+getCmdArgs "$@"
+
+if [ -n "$COLOR" ] ; then
+  color "$COLOR"
+else
+  color OFF
+fi
+
+if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
+  inform "loading config from $MIG_CFG"
+  # shellcheck disable=SC1090
+  source "$MIG_CFG"
+fi
+
+if [ -n "$MIG_LOG_TO" ] ; then
+  if [ ! -f "$MIG_LOG_TO" ] ; then
+    touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
+  fi
+
+  # Open STDOUT as $LOG_FILE file for read and write.
+  exec 1>>"$MIG_LOG_TO" 2>&1
+  # Redirect STDERR to STDOUT
+fi
+
+inform "started"
+
+checkInit
+
+debug main "MIG_DB_DIR=$MIG_DB_DIR"
+
+while true ; do
+  debug "main" "attempting to get a processed file"
+  UNIT_FILE=$(mktemp -p "$TMP_DIR" "s2-proc-XXX")
+  # debug main "UNIT_FILE=$UNIT_FILE"
+  if getRandFile "$PROCESS_DIR" "$UNIT_FILE" ; then
+    inform "getOrder success, order file: $UNIT_FILE"
+    process
+  else
+    rm "$UNIT_FILE"
+    debug "main" "getOrder returned no order, sleeping for ${SLEEP_DURATION} s"
+    sleep $SLEEP_DURATION
+  fi
+done

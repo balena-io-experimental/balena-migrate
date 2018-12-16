@@ -54,11 +54,11 @@ rm balena-cloud-appname-paspberrypi3-2.26.0+rev1-dev-v8.0.0.img.zip
 The easiest way to extract the balenaOS image and grub config is to use the extract script supplied in the util folder 
 of this repository.
 The extract script can be invoked as follows:
-```sudo <path to repo>/util/extract --grub=<extracted grub file destination> --img=<extracted image destination> <flasher image>```
+```sudo <path to repo>/util/extract --grub <extracted grub file destination> --img <extracted image destination> <flasher image>```
 Example:
 ```
-sudo extract --grub=grub.cfg \
-               --img=resin-image-genericx86-64.resinos.img.gz \
+sudo extract --grub grub.cfg \
+               --img resin-image-genericx86-64.resinos.img.gz \
                balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img.zip
 ```
 The above command will extract the grub config and the gzipped image from a zip archive containing the flasher image.
@@ -95,12 +95,13 @@ sudo ./balena-migrate
 If you are migrating a number of similar devices, you might want to use the migdb scripts that are provided in the util 
 directory of this repository. 
 
-**Please note:** The migdb scripts are work in progress. They will be adapted to requirements as we gain more experience migrating devices.
+**Please note:** The migdb scripts are work in progress. They will be adapted to requirements as we gain more experience 
+migrating devices.
 
 Currently two scripts are involved in the process: 
 
 * **migdb-add-unit** will submit a device for migration.
-* **migdb-process** is the worker script that copies the migrate configuration to devices and executes the migrate script 
+* **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script 
 on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances 
 to migrate devices in parallel. 
 
@@ -112,12 +113,12 @@ the progress. The balena cli has to be installed and logged in on the computer t
 The migrated devices will come up in balena with the device uuid that was created during pre registration. This way the 
 success of every migration can be tracked end to end.
   
-The **migdb-process** script attempts to connect to the device by ssh and use that connection to transmit the migratecfg 
-(migration environment). When the environment has been transmitted successfully and the migdb-process will call 
+The **migdb-migrate** script attempts to connect to the device by ssh and use that connection to transmit the migratecfg 
+(migration environment). When the environment has been transmitted successfully and the migdb-migrate will call 
 **balena-migrate** on the device to start the actual migration. 
 
 Options and parameters given in **migdb-add-unit** are mostly unit specific. They will be written to the unit file 
-and will override any parameters given in **migdb-process**. 
+and will override any parameters given in **migdb-migrate**. 
 The (unit specific) information necessary to create a ssh connection needs to be provided when creating a unit file. 
 Example: 
 
@@ -129,17 +130,17 @@ that host.
 The **unit-id** is a unique identifier for the device. It can be used to track the unit during migration by looking for files 
 tagged with the unit-id. Reusing unit-ids will lead to file name clashes and failure of the migdb processes.   
 
-Non unit specfic parameters can be supplied as defaults when starting **migdb-process**. Options given to 
-**migdb-process** are defaults that will be used for all units if not overridden by unit files.
+Non unit specfic parameters can be supplied as defaults when starting **migdb-migrate**. Options given to 
+**migdb-migrate** are defaults that will be used for all units if not overridden by unit files.
 
 Eg. if all devices use the same 
-user starting **migdb-process** as follows will supply a default user:
+user starting **migdb-migrate** as follows will supply a default user:
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-process --user=pi --mig-cfg-dir=./migratecfg```
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-migrate --user=pi --mig-cfg-dir=./migratecfg```
 
 
 The scripts maintain a directory structure, that contains folders for different device states, logs and tmp files:
-* **db/units** - this is where **migdb-add-unit** submits files. **migdb-process** will scan this directory and remove 
+* **db/units** - this is where **migdb-add-unit** submits files. **migdb-migrate** will scan this directory and remove 
 files as they are being processed. 
 * **db/done** - unit files in this directory have been migrated successfully.
 * **db/fail** - when processing fails unit files are moved to this directory. The file is appended with an error message, 
@@ -153,9 +154,9 @@ The migdb scripts can be configured using using command line parameters or envir
 
 **MIG_APP**
 
-Command Line Option: ```--app=<application>``` 
+Command Line Option: ```--app <application>``` 
 
-The balena application to register the device to. The **migdb-process** script wil attempt to pre register a device with 
+The balena application to register the device to. The **migdb-migrate** script wil attempt to pre register a device with 
 balena and retrieve a uuid and a config file (config.json) for the device. This way  the device can be tracked. The device 
 UUID will be saved in the device unit file.
 
@@ -165,7 +166,7 @@ override the same option given elsewhere.
 
 **MIG_BALENA_VER**
 
-Command Line Option: ```--balena-ver=<version>```
+Command Line Option: ```--balena-ver <version>```
 
 The balena version that will be installed on the device. This is needed for preregistering the device in Balena. 
 Example:
@@ -174,7 +175,7 @@ Example:
 
 **MIG_CFG** Path to a configuration file
 
-Command Line Option: ```--cfg=<config file>```
+Command Line Option: ```--cfg <config file>```
 
 The script will read the file (in bash syntax) and use the variables defined in it. It can contain any of the variables listed here and 
 will override values given on the command line or in the environment.   
@@ -182,45 +183,43 @@ will override values given on the command line or in the environment.
 
 **MIG_CFG_ARCHIVE**
 
-Command Line Option: ```--cfg-archive=<path to tar archive>```
+Command Line Option: ```--cfg-tgz <path to tar archive>```
 
 The path to a compressed tar archive containing the migratecfg folder.   
 
 **MIG_CFG_DIR**
 
-Command Line Option: ```--cfg-dir=<path to migratecfg>```
+Command Line Option: ```--cfg-dir <path to migratecfg>```
 
 The path the migratecfg folder.   
 
 **MIG_DB_DIR**
 
-Command Line Option: ```--base=<base dir>```
+Command Line Option: ```--base <base dir>```
 
 The path to the directory the db directory will be created in, defaults to ./
 
 **MIG_DEF_SSH_OPTS**
 
-Command Line Option in migdb-process: ```--def-ssh-opts=<ssh options>```
+Command Line Option in migdb-migrate: ```--ssh-opts <ssh options>```
 
 Default ssh options. 
 
 **MIG_LOG_TO**
 
-Command Line Option, only **migdb-process**: ```--log=<log-file>```
+Command Line Option, only **migdb-migrate**: ```--logTo <log-file>```
 
 The path to a file to log output to.
 
 **MIG_MIN_AGE**
 
-Command Line Option: ```--min-age=<min age in seconds>```
+Command Line Option: ```--min-age <min age in seconds>```
 
 Miniumum age of a unit file before being processed in seconds.
 
 **MIG_SSH_PASSWD**
 
-Command Line Option in migdb-add-unit: ```migdb-add-unit [options] <unit-id> [port [user [password]]]```
-
-Command Line Option in migdb-process: ```--passwd=<password>```
+Command Line Option: ```--passwd <password>```
 
 SSH password for device.
 
@@ -229,9 +228,7 @@ override the same option given elsewhere.
 
 **MIG_SSH_PORT**
 
-Command Line Option in migdb-add-unit: ```migdb-add-unit [options] <unit-id> [port [user [password]]]```
-
-Command Line Option in migdb-process: ```--passwd=<password>```
+Command Line Option in migdb-migrate: ```--port <port>```
 
 SSH port for device.
 
@@ -241,16 +238,14 @@ override the same option given elsewhere.
 
 **MIG_SSH_HOST**
 
-Command Line Option in migdb-add-unit: ```migdb-add-unit [options] <unit-id> [port [user [password]]]```
-
-Command Line Option in migdb-process: ```--port=<ssh port>```
+Command Line Option in migdb-migrate: ```--host <ssh host>```
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere. 
  
 **MIG_SSH_OPTS**
 
-Command Line Option in migdb-add-unit: ```--ssh-opts=<ssh options>```
+Command Line Option in migdb-add-unit: ```--ssh-opts <ssh options>```
 
 Unit specific ssh options. 
 
@@ -259,9 +254,7 @@ override the same option given elsewhere.
 
 **MIG_SSH_USER**
 
-Command Line Option in migdb-add-unit: ```migdb-add-unit [options] <unit-id> [port [user [password]]]```
-
-Command Line Option in migdb-process: ```--user=<ssh user>```
+Command Line Option in migdb-migrate: ```--user <ssh user>```
 
 The ssh user name.
 

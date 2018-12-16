@@ -4,26 +4,30 @@ if [ -z "$MIG_DB_DIR" ] ; then
   MIG_DB_DIR=.
 fi
 
-COLOR=ON
-
-# MIG_CFG_ARCHIVE= # "./test/mig_x86_64.tgz"
 TGT_DIR="migrate"
+COLOR=ON
 
 DEBUG_FUNCTS="main process"
 LOG_DEBUG=TRUE
-
 
 SCRIPT_NAME="migdb-migrate"
 SLEEP_DURATION=5
 
 SCRIPT_PATH=$(dirname "${0}")
 # shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
-source "${SCRIPT_PATH}/migdb-common"
+
+if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  source "${SCRIPT_PATH}/migdb-common"
+else
+  echo "could not find ${SCRIPT_PATH}/migdb-common"
+  exit 1
+fi
 
 function printHelp {
   cat << EOI
 
   USAGE: migdb-migrate [options]
+  Migrate Worker Process for Balena Migration
   options are:
     --app <balena-application> - balena application to register with
     --balena-ver
@@ -39,7 +43,7 @@ function printHelp {
     --ssh-opts <ssh-opts> - default ssh options
     -u | --user <ssh user> - default ssh user
 
-    Options can  provided in config file (via --cfg) or as ENV variables, see-cEADMmn"
+    Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
 
 EOI
 return 0
@@ -183,6 +187,7 @@ function getCmdArgs {
 function process {
   debug process "with $UNIT_FILE"
 
+  MIG_SSH_OPTS=
   # shellcheck disable=SC1090
   source "$UNIT_FILE"
 
@@ -211,7 +216,7 @@ function process {
   now=$(date +%s)
   age=$((now-CREATE_TS))
 
-  inform "port=$MIG_SSH_PORT, uuid=${UUID}, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} age=${age} sec."
+  inform "port=$MIG_SSH_PORT, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} age=${age} sec."
 
   # shellcheck disable=SC2086
   if [ -n "$MIG_MIN_AGE" ] && [ ${age} -lt ${MIG_MIN_AGE} ] ; then
@@ -332,12 +337,12 @@ function process {
       echo "STATUS_TS=$now"
       echo "DUE_TS=$((now+180))"
       echo "DEVICE_ID=$UUID"
+      echo "MIGRATE_S1_LOG=\"$OUTPUT_LOG\""
       }  >> "$UNIT_FILE"
 
-      echo "MIGRATE_S1_LOG=\"$OUTPUT_LOG\"" >> "$UNIT_FILE"
       OUTPUT_LOG=
 
-      moveFile "$UNIT_FILE" "${DONE_DIR}/O${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}/unit-${UNIT_ID}"
+      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}/process-${UNIT_ID}"
     else
       orderFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
       return 0
@@ -357,9 +362,13 @@ function process {
 # main
 ################################################################################
 
-color ON
-
 getCmdArgs "$@"
+
+if [ -n "$COLOR" ] ; then
+  color "$COLOR"
+else
+  color OFF
+fi
 
 if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"

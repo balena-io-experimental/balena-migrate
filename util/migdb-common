@@ -88,7 +88,7 @@ function checkInit {
   fi
 
   UNIT_DIR="${MIG_DB_DIR}/db/units"
-  # PROCESS_DIR="${MIG_DB_DIR}/db/process"
+  PROCESS_DIR="${MIG_DB_DIR}/db/process"
   FAIL_DIR="${MIG_DB_DIR}/db/fail"
   DONE_DIR="${MIG_DB_DIR}/db/done"
   TMP_DIR="${MIG_DB_DIR}/db/tmp"
@@ -97,7 +97,7 @@ function checkInit {
   if [ ! -d "$MIG_DB_DIR" ] || [ ! -d "$UNIT_DIR" ] || [ ! -d "$FAIL_DIR" ] || [ ! -d "$DONE_DIR" ] || [ ! -d "$TMP_DIR" ] ; then
       inform "initializing directory structure in $MIG_DB_DIR"
       mkdir -p "$UNIT_DIR" || fail "failed to create orders directory in $UNIT_DIR"
-      # mkdir -p "$PROCESS_DIR" || fail "failed to create process directory in $PROCESS_DIR"
+      mkdir -p "$PROCESS_DIR" || fail "failed to create process directory in $PROCESS_DIR"
       mkdir -p "$DONE_DIR" || fail "failed to create done directory in $DONE_DIR"
       mkdir -p "$FAIL_DIR" || fail "failed to create fail directory in $FAIL_DIR"
       mkdir -p "$TMP_DIR" || fail "failed to create tmp directory in $TMP_DIR"
