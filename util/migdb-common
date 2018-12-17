@@ -39,7 +39,7 @@ function listContains {
 ##########################################
 
 function inform {
-  printf "${GREEN}[%s %s %s INFO ]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
+  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
 }
 
 
@@ -48,7 +48,7 @@ function inform {
 ##########################################
 
 function warn {
-  printf "${YELLOW}[%s %s %s WARN ]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
+  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
 }
 
 ##########################################
@@ -56,7 +56,7 @@ function warn {
 ##########################################
 
 function fail {
-  printf "${RED}[%s %s %s ERROR]: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
   exit -1
 }
 
@@ -69,7 +69,7 @@ function debug {
   local msg=$2
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
-    printf "${BROWN}[%s %s %s DEBUG]: %s: %s ${NC}\n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg"
+    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg"
   fi
 }
 

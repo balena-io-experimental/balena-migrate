@@ -5,8 +5,8 @@ if [ -z "$MIG_DB_DIR" ] ; then
 fi
 
 COLOR=ON
-DEBUG_FUNCTS="main process"
-LOG_DEBUG=TRUE
+DEBUG_FUNCTS="process"
+LOG_DEBUG=FALSE
 
 
 SCRIPT_NAME="migdb-check-done"
@@ -76,6 +76,14 @@ function getCmdArgs {
         fi
         COLOR="$2"
         inform  "set COLOR=$COLOR"
+        shift
+        ;;
+      --max-age)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_MAX_STATUS_AGE="$2"
+        inform  "set MIG_MAX_STATUS_AGE=$MIG_MAX_STATUS_AGE"
         shift
         ;;
       *)
@@ -150,6 +158,17 @@ function process {
     done
     IFS=$IFS_BAK
     if [ -z "$DEVICE_ONLINE" ] ; then
+      now=$(date +%s)
+
+      local statusAge
+      statusAge=$((now - STATUS_TS))
+      if [ $statusAge -gt "$MIG_MAX_STATUS_AGE" ] ; then
+        orderFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
+        return 0
+      fi
+      DUE_TS=$((now + 60))
+      sed -i 's/^\(DUE_TS=\).*/\1'${DUE_TS}'/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+      inform "device not found for unitId: ${UNIT_ID}, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
       moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
       rm "$OUTPUT_LOG"
       OUTPUT_LOG=
@@ -168,6 +187,8 @@ function process {
 
 getCmdArgs "$@"
 
+
+
 if [ -n "$COLOR" ] ; then
   color "$COLOR"
 else
@@ -178,6 +199,10 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"
   # shellcheck disable=SC1090
   source "$MIG_CFG"
+fi
+
+if [ -z "$MIG_MAX_STATUS_AGE" ] ; then
+  MIG_MAX_STATUS_AGE=900
 fi
 
 if [ -n "$MIG_LOG_TO" ] ; then

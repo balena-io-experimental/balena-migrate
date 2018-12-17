@@ -942,7 +942,7 @@ fi
 DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
 
 # script namme for logging
-SCRIPT_NAME="balena-stage1"
+SCRIPT_NAME="balena-migrate"
 
 CONFIG_FILE=balena-migrate.conf
 HOME_DIR=./

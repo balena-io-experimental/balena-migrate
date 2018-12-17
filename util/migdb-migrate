@@ -7,8 +7,8 @@ fi
 TGT_DIR="migrate"
 COLOR=ON
 
-DEBUG_FUNCTS="main process"
-LOG_DEBUG=TRUE
+DEBUG_FUNCTS="process"
+LOG_DEBUG=FALSE
 
 SCRIPT_NAME="migdb-migrate"
 SLEEP_DURATION=5
@@ -42,6 +42,8 @@ function printHelp {
     -p | --port <ssh port> - default ssh port
     --ssh-opts <ssh-opts> - default ssh options
     -u | --user <ssh user> - default ssh user
+    --mig-dur <migration duration> - Timeout before looking for migrated devices
+      in balena, defaults to 180 sec.
 
     Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
 
@@ -170,6 +172,15 @@ function getCmdArgs {
             inform "set MIG_BALENA_VER=$MIG_BALENA_VER"
             shift
             ;;
+          --mig-dur)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_DURATION="$2"
+            inform "set MIG_DURATION=$MIG_DURATION"
+            shift
+            ;;
+
           *)
             inform "unrecognized argument $1"
             printHelp
@@ -320,7 +331,8 @@ function process {
   truncate -s 0 "$OUTPUT_LOG"
   if /bin/bash -c "$cmd" 2>&1 | tee "$OUTPUT_LOG" ; then
     local successMsg
-    successMsg=$(grep "^.*\[.*balena-stage1\] INFO:.*\+\s\+migration successful,.*" "$OUTPUT_LOG")
+    successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," "$OUTPUT_LOG")
+    debug process "successMsg: $successMsg"
     if  [ -n "$successMsg" ] ; then
       if [[ "$successMsg" =~ .*please\ reboot\ system.* ]] ; then
         if ! "$sshCmd \"sudo reboot\"" >> "$OUTPUT_LOG" 2>&1 ; then
@@ -336,7 +348,7 @@ function process {
       {
       echo "MIG_APP=$MIG_APP"
       echo "STATUS_TS=$now"
-      echo "DUE_TS=$((now+180))"
+      echo "DUE_TS=$((now+MIG_DURATION))"
       echo "DEVICE_ID=$UUID"
       echo "MIGRATE_S1_LOG=\"$OUTPUT_LOG\""
       }  >> "$UNIT_FILE"
@@ -369,6 +381,10 @@ if [ -n "$COLOR" ] ; then
   color "$COLOR"
 else
   color OFF
+fi
+
+if [ -z "$MIG_DURATION" ] ; then
+  MIG_DURATION=180
 fi
 
 if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
