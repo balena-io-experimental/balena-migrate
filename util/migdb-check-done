@@ -109,6 +109,15 @@ function process {
   age=$((now-CREATE_TS))
   dueIn=$((DUE_TS - now))
 
+
+  if [ $dueIn -gt  0 ] ; then
+    # shellcheck disable=SC2153
+    debug process "giving unit $UNIT_ID more time to connect"
+    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
+    sleep 5
+    return 0
+  fi
+
   inform "uuid=${DEVICE_ID}, status:${STATUS}, age ${age} sec. due in $dueIn sec."
 
   if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
@@ -118,13 +127,6 @@ function process {
   fi
 
 
-  # shellcheck disable=SC2086
-  if [ $dueIn -gt  0 ] ; then
-    inform "giving device more time to connect"
-    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
-    sleep 5
-    return 0
-  fi
 
   if [ -n "$OUTPUT_LOG" ] && [ -f "$OUTPUT_LOG" ] ; then
     rm "$OUTPUT_LOG"
