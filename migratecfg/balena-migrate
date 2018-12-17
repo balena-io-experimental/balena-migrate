@@ -40,9 +40,6 @@ DO_REBOOT= # "TRUE"
 # IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
 # IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
-################################################################################
-# Use wifi config provided in image if set to TRUE
-HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 
 ################################################################################
 # create NM configs from all configs found in this system
@@ -390,13 +387,7 @@ function migrate_this_wifi {
 ####################################################################################
 
 function wificfg_from_wpa {
-  local cfgNo=1
-
-  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
-    cfgNo=2
-  fi
-
-  debug "wificfg_from_wpa" "cfgNo=${cfgNo} file=${WPA_SUPP_CONF}"
+  debug "wificfg_from_wpa" "NEXT_WIFI_IDX=${NEXT_WIFI_IDX} file=${WPA_SUPP_CONF}"
 
   while read -r line ;
   do
@@ -408,9 +399,10 @@ function wificfg_from_wpa {
       if [ "$network" == "TRUE" ] ; then
         if [[ $line =~ ^\ *} ]] ; then
           if [ -n "$ssid" ]  ; then
-              debug "wificfg_from_wpa" "create_nmgr_file $cfgNo $ssid $psk"
-              create_nmgr_file $cfgNo "$ssid" "$psk"
-              cfgNo=$((cfgNo + 1))
+              debug "wificfg_from_wpa" "create_nmgr_file $NEXT_WIFI_IDX $ssid $psk"
+              # shellcheck disable=SC2086
+              create_nmgr_file $NEXT_WIFI_IDX "$ssid" "$psk"
+              NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
               ssid=
               psk=
               network=
@@ -456,12 +448,8 @@ function wificfg_from_wpa {
 ##########################################
 
 function wificfg_from_nmgr {
-  local cfgNo=1
-  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
-    cfgNo=2
-  fi
 
-  debug "wificfg_from_nmgr" "cfgNo=${cfgNo}"
+  debug "wificfg_from_nmgr" "NEXT_WIFI_IDX=${NEXT_WIFI_IDX}"
 
   for file in ${NMGR_DIR}/* ; do
     debug "wificfg_from_nmgr" "processing file: $file"
@@ -480,9 +468,9 @@ function wificfg_from_nmgr {
       if [ -n "$currSsid" ] &&  migrate_this_wifi "$currSsid" ; then
         inform "migrating wifi config for $currSsid"
         # TODO: only extract certain params or copy the whole thing ?
-        fileName="resin-wifi-$(printf %02d $cfgNo)"
+        fileName="resin-wifi-$(printf %02d $NEXT_WIFI_IDX)"
         cp "$file" "$fileName"
-        cfgNo=$((cfgNo + 1))
+        NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
       fi
     fi
   done
@@ -972,6 +960,19 @@ if [ -n "$PARAM_HOME_DIR" ] ; then
 fi
 inform "using home dir:     $HOME_DIR"
 
+if [[ $HAS_WIFI_CFG =~ ^[0-9]+$ ]] ; then
+  NEXT_WIFI_IDX=$((HAS_WIFI_CFG + 1))
+else
+  case $HAS_WIFI_CFG in
+    TRUE)
+      NEXT_WIFI_IDX=2
+      ;;
+    *)
+      NEXT_WIFI_IDX=1
+      ;;
+  esac
+fi
+
 # let config file override some of the settings at the top of the file
 if [[ "$CONFIG_FILE" =~ ^/.* ]] ; then
   # debug main " absolute path"
@@ -1297,8 +1298,8 @@ if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALEN
     debug main "wifiKey=${wifiKey}"
     if [ -n "$wifiKey" ] && [[ $wifiKey =~ ^\"(.+)\"$ ]] ; then
       inform "creating config for wifi $wifiSsid"
-      create_nmgr_file 1 "$wifiSsid" "$wifiKey"
-      HAS_WIFI_CFG="TRUE"
+      create_nmgr_file $NEXT_WIFI_IDX "$wifiSsid" "$wifiKey"
+      NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
     fi
   fi
 fi

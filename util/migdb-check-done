@@ -97,18 +97,17 @@ function getCmdArgs {
 }
 
 
-
 function process {
   debug process "with $UNIT_FILE"
 
   # shellcheck disable=SC1090
   source "$UNIT_FILE"
 
-  local now age dueIn
+  local now age dueIn statusAge
   now=$(date +%s)
   age=$((now-CREATE_TS))
+  statusAge=$((now - STATUS_TS))
   dueIn=$((DUE_TS - now))
-
 
   if [ $dueIn -gt  0 ] ; then
     # shellcheck disable=SC2153
@@ -118,7 +117,7 @@ function process {
     return 0
   fi
 
-  inform "uuid=${DEVICE_ID}, status:${STATUS}, age ${age} sec. due in $dueIn sec."
+  inform "uuid=${DEVICE_ID}, status:${STATUS}, age ${age} secs,  status age ${statusAge} secs,  due in $dueIn secs"
 
   if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
     # shellcheck disable=SC2153
@@ -162,7 +161,6 @@ function process {
     if [ -z "$DEVICE_ONLINE" ] ; then
       now=$(date +%s)
 
-      local statusAge
       statusAge=$((now - STATUS_TS))
       if [ $statusAge -gt "$MIG_MAX_STATUS_AGE" ] ; then
         orderFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
@@ -228,7 +226,7 @@ while true ; do
   UNIT_FILE=$(mktemp -p "$TMP_DIR" "s2-proc-XXX")
   # debug main "UNIT_FILE=$UNIT_FILE"
   if getRandFile "$PROCESS_DIR" "$UNIT_FILE" ; then
-    inform "getOrder success, order file: $UNIT_FILE"
+    debug main "getOrder success, order file: $UNIT_FILE"
     process
   else
     rm "$UNIT_FILE"

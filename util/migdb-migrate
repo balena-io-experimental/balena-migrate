@@ -31,7 +31,7 @@ function printHelp {
   options are:
     --app <balena-application> - balena application to register with
     --balena-ver
-    --base <db base dir> - base directory of order db, defaults to ./
+    --base <db base dir> - base directory of db, defaults to ./
     -c | --cfg <migrate-config-file> - config variables in bash / sh format
     --cfg-dir <migratecfg dir> - migrate config directory
     --cfg-tgz <migratecfg archive> - gzipped tar archive of migratecfg directory
@@ -232,7 +232,7 @@ function process {
   # shellcheck disable=SC2086
   if [ -n "$MIG_MIN_AGE" ] && [ ${age} -lt ${MIG_MIN_AGE} ] ; then
     inform "giving device more time to connect"
-    moveFile "$UNIT_FILE" "${UNIT_DIR}/unit-${UNIT_ID}" || fail "failed to restore order file"
+    moveFile "$UNIT_FILE" "${UNIT_DIR}/unit-${UNIT_ID}" || fail "failed to restore unit file"
     sleep 5
     return 0
   fi
@@ -416,15 +416,15 @@ if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
 fi
 
 while true ; do
-  debug "main" "attempting to get an order"
+  debug "main" "attempting to get a unit file"
   UNIT_FILE=$(mktemp -p "$TMP_DIR" "s1-proc-XXX")
   # debug main "UNIT_FILE=$UNIT_FILE"
   if getRandFile "$UNIT_DIR" "$UNIT_FILE" ; then
-    debug main "getOrder success, order file: $UNIT_FILE"
+    debug main "getOrder success, unit file: $UNIT_FILE"
     process
   else
     rm "$UNIT_FILE"
-    debug "main" "getOrder returned no order, sleeping for ${SLEEP_DURATION} s"
+    debug "main" "getOrder returned no unit, sleeping for ${SLEEP_DURATION} s"
     sleep $SLEEP_DURATION
   fi
 done
