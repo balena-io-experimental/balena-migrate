@@ -98,13 +98,16 @@ directory of this repository.
 **Please note:** The migdb scripts are work in progress. They will be adapted to requirements as we gain more experience 
 migrating devices.
 
-Currently two scripts are involved in the process: 
+Currently three scripts are involved in the process: 
 
 * **migdb-add-unit** will submit a device for migration.
 * **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script 
 on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances 
 to migrate devices in parallel. 
-
+* **migdb-check-done** is the worker script that checks migrated devices to see if they com online in the balena system.
+This script is meant to run continuously while migrating devices. It can be started in multiple instances 
+to migrate devices in parallel.  
+ 
 The scripts use a prepared migrate config and apply it to an number of devices. A directory structure is used to submit 
 devices for migration and track the state of the process. The scripts will pre register a device in the balena dashboard 
 for every unit file submitted and then attempt to migrate the unit. The balena cli is used to register devices and track 

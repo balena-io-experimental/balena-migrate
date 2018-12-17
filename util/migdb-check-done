@@ -28,11 +28,9 @@ function printHelp {
   USAGE: migdb-check-done [options]
   Status Worker Process for Balena Migration
   options are:
-    --app <balena-application> - balena application to register with
     --base <db base dir> - base directory of order db, defaults to ./
     -c | --cfg <migrate-config-file> - config variables in bash / sh format
     --color <ON/OFF> - Anything other than ON switches colored output off
-    --min-age <age in seconds> - minimum age of unit file before processing
 
     Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
 
@@ -78,22 +76,6 @@ function getCmdArgs {
         fi
         COLOR="$2"
         inform  "set COLOR=$COLOR"
-        shift
-        ;;
-      --min-age)
-        if [ -z "$2" ]; then
-          fail "\"$1\" argument needs a value."
-        fi
-        MIG_MIN_AGE="$2"
-        inform "set MIG_MIN_AGE=$MIG_MIN_AGE"
-        shift
-        ;;
-      --app)
-        if [ -z "$2" ]; then
-          fail "\"$1\" argument needs a value."
-        fi
-        MIG_APP="$2"
-        inform  "set MIG_APP=$MIG_APP"
         shift
         ;;
       *)

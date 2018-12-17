@@ -313,7 +313,7 @@ function process {
     remoteCmd="cd '$TGT_DIR' && "
   fi
   # TODO: sudo needed ?
-  remoteCmd="${remoteCmd} sudo ./balena-migrate --balena-cfg balena-migrate-config.json"
+  remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 2 --balena-cfg balena-migrate-config.json"
   cmd="$sshCmd \"$remoteCmd\""
 
   debug process "attempting </bin/bash -c ${cmd}>"
@@ -334,6 +334,7 @@ function process {
       now=$(date +%s)
 
       {
+      echo "MIG_APP=$MIG_APP"
       echo "STATUS_TS=$now"
       echo "DUE_TS=$((now+180))"
       echo "DEVICE_ID=$UUID"

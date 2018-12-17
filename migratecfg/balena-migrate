@@ -247,6 +247,14 @@ function getCmdArgs {
           debug getCmdArgs "set PARAM_BALENA_CONFIG=$PARAM_BALENA_CONFIG"
           shift
           ;;
+        --reboot)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_REBOOT="$2"
+          debug getCmdArgs "set PARAM_REBOOT=$PARAM_REBOOT"
+          shift
+          ;;
         *)
           fail "invalid command $arg"
           ;;
@@ -1002,6 +1010,11 @@ if [ -n "$PARAM_BALENA_CONFIG" ] ; then
   BALENA_CONFIG="$PARAM_BALENA_CONFIG"
 fi
 
+if [ -n "$PARAM_REBOOT" ] ; then
+  # cmd line params take precedence over config file
+  DO_REBOOT="$PARAM_REBOOT"
+fi
+
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
 
@@ -1517,9 +1530,34 @@ fi
 ## reboot
 ###########################
 
-if [ "$DO_REBOOT" == "TRUE" ] ; then
-  inform "rebooting system in 5 seconds"
-  sleep 5
+
+debug main "DO_REBOOT=$DO_REBOOT"
+
+if [ -z "$DO_REBOOT" ] ; then
+  DO_REBOOT=FALSE
+fi
+
+if [[ ! $DO_REBOOT =~ ^[0-9]+$ ]] ; then
+    case $DO_REBOOT in
+      TRUE)
+        debug main "DO_REBOOT is TRUE: $DO_REBOOT"
+        DO_REBOOT=5
+        ;;
+      *)
+        debug main "DO_REBOOT is OTHER: $DO_REBOOT"
+        DO_REBOOT=FALSE
+        ;;
+    esac
+fi
+
+debug main "using DO_REBOOT: $DO_REBOOT"
+
+if [[ $DO_REBOOT =~ ^[0-9]+$ ]] ; then
+  delay=${BASH_REMATCH[0]}
+  inform "rebooting system in ${delay} seconds"
+  if [ "$delay" -gt 1 ] ; then
+    sleep $((delay -1))
+  fi
   inform "migration successful, rebooting system in 1 second"
   sleep 1
   reboot
