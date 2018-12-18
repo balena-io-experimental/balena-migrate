@@ -28,11 +28,13 @@ function printHelp {
   USAGE: migdb-check-done [options]
   Status Worker Process for Balena Migration
   options are:
-    --base <db base dir> - base directory of order db, defaults to ./
-    -c | --cfg <migrate-config-file> - config variables in bash / sh format
-    --color <ON/OFF> - Anything other than ON switches colored output off
-
-    Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
+    --base <db base dir>             - Base directory of db, defaults to ./
+    -c | --cfg <migrate-config-file> - Config variables in bash / sh format
+    --color <ON/OFF>                 - Anything other than ON switches colored output off
+    -h|--help                        - Show this help screen
+    --log-to <log file>              - Write output to log file
+    --max-age <age in secs>          - Maximum time in seconds since device Migration
+                                       before declaring migration failed.
 
 EOI
 return 0
@@ -54,7 +56,7 @@ function getCmdArgs {
         inform  "set MIG_CFG=$MIG_CFG"
         shift
         ;;
-      --logTo)
+      --log-to)
         if [ -z "$2" ]; then
           fail "\"$1\" argument needs a value."
         fi
@@ -112,7 +114,7 @@ function process {
   if [ $dueIn -gt  0 ] ; then
     # shellcheck disable=SC2153
     debug process "giving unit $UNIT_ID more time to connect"
-    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
+    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}/process-${UNIT_ID}"
     sleep 5
     return 0
   fi
@@ -121,7 +123,7 @@ function process {
 
   if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
     # shellcheck disable=SC2153
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "invalid status found in unitfile $UNIT_FILE"
+    orderFailed "$UNIT_ID" "$UNIT_FILE" "invalid status found in unit file $UNIT_FILE"
     return 0
   fi
 
@@ -169,7 +171,7 @@ function process {
       DUE_TS=$((now + 60))
       sed -i 's/^\(DUE_TS=\).*/\1'${DUE_TS}'/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
       inform "device not found for unitId: ${UNIT_ID}, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
-      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore order file ${PROCESS_DIR}/process-${UNIT_ID}"
+      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}/process-${UNIT_ID}"
       rm "$OUTPUT_LOG"
       OUTPUT_LOG=
     fi
@@ -226,11 +228,11 @@ while true ; do
   UNIT_FILE=$(mktemp -p "$TMP_DIR" "s2-proc-XXX")
   # debug main "UNIT_FILE=$UNIT_FILE"
   if getRandFile "$PROCESS_DIR" "$UNIT_FILE" ; then
-    debug main "getOrder success, order file: $UNIT_FILE"
+    debug main "getOrder success, unit file: $UNIT_FILE"
     process
   else
     rm "$UNIT_FILE"
-    debug "main" "getOrder returned no order, sleeping for ${SLEEP_DURATION} s"
+    debug "main" "getOrder returned no unit, sleeping for ${SLEEP_DURATION} s"
     sleep $SLEEP_DURATION
   fi
 done

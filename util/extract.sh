@@ -23,13 +23,13 @@ function printHelp {
     USAGE extract [OPTIONS] <image-file>
     please run as root.
     OPTIONS:
-      --grub <output grub file>              : output grub config to given path
-      --grub-boot <output grub core imgage>  : output grub boot image to given path
-      --grub-core <output grub core imgage>  : output grub core image to given path
-      --balena-cfg <output config.json file> : output config.json to given path
-      --config <output migrate config file>  : set variables corresponding to extracted files in migrate config
-      --home <HOME_DIR used for migrate cfg> : use this directory as HOME_DIR for migrate config
-      --img <output image file>              : output OS image to given path
+      --grub <output grub file>              - output grub config to given path
+      --grub-boot <output grub core imgage>  - output grub boot image to given path
+      --grub-core <output grub core imgage>  - output grub core image to given path
+      --balena-cfg <output config.json file> - output config.json to given path
+      --config <output migrate config file>  - set variables corresponding to extracted files in migrate config
+      --home <HOME_DIR used for migrate cfg> - use this directory as HOME_DIR for migrate config
+      --img <output image file>              - output OS image to given path
 
 EOI
   return  0

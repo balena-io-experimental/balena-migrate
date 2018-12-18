@@ -184,16 +184,18 @@ function fail {
 
 function printHelp {
   cat << EOI
+
   balena-migrate
     prepare host for migration to balena-os
     USAGE balena-stage1 [OPTIONS]
     please run as root
     OPTIONS:
-      -c <config file> | --config <config file> : use given config file instead of /etc/balena-migrate.log
-      --home <HOME_DIR>                         : use given path as home directory
-      -h | --help                               : print this help and exit
-      -r <DELAY> | --reboot <DELAY>             : reboot when done after a delay of DELAY seconds
-      -u <UUID> | --uuid <UUID>                 : use given UUID as baleanOS host id
+      -c <config file> | --config <config file> - Use given config file instead of /etc/balena-migrate.log
+      --home <HOME_DIR>                         - Use given path as home directory
+      -h | --help                               - Print this help and exit
+      -r <DELAY> | --reboot <DELAY>             - Reboot when done after a delay of DELAY seconds
+      -u <UUID> | --uuid <UUID>                 - Use given UUID as baleanOS host id
+
 EOI
   exit 0
 }

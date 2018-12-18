@@ -29,23 +29,22 @@ function printHelp {
   USAGE: migdb-migrate [options]
   Migrate Worker Process for Balena Migration
   options are:
-    --app <balena-application> - balena application to register with
-    --balena-ver
-    --base <db base dir> - base directory of db, defaults to ./
-    -c | --cfg <migrate-config-file> - config variables in bash / sh format
-    --cfg-dir <migratecfg dir> - migrate config directory
-    --cfg-tgz <migratecfg archive> - gzipped tar archive of migratecfg directory
-    --color <ON/OFF> - Anything other than ON switches colored output off
-    --host <ssh-host> - default ssh host
-    --min-age <age in seconds> - minimum age of unit file before processing
-    --passwd <ssh password> - default ssh password
-    -p | --port <ssh port> - default ssh port
-    --ssh-opts <ssh-opts> - default ssh options
-    -u | --user <ssh user> - default ssh user
-    --mig-dur <migration duration> - Timeout before looking for migrated devices
-      in balena, defaults to 180 sec.
-
-    Options can be provided in config file (via --cfg) or as ENV variables, see README.md"
+    --app <balena-application>       - Balena application to register with
+    --balena-ver <version>           - Balena version of image
+    --base <db base dir>             - Base directory of db, defaults to ./
+    -c | --cfg <migrate-config-file> - Config variables in bash / sh format
+    --cfg-dir <migratecfg dir>       - Migrate config directory
+    --cfg-tgz <migratecfg archive>   - Gzipped tar archive of migratecfg directory
+    --color <ON/OFF>                 - Anything other than ON switches colored output off
+    --host <ssh-host>                - Default ssh host
+    --log-to <log file>              - Write output to log file
+    --min-age <age in seconds>       - Minimum age of unit file before processing
+    --passwd <ssh password>          - Default ssh password
+    -p | --port <ssh port>           - Default ssh port
+    --ssh-opts <ssh-opts>            - Default ssh options
+    -u | --user <ssh user>           - Default ssh user
+    --mig-dur <migration duration>   - Timeout before looking for migrated devices
+                                       in balena, defaults to 180 sec.
 
 EOI
 return 0
@@ -76,7 +75,7 @@ function getCmdArgs {
             inform  "set MIG_DEF_SSH_OPTS=$MIG_DEF_SSH_OPTS"
             shift
             ;;
-          --logTo)
+          --log-to)
             if [ -z "$2" ]; then
               fail "\"$1\" argument needs a value."
             fi

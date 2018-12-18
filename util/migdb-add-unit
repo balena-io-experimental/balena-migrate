@@ -19,15 +19,18 @@ function printHelp {
 
   USAGE: migdb-add-unit [options] <unitId>
   options are:
-    --cfg=<migrate-config-file> - unit specific config variables in bash / sh format
-    --host=<ssh-host> - unit specific ssh host
-    --port=<ssh port> - unit specific ssh port to use
-    --user=<ssh user> - unit specific ssh user
-    --passwd=<ssh password> - unit specific ssh password
-    --app=<balena-application> - balena application to register with
-    --ssh-opts=<ssh-opts> - unit specfic ssh options
-    --base=<db base dir> - base directory of order db
-    --color=<ON/OFF> - Anything other than ON switches colored output off
+    --app <balena-application>     - Unit specific balena application to register with
+    --base <db base dir>           - base directory of order db
+    --cfg <migrate-config-file>    - Unit specific config variables in bash / sh format
+    --cfg-dir <migratecfg dir>     - Unit specific migrate config directory
+    --cfg-tgz <migratecfg archive> - Unit specific gzipped tar archive of migratecfg directory
+    --color <ON/OFF>               - Anything other than ON switches colored output off
+    -h|--help                      - Show this help screen
+    --host <ssh-host>              - Unit specific ssh host
+    --passwd <ssh password>        - Unit specific ssh password
+    -p|--port <ssh port>           - Unit specific ssh port to use
+    --ssh-opts <ssh-opts>          - Unit specfic ssh options
+    -u|--user <ssh user>           - Unit specific ssh user
 
 EOI
 return 0
@@ -120,6 +123,22 @@ function getCmdArgs {
         debug getCmdArgs "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
         shift
         ;;
+      --cfg-dir)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG_DIR="$2"
+        inform "set MIG_CFG_DIR=$MIG_CFG_DIR"
+        shift
+        ;;
+      --cfg-tgz)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG_ARCHIVE="$2"
+        inform "set MIG_CFG_DIR=$MIG_CFG_ARCHIVE"
+        shift
+        ;;
       *)
         if [[ $1 =~ ^-.* ]] ; then
           fail "unrecognized option $1"
@@ -167,30 +186,39 @@ STATUS=INIT
 CREATE_TS=$(date +%s)
 EOI
 
-if [ -n "$MIG_SSH_HOST" ] ; then
-  echo "MIG_SSH_HOST=${MIG_SSH_HOST}" >> "${TMP_FILE}"
-fi
+{
+  if [ -n "$MIG_SSH_HOST" ] ; then
+    echo "MIG_SSH_HOST=${MIG_SSH_HOST}"
+  fi
 
-if [ -n "$MIG_SSH_USER" ] ; then
-  echo "MIG_SSH_USER=${MIG_SSH_USER}" >> "${TMP_FILE}"
-fi
+  if [ -n "$MIG_SSH_USER" ] ; then
+    echo "MIG_SSH_USER=${MIG_SSH_USER}"
+  fi
 
-if [ -n "$MIG_SSH_PASSWD" ] ; then
-  echo "MIG_SSH_PASSWD=\"${MIG_SSH_PASSWD}\"" >> "${TMP_FILE}"
-fi
+  if [ -n "$MIG_SSH_PASSWD" ] ; then
+    echo "MIG_SSH_PASSWD=\"${MIG_SSH_PASSWD}\""
+  fi
 
-if [ -n "$MIG_SSH_PORT" ] ; then
-  echo "MIG_SSH_PORT=${MIG_SSH_PORT}" >> "${TMP_FILE}"
-fi
+  if [ -n "$MIG_SSH_PORT" ] ; then
+    echo "MIG_SSH_PORT=${MIG_SSH_PORT}"
+  fi
 
-if [ -n "$MIG_SSH_OPTS" ] ; then
-  echo "MIG_SSH_OPTS=\"${MIG_SSH_OPTS}\"" >> "${TMP_FILE}"
-fi
+  if [ -n "$MIG_SSH_OPTS" ] ; then
+    echo "MIG_SSH_OPTS=\"${MIG_SSH_OPTS}\""
+  fi
 
-if [ -n "$MIG_APP" ] ; then
-  echo "MIG_APP=\"${MIG_APP}\"" >> "${TMP_FILE}"
-fi
+  if [ -n "$MIG_APP" ] ; then
+    echo "MIG_APP=\"${MIG_APP}\""
+  fi
 
+  if [ -n "$MIG_CFG_ARCHIVE" ] ; then
+    echo "MIG_CFG_ARCHIVE=\"${MIG_CFG_ARCHIVE}\""
+  fi
+
+  if [ -n "$MIG_CFG_DIR" ] ; then
+    echo "MIG_CFG_DIR=\"${MIG_CFG_DIR}\""
+  fi
+}  >> "${TMP_FILE}"
 
 if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
   inform "order file created for order id ${UNIT_ID},  port $MIG_SSH_PORT in ${UNIT_FILE}"
