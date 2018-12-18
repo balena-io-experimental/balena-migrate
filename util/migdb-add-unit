@@ -20,7 +20,7 @@ function printHelp {
   USAGE: migdb-add-unit [options] <unitId>
   options are:
     --app <balena-application>     - Unit specific balena application to register with
-    --base <db base dir>           - base directory of order db
+    --base <db base dir>           - Base directory of order db
     --cfg <migrate-config-file>    - Unit specific config variables in bash / sh format
     --cfg-dir <migratecfg dir>     - Unit specific migrate config directory
     --cfg-tgz <migratecfg archive> - Unit specific gzipped tar archive of migratecfg directory

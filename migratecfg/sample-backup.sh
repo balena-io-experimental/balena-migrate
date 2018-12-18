@@ -10,7 +10,6 @@
 # an application container.
 
 
-
 set -e
 
 BACKUP_FILE=$1
