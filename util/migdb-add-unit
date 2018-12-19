@@ -75,6 +75,14 @@ function getCmdArgs {
         debug getCmdArgs "set MIG_APP=$MIG_APP"
         shift
         ;;
+      --balena-ver)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_BALENA_VER="$2"
+        debug getCmdArgs "set MIG_BALENA_VER=$MIG_BALENA_VER"
+        shift
+        ;;
       --host)
         if [ -z "$2" ]; then
           fail "\"$1\" argument needs a value."
@@ -209,6 +217,10 @@ EOI
 
   if [ -n "$MIG_APP" ] ; then
     echo "MIG_APP=\"${MIG_APP}\""
+  fi
+
+  if [ -n "$MIG_BALENA_VER" ] ; then
+    echo "MIG_BALENA_VER=\"${MIG_BALENA_VER}\""
   fi
 
   if [ -n "$MIG_CFG_ARCHIVE" ] ; then

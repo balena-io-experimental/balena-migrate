@@ -2,13 +2,13 @@
 
 # Sample backup script for balena-migrate
 # Activate by adding to BACKUP_SCRIPT variable in balena-migrate.conf
-# The script will be called with the name of a backup archive, typically backup.tgz
-# If created, the backup archive will be transferred to the balena data partition.
-# On first boot of balena-OS the supervisor checks for an existing backup archive
-# and pre-creates a volume for every top level directory found in the archive.
-# Volumes are only created if the volume / directory name is referenced from
-# an application container.
-
+# - The script will be called with the name of a backup archive, typically backup.tgz
+# - If created, the backup archive will be transferred to the balena-data partition.
+# - On first boot of balena-OS (Version >= 2.29.0) the supervisor checks for an existing backup archive
+#   and pre-creates a volume for every top level directory found in the archive.
+# - Volumes are only created if the volume / directory name is referenced from
+#   an application container.
+#
 
 set -e
 
@@ -28,14 +28,17 @@ if [ -z "$BACKUP_FILE" ] ; then
   fail "no backup file given"
 fi
 
+# create a temporary directory in current dir to setup backup in
+
 TEMP_DIR=$(mktemp -d -p ./)
 
 ################################################################################
 # variant 1 - link subdirectory into volume
 ################################################################################
-BACKUP_DIR1="/home/pi/dir-to-backup1"
+
 VOLUME_NAME1="app-volume"
-VOLUME_DIR1="dir-to-backup1"
+BACKUP_DIR1="/home/pi/dir-to-backup1"
+VOLUME_DIR1="dir-in-volume1"
 
 
 # create top level directory that will be mounted as volume
@@ -51,17 +54,20 @@ fi
 ################################################################################
 # variant 2 - link all files in subdirectory into volume
 ################################################################################
-BACKUP_DIR2="/home/pi/dir-to-backup2"
+
 VOLUME_NAME2="app-volume"
+BACKUP_DIR2="/home/pi/dir-to-backup2"
+VOLUME_DIR2="dir-in-volume2"
 
 if [ -d "$BACKUP_DIR2" ] ; then
-  mkdir -p "${TEMP_DIR}/${VOLUME_NAME2}"
+  TARGET_PATH="${TEMP_DIR}/${VOLUME_NAME2}/${VOLUME_DIR2}"
+  mkdir -p "${TARGET_PATH}"
   FILES=$(ls -1 "$BACKUP_DIR2")
   IFS_BACKUP=$IFS
   IFS=$'\n'
   for file in $FILES
   do
-    ln -s "$BACKUP_DIR2/$file" "${TEMP_DIR}/${VOLUME_NAME2}/$file"
+    ln -s "$BACKUP_DIR2/$file" "${TARGET_PATH}/$file"
   done
   IFS=$IFS_BACKUP
 else
@@ -69,6 +75,6 @@ else
 fi
 
 # create the gzipped tar archive
-tar -hzcf "$BACKUP_FILE" -C "${TEMP_DIR}" ./ || fail "failed to create backup file $BACKUP_FILE"
+tar -hzcf "$BACKUP_FILE" -C "${TEMP_DIR}" . || fail "failed to create backup file $BACKUP_FILE"
 # remove the temporary directory
 rm -rf "${TEMP_DIR}"

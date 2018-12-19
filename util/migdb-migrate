@@ -345,7 +345,9 @@ function process {
       now=$(date +%s)
 
       {
-      echo "MIG_APP=$MIG_APP"
+      if ! grep "MIG_APP" "$UNIT_FILE" ; then
+        echo "MIG_APP=$MIG_APP"
+      fi
       echo "STATUS_TS=$now"
       echo "DUE_TS=$((now+MIG_DURATION))"
       echo "DEVICE_ID=$UUID"
