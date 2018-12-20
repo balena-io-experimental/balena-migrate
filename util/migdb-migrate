@@ -312,17 +312,17 @@ function process {
     rm "$cfgFile"
   fi
 
-  inform "setting variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
-  if  ! balena env add MIGRATE_SEMAPHORE balena-migrated --device "$UUID" 2>&1 ; then
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to set variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
-      return 0
-  fi
+  # inform "setting variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
+  # if  ! balena env add MIGRATE_SEMAPHORE balena-migrated --device "$UUID" 2>&1 ; then
+  #       orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to set variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
+  #     return 0
+  # fi
 
   local remoteCmd=
   if [ -n "$TGT_DIR" ] && [ "$TGT_DIR" != "./" ] && [ "$TGT_DIR" != "." ] ; then
     remoteCmd="cd '$TGT_DIR' && "
   fi
-  # TODO: sudo needed ?
+
   remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 2 --balena-cfg balena-migrate-config.json"
   cmd="$sshCmd \"$remoteCmd\""
 
@@ -344,8 +344,13 @@ function process {
 
       now=$(date +%s)
 
-      {
       if ! grep "MIG_APP" "$UNIT_FILE" ; then
+        SET_APP=TRUE
+      fi
+
+
+      {
+      if [ "$SET_APP" == "TRUE" ] ; then
         echo "MIG_APP=$MIG_APP"
       fi
       echo "STATUS_TS=$now"

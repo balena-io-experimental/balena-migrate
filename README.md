@@ -6,8 +6,12 @@ systems to balenaOS.
 ## How to use balena-migrate
 
 **Warning:** When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup
-thoroughly in a test environment before applying it to production devices. It also makes sense to read this document completely to understand
-the concepts and the risks involved.
+thoroughly in a test environment before applying it to production devices. 
+
+During the migration the primary storage of your device will be overwritten and all data that has not been saved prior to 
+migration will be lost. 
+It also makes sense to read this document completely to understand the concepts and the risks involved.
+   
 
 ### Preparing the Migration Environment
 

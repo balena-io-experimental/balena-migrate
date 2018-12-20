@@ -14,7 +14,9 @@ set -e
 
 BACKUP_FILE=$1
 
-
+################################################################################
+# fail with error message, removing temp directory if it exists
+################################################################################
 function fail {
   echo "ERROR: $1"
   if [ -z "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ] ; then
@@ -28,8 +30,7 @@ if [ -z "$BACKUP_FILE" ] ; then
   fail "no backup file given"
 fi
 
-# create a temporary directory in current dir to setup backup in
-
+# create a temporary directory in current dir to setup the backup in
 TEMP_DIR=$(mktemp -d -p ./)
 
 ################################################################################
@@ -43,10 +44,11 @@ VOLUME_DIR1="dir-in-volume1"
 
 # create top level directory that will be mounted as volume
 if [ -d "$BACKUP_DIR1" ] ; then
-  mkdir -p "${TEMP_DIR}/${VOLUME_NAME1}"
-  # create a link to the folder to be backed up in the top level directory
+  TARGET_PATH="${TEMP_DIR}/${VOLUME_NAME1}"
+  mkdir -p "${TARGET_PATH}"
+  # create a symbolic link to the folder to be backed up in the volume directory
   echo "processing directory $BACKUP_DIR1"
-  ln -s "$BACKUP_DIR1" "${TEMP_DIR}/${VOLUME_NAME1}/${VOLUME_DIR1}"
+  ln -s "$BACKUP_DIR1" "${TARGET_PATH}/${VOLUME_DIR1}"
 else
   fail "directory $BACKUP_DIR1 could not be found"
 fi
@@ -62,6 +64,7 @@ VOLUME_DIR2="dir-in-volume2"
 if [ -d "$BACKUP_DIR2" ] ; then
   TARGET_PATH="${TEMP_DIR}/${VOLUME_NAME2}/${VOLUME_DIR2}"
   mkdir -p "${TARGET_PATH}"
+  # get files in directory listed one per line
   FILES=$(ls -1 "$BACKUP_DIR2")
   IFS_BACKUP=$IFS
   IFS=$'\n'
