@@ -5,12 +5,15 @@ systems to balenaOS.
 
 ## How to use balena-migrate
 
-**Warning:** When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup
+**Warning:** 
+* During the migration the primary storage of your device will be overwritten and all data that has not been saved prior to 
+migration will be lost. 
+
+* When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup
 thoroughly in a test environment before applying it to production devices. 
 
-During the migration the primary storage of your device will be overwritten and all data that has not been saved prior to 
-migration will be lost. 
-It also makes sense to read this document completely to understand the concepts and the risks involved.
+
+It makes sense to read this document completely to understand the concepts and the risks involved.
    
 
 ### Preparing the Migration Environment
@@ -142,7 +145,8 @@ tagged with the unit-id. Reusing unit-ids will lead to file name clashes and fai
 Non unit specfic parameters can be supplied as defaults when starting **migdb-migrate**. Options given to 
 **migdb-migrate** are defaults that will be used for all units if not overridden by unit files.
 
-Eg. if all devices use the same user starting **migdb-migrate** as follows will supply a default user:
+Eg. if all devices use the same user and congfig directory, starting **migdb-migrate** as follows will supply a default 
+user and configuration:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-migrate --user=pi --mig-cfg-dir=./migratecfg```
 
@@ -166,7 +170,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option: ```--app <application>``` 
 
-The balena application to register the device to. The **migdb-migrate** script wil attempt to pre register a device with 
+The balena application to register the device to. The **migdb-migrate** script will attempt to pre register a device with 
 balena and retrieve a uuid and a config file (config.json) for the device. This way  the device can be tracked. The device 
 UUID will be saved in the device unit file.
 
@@ -191,8 +195,9 @@ Used by: **migdb-add-unit**, **migdb-migrate**, **migdb-check-done**
 
 Command Line Option: ```--cfg <config file>```
 
-The script will read the file (in bash syntax) and use the variables defined in it. It can contain any of the variables listed here and 
-will override values given on the command line or in the environment.   
+The script will read the file (in bash syntax) and use the variables defined in it. It can contain any of the variables 
+listed here and will override values given on the command line or in the environment. 
+   
  
 
 **MIG_CFG_ARCHIVE**
@@ -225,15 +230,35 @@ Used by: **migdb-migrate**
 
 Command Line Option in migdb-migrate: ```--ssh-opts <ssh options>```
 
-Default ssh options. 
+Default ssh options.
+
+Example: ```--ssh-opts "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"``` 
+
+**MIG_DURATION**
+
+Used by: **migdb-migrate**
+
+Command Line Option in migdb-migrate: ```--dur <duration>```
+
+Wait time in seconds before looking for migrated devices in balena, defaults to 180 sec.
 
 **MIG_LOG_TO**
 
 Used by: **migdb-migrate**, **migdb-check-done**
 
-Command Line Option, only **migdb-migrate**: ```--logTo <log-file>```
+Command Line Option: ```--log-to <log-file>```
 
 The path to a file to log output to.
+
+**MIG_MAX_STATUS_AGE**
+
+Used by: **migdb-check-done**
+
+Command Line Option: ```--max-age <age in seconds>```
+
+Wait time in seconds before before assuming, that a device has failed to show up in the balena backend. Defaults to 
+900 (15 minutes). This timer starts after the devices has been migrated (STATUS="MIGRATED"). 
+
 
 **MIG_MIN_AGE**
 
@@ -251,8 +276,15 @@ Command Line Option: ```--passwd <password>```
 
 SSH password for device.
 
+**Warning:** 
+* Please be aware that passwords are being stored without encryption in text files and might show up in logs. 
+It is recommended to use private/public key authentification instead.
+* When using this option the **migdb-migrate** will attempt to use **sshpass** utility that needs to be installed 
+prior to using **migdb-migrate** with the --passwd option.       
+
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere. 
+override the same option given elsewhere.
+ 
 
 **MIG_SSH_PORT**
 
@@ -260,7 +292,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option in migdb-migrate: ```--port <port>```
 
-SSH port for device.
+SSH port used to connect to the device, defaults to 22.
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere. 
@@ -271,6 +303,8 @@ override the same option given elsewhere.
 Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option in migdb-migrate: ```--host <ssh host>```
+
+The ssh host name or IP address of the device to migrate. 
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere. 
@@ -292,7 +326,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option in migdb-migrate: ```--user <ssh user>```
 
-The ssh user name.
+The ssh user name used to connected to the device.
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere. 
@@ -369,7 +403,7 @@ So far the scripts are being tested and are working on the following platforms:
 -   Virtualbox x86\_64 systems running ubuntu 14.04 and 18.04 in grub
     legacy mode.
 -   x86\_64 intel-nuc running ubuntu 14.04 and 18.04 in grub EFI mode.
--   The STEM device - 32 intel running Ubuntu 14.04 in grub legacy mode
+-   32 bit intel devices running Ubuntu 14.04 in grub legacy mode
 
 
 **TODOS**

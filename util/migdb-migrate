@@ -43,7 +43,7 @@ function printHelp {
     -p | --port <ssh port>           - Default ssh port
     --ssh-opts <ssh-opts>            - Default ssh options
     -u | --user <ssh user>           - Default ssh user
-    --mig-dur <migration duration>   - Timeout before looking for migrated devices
+    --mig-dur <migration duration>   - Wait time before looking for migrated devices
                                        in balena, defaults to 180 sec.
 
 EOI
