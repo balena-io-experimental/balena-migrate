@@ -9,7 +9,8 @@ while read -r line
 do
 
   if [[ $line =~ ^([^,]*),(.*)$ ]] ; then
-    field=BASH_REMATCH[1]
+    field=${BASH_REMATCH[1]}
   else
+    nop
   fi
 done < "$CSV_FILE"

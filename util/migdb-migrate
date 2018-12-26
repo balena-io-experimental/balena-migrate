@@ -264,10 +264,14 @@ function process {
 
   inform "registering device with MIG_APP=$MIG_APP"
   local tmpStr
-  tmpStr=$(balena device register "$MIG_APP" 2>"${OUTPUT_LOG}")
+
   # shellcheck disable=SC2181
-  if [ $? -ne 0 ] ; then
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
+  if ! tmpStr=$(balena device register "$MIG_APP" 2>"${OUTPUT_LOG}") ; then
+    if grep "You have to log in to continue" "${OUTPUT_LOG}" ; then 
+      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
+    else
+      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
+    fi
     return 0
   fi
 
@@ -311,12 +315,6 @@ function process {
   else
     rm "$cfgFile"
   fi
-
-  # inform "setting variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
-  # if  ! balena env add MIGRATE_SEMAPHORE balena-migrated --device "$UUID" 2>&1 ; then
-  #       orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to set variable MIGRATE_SEMAPHORE to 'balena-migrated' on device UUID=$UUID"
-  #     return 0
-  # fi
 
   local remoteCmd=
   if [ -n "$TGT_DIR" ] && [ "$TGT_DIR" != "./" ] && [ "$TGT_DIR" != "." ] ; then

@@ -155,6 +155,7 @@ function process {
 
         OUTPUT_LOG=
 
+        inform "success: device was found online, unit: ${UNIT_ID}, uuid: ${DEVICE_ID}"
         moveFile "$UNIT_FILE" "${DONE_DIR}/done-${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}/done-${UNIT_ID}"
         break;
       fi

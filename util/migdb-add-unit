@@ -111,7 +111,7 @@ function getCmdArgs {
         if [ -z "$2" ]; then
           fail "\"$1\" argument needs a value."
         fi
-        MIG_SSH_PORT="$2IG_D
+        MIG_SSH_PORT="$2"
         debug getCmdArgs "set MIG_SSH_PORT=$MIG_SSH_PORT"
         shift
         ;;
