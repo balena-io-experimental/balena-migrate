@@ -65,12 +65,12 @@ BALENA_WIFI=
 DEBUG= # "TRUE"
 
 ################################################################################
-# TODO: customer defined backup script to call
+# customer defined backup script to call
 BACKUP_SCRIPT=
 
 ################################################################################
-# arguments to tar -czf $BACKUP_FILE if no backup script is given
-BACKUP_DIRECTORIES="/etc"
+# Backup definition file
+BACKUP_DEFINITION=
 
 ################################################################################
 # Grub boot device in grub notation - usually not nee
@@ -302,6 +302,7 @@ checkOs() {
     fi
     echo "$VERSION"
 }
+
 
 ##########################################
 # create a network manager wifi file
@@ -1411,13 +1412,12 @@ if [ -n "$BACKUP_FILE" ] ; then
       fail "cannot find backup script: ${HOME_DIR}/${BACKUP_SCRIPT}"
     fi
   else
-    if [ -n "$BACKUP_DIRECTORIES" ] ; then
+    if [ -n "$BACKUP_DEFINITION" ] && [ -f "$BACKUP_DEFINITION" ] ; then
       if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
         rm "${HOME_DIR}/$BACKUP_FILE" || true
       fi
-      inform "creating backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
-      tar -czf "${HOME_DIR}/$BACKUP_FILE" $BACKUP_DIRECTORIES > /dev/null || fail "failed to create backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
-      inform "...done"
+      "${HOME_DIR}/std-backup" "${HOME_DIR}/$BACKUP_FILE" "${HOME_DIR}/${BACKUP_DEFINITION}" || fail "failed to create backup using definition file ${HOME_DIR}/${BACKUP_DEFINITION}"
+      inform "...done creating backup"
     fi
   fi
 
