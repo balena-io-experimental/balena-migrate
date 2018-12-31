@@ -11,6 +11,7 @@
 #              if ommitted no filter is applied
 
 - volume: "test volume 1"
+  items:
   - item:
     source: /home/thomas/develop/balena.io/support
     target: "target dir 1.1"

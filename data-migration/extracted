@@ -1,0 +1,40 @@
+Array([
+  Hash({
+    String("volume"): String("test volume 1"), 
+    String("contents"): Array([
+      Hash({
+        String("source"): String("/home/thomas/develop/balena.io/support"), 
+        String("target"): String("target dir 1.1")
+      }), 
+      Hash({
+        String("source"): String("/home/thomas/develop/balena.io/customer/sonder/unitdata/UnitData files"), 
+        String("target"): String("target dir 1.2")
+      })
+    ])
+  }), 
+  Hash({
+    String("volume"): String("test volume 2"), 
+    String("contents"): 
+      Array([
+        Hash({
+          String("source"): String("/home/thomas/develop/balena.io/migrate/migratecfg/balena-migrate"), 
+          String("target"): String("target file 2.1")
+        }), 
+        Hash({
+          String("source"): String("/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts"), 
+          String("target"): String("target dir 2.2"), 
+          String("filter"): String("balena-.*")
+        })
+      ])
+  }), 
+  Hash({
+    String("volume"): String("test_volume_3"), 
+    String("contents"): 
+      Array([
+        Hash({
+          String("source"): String("/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts"), 
+          String("filter"): String("balena-.*")
+        })
+      ])
+  })
+])

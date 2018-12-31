@@ -25,7 +25,7 @@ Therefore it makes sense to copy the entire folder to a different location. Ulti
 you will copy the directory to the device you want to migrate.
 
 After copying the migration environment the next step is to create a balena-migrate.conf file, that will contain your
-configuration. There is a sample config files contained in the directory that you can use as a template. The
+configuration. There is a sample config file contained in the directory that you can use as a template. The
 easiest way is to copy that file to *balena-migrate.conf*.
 To migrate a Raspberry PI device you might invoke:
  ```

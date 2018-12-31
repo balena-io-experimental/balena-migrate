@@ -1,0 +1,6 @@
+[package]
+name = "data_migration"
+version = "0.1.0"
+authors = ["Thomas <thomas@etnur.net>"]
+
+[dependencies]
