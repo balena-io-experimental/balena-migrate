@@ -1,1 +1,0 @@
-{"rustc":4996005430684607031,"features":"[]","target":7912204980554299029,"profile":16603081236465016961,"path":1036222786711178230,"deps":[["yaml-rust v0.4.2","yaml_rust",15243035117531827032]],"local":[{"MtimeBased":[[1546221790,792185332],".fingerprint/data-migration-b8a3475be0bce8d0/dep-bin-data_migration-b8a3475be0bce8d0"]}],"rustflags":[],"edition":"Edition2015"}
