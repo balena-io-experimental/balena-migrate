@@ -6,7 +6,6 @@
 /work
 /test
 /img
-/migratecfg/balena-migrate.conf
 Cargo.lock
 target
 README.pdf
