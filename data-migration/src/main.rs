@@ -1,18 +1,22 @@
+extern crate regex;
 extern crate yaml_rust;
-use yaml_rust::{YamlLoader, Yaml}; //  YamlEmitter,
-// use std::io;
+use yaml_rust::{YamlLoader, Yaml};
 use std::io::Read;
 use std::env;
 use std::fs::File;
+use std::path::Path;
+use std::fs::create_dir;
+use std::fs::read_dir;
+use std::fs::remove_dir_all;
 use std::error::Error;
-use std::process;
 use std::fmt;
 use std::process::Command;
+use std::process::exit;
 use std::str;
-use ::std::fs;
+use std::os::unix::fs::symlink;
+use regex::Regex;
 
 type BoxResult<T> = Result<T,Box<Error>>;
-
 
 
 #[derive(Debug)]
@@ -47,13 +51,101 @@ fn parse_config (file_name : &String) -> BoxResult<Vec<Yaml>> {
     return Ok(config);
 }
 
-fn map_files (vol_name: &str, source: &str, target: &str, filter: &str ) -> BoxResult<bool> {
-    // TODO: map files into temp dir
+fn create_target_path (temp_dir: &str, vol_name: &str, target: &str) -> BoxResult<String> {
+    let mut target_path: String = temp_dir.to_owned();    
+    if ! target_path.ends_with("/") {
+        target_path.push_str("/");
+    }
+    
+    target_path.push_str(vol_name);
+
+    if target.len() > 0 {
+        if ! target_path.ends_with("/") {
+            target_path.push_str("/");
+        }
+
+        target_path.push_str(target);
+    }
+
+    if target_path.ends_with("/") {
+        target_path.pop();
+    }
+
+    if ! Path::new(&target_path).exists() {
+        create_dir(&target_path)?;
+    }
+
+    if ! target_path.ends_with("/") {
+        target_path.push_str("/");
+    }
+
+    return Ok(target_path);
+}
+
+
+fn map_files (temp_dir: &str, vol_name: &str, source: &str, target: &str, filter: &str ) -> BoxResult<bool> {
+    println!("  >> map_files: Volume: '{}', Source: '{}',  Target: '{}', Filter: '{}'", vol_name, source, target, filter);
+
+    let mut source_str : String = source.to_string();
+
+    if source_str.ends_with("/") {
+        source_str.pop();
+    }
+    
+    let source_path = Path::new(&source_str);
+    if ! source_path.exists() {
+        return Err(Box::new(ParseError::new(&format!("cannot access source '{}'",source_str))));
+    }
+
+    if filter != "" {
+        if source_path.is_dir() {
+            let target_path : String = create_target_path(temp_dir, vol_name, target)?;
+            let re = Regex::new(filter).unwrap();
+
+            for entry in read_dir(source_path)? {
+                let entry = entry?;                
+
+                // let mut curr_target: String = ;
+                let fname = entry.file_name();                
+                let fname = match  fname.to_str() {
+                    Some(f) => f,
+                    None => return Err(Box::new(ParseError::new(&format!("invalid file name '{:?}'", &fname))))
+                };
+                                
+                let mut curr_target = target_path.to_owned();
+                curr_target.push_str(&fname);
+                let mut curr_src: String  = source_str.to_owned();
+                if ! curr_src.ends_with("/") {
+                    curr_src.push_str("/");
+                }
+                
+                curr_src.push_str(&fname);
+                
+                if ! re.is_match(fname) {
+                    println!("  skipping file: '{}'", &curr_src);
+                } else {
+                    println!("  linking '{}' to '{:?}'", &curr_src , &curr_target);
+                    symlink(&curr_src , &curr_target)?;
+                }
+            }
+            println!("");
+        } else {
+            return Err(Box::new(ParseError::new(&format!("Filter option cannot be applied to file {}", source_str))));
+        }
+    } else {
+        let mut target_path = create_target_path(temp_dir, vol_name, "")?;
+        target_path.push_str(target);
+        
+        println!("  linking '{}' to '{}'\n", source_str, target_path);
+
+        symlink(&source_str, target_path)?;
+    }
+
     return Ok(true)
 }
 
 
-fn evaluate_config (file_name: &String ) -> BoxResult<bool> {
+fn evaluate_config (file_name: &String, tmp_dir: &str ) -> BoxResult<bool> {
     let config = parse_config(file_name)?;
 
     println!("got {} configs", config.len());
@@ -121,7 +213,10 @@ fn evaluate_config (file_name: &String ) -> BoxResult<bool> {
             println!("  - with filter: {}", filter);
 
 
-            map_files(vol_name, source, target, filter);
+            match map_files(tmp_dir, vol_name, source, target, filter) {
+                Ok(res) => res,
+                Err(e) => return Err(e)
+            };
 
             idx = idx + 1;
 
@@ -134,26 +229,27 @@ fn main () {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        panic!("Please provide backup target file and backup definition file as command line parameters");
+        println!("Please provide backup target file and backup definition file as command line parameters\n");
+        println!("Usange: data-migration <backup-file> <backup-def-file>\n");
+        exit(1);
     }
 
     let backup_file = &args[1];
     let def_file = &args[2];
 
-    println!("Input:  {}", def_file);
-    println!("Output: {}", backup_file);
+    println!("Using Definition File:  {}", def_file);
+    println!("Using Output File: {}", backup_file);
 
-    let output= Command::new("sh")
+    let output = Command::new("sh")
         .arg("-c")
         .arg("mktemp -d -p ./")
         .output()
         .expect("failed to create temporary directory");
 
-    let tmp_dir = str::from_utf8(&output.stdout).expect("unable to read commad output").trim();
-    println!("Temporary directory: '{}'", tmp_dir);
+    let tmp_dir = str::from_utf8(&output.stdout).expect("unable to read command output").trim();
+    println!("Using Temporary directory: '{}'", tmp_dir);
 
-
-    match evaluate_config(def_file) {
+    match evaluate_config(def_file,&tmp_dir) {
         Ok(_res) => {
             eprintln!("success");
         },
@@ -161,6 +257,15 @@ fn main () {
             eprintln!("{:?}",e);
         }
     };
-    fs::remove_dir_all(tmp_dir).expect("failed to remove temporary directory");
+
+    let cmd_str = &format!("tar -hzcf \"{}\" -C \"{}\" --exclude=\"{}\" .", backup_file, tmp_dir, backup_file);
+    println!("Archiving with command string: '{}'", cmd_str);
+    let _output = Command::new("sh")
+        .arg("-c")
+        .arg(cmd_str)
+        .output()
+        .expect("failed to create backup file");
+
+    remove_dir_all(tmp_dir).expect("failed to remove temporary directory");
 
 }
