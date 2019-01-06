@@ -1,30 +1,34 @@
-# sample backup definition file
-# follows (very basic) yaml syntax
-# define a volume to restore files to in balenaOS:
-#   - volume: 'volume-name'
-# define an item inside a volume
-# items consist of:
-#   a source - can be a directory or a file
-#   a target - the target directory or file name within the volume - can be empty / left out
-#              if ommitted the file / directory will be created in the volume root
-#   a filter - a regular expression to filter files by - only applicable to directory type source
-#              if ommitted no filter is applied
+# Sample Backup Definition File
+# Defines a set of volumes to be created in balenaOS 
+# For each volume supply a content definition consisting of a set of:
+#  - source - the file / directory to backup
+#  - target - target file / directory in volume 
+#    If no filter is given, source will be mapped under this name in the volume directory
+#    If a filter is given and source is a directory, a directory under this name is created in 
+#    the volume and the filtered contents are mapped into that directory.
+#    If target is left away source is mapped to volume-name. This only makes sense for one source 
+#    per volume.
+#  - filter - filter sources by regex
+#    If filter expression is a valid regular exxpression and source is a directory
+#    all files in source that match the filter expression are mapped to the volume / target directory.
 
-#volumes:
-  - volume: "test volume 1"
-    contents:
-    - source: /home/thomas/develop/balena.io/support
-      target: "target dir 1.1"
-    - source: "/home/thomas/develop/balena.io/customer/sonder/unitdata/UnitData files"
-      target: "target dir 1.2"
-  - volume: "test volume 2"
-    contents:
-    - source: "/home/thomas/develop/balena.io/migrate/migratecfg/balena-migrate"
-      target: "target file 2.1"
-    - source: "/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts"
-      target: "target dir 2.2"
-      filter: 'balena-(c|i).*'
-  - volume: "test_volume_3"
-    contents:
-    - source: "/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts"
-      filter: 'balena-(s|i).*'
+- volume: 'test volume 1'
+  content:
+  - target: 'target dir 1.1'
+    source: /home/thomas/develop/balena.io/support
+  - source: '/home/thomas/develop/balena.io/customer/sonder/unitdata/UnitData files'
+    target: "target dir 1.2"
+- volume: 'test volume 2'
+  content:
+  - source: '/home/thomas/develop/balena.io/migrate/migratecfg/balena-migrate'
+    target: "target file 2.1"
+  - source: '/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts'
+    target: 'target dir 2.2'
+    filter: 'balena-(c|i).*'
+- volume: test_volume_3
+  content:
+  - source: '/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts'
+    filter: 'balena-(s|i).*'
+- volume: test_volume_4
+  content:
+  - source: '/home/thomas/develop/balena.io/migrate/migratecfg/init-scripts'

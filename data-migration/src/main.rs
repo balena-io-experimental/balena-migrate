@@ -19,6 +19,8 @@ use regex::Regex;
 type BoxResult<T> = Result<T,Box<Error>>;
 
 
+// define custom error trait for parse errors
+
 #[derive(Debug)]
 struct ParseError {
     details: String
@@ -84,7 +86,7 @@ fn create_target_path (temp_dir: &str, vol_name: &str, target: &str) -> BoxResul
 
 
 fn map_files (temp_dir: &str, vol_name: &str, source: &str, target: &str, filter: &str ) -> BoxResult<bool> {
-    println!("  >> map_files: Volume: '{}', Source: '{}',  Target: '{}', Filter: '{}'", vol_name, source, target, filter);
+    // println!("  >> map_files: Volume: '{}', Source: '{}',  Target: '{}', Filter: '{}'", vol_name, source, target, filter);
 
     let mut source_str : String = source.to_string();
 
@@ -93,10 +95,12 @@ fn map_files (temp_dir: &str, vol_name: &str, source: &str, target: &str, filter
     }
     
     let source_path = Path::new(&source_str);
+
     if ! source_path.exists() {
         return Err(Box::new(ParseError::new(&format!("cannot access source '{}'",source_str))));
     }
 
+    
     if filter != "" {
         if source_path.is_dir() {
             let target_path : String = create_target_path(temp_dir, vol_name, target)?;
@@ -133,29 +137,40 @@ fn map_files (temp_dir: &str, vol_name: &str, source: &str, target: &str, filter
             return Err(Box::new(ParseError::new(&format!("Filter option cannot be applied to file {}", source_str))));
         }
     } else {
-        let mut target_path = create_target_path(temp_dir, vol_name, "")?;
-        target_path.push_str(target);
-        
-        println!("  linking '{}' to '{}'\n", source_str, target_path);
-
-        symlink(&source_str, target_path)?;
+        if target.len() > 0 {
+            let mut target_path = create_target_path(temp_dir, vol_name, "")?;
+            target_path.push_str(target);            
+            println!("  linking '{}' to '{}'\n", source_str, target_path);
+            symlink(&source_str, target_path)?;
+        } else {
+            let mut target_path: String = temp_dir.to_owned();    
+            if ! target_path.ends_with("/") {
+                target_path.push_str("/");
+            }            
+            target_path.push_str(vol_name);
+            if target_path.ends_with("/") {
+                target_path.pop();
+            }            
+            println!("  linking '{}' to '{}'\n", source_str, target_path);
+            symlink(&source_str, target_path)?;
+        }
     }
 
     return Ok(true)
 }
 
 
-fn evaluate_config (file_name: &String, tmp_dir: &str ) -> BoxResult<bool> {
+fn evaluate_config (file_name: &String, tmp_dir: &str ) -> BoxResult<()> {
     let config = parse_config(file_name)?;
 
-    println!("got {} configs", config.len());
+    println!("Got {} configs", config.len());
 
     if config.len() == 0  {
         return Err(Box::new(ParseError::new("Encountered an empty configuration - no backup file created")));
     }
 
     if config.len() > 1 {
-        eprintln!("WARNING: Encountered more than on top level item, ignoring all but the first");
+        eprintln!("WARNING: Found more than on top level item, ignoring all but the first");
     }
 
     let cfg = &config[0];
@@ -170,47 +185,47 @@ fn evaluate_config (file_name: &String, tmp_dir: &str ) -> BoxResult<bool> {
 
     for volume in cfg.as_vec().unwrap() {
         let vol_name = volume["volume"].as_str().expect("volume is not a string");
-        let vol_content= &volume["contents"];
+        let vol_content= &volume["content"];
         if vol_content.is_badvalue() {
             return Err(Box::new(ParseError::new(&format!("Encountered missing items parameter in volume {}", vol_name))));
         }
 
         if !vol_content.is_array() {
-            return Err(Box::new(ParseError::new(&format!("contents does not appear to be an array in volume {}", vol_name))));
+            return Err(Box::new(ParseError::new(&format!("content does not appear to be an array in volume {}", vol_name))));
         }
 
-        println!("processing volume: {}", vol_name);
+        println!("Processing volume: '{}'", vol_name);
         let mut idx = 0;
         for item in vol_content.as_vec().unwrap() {
             // println!("item [{}] {:?}", idx, item);
             let source = &item["source"];
             if source.is_badvalue() {
-                return Err(Box::new(ParseError::new(&format!("volume[{}].contents[{}] missing parameter source", vol_name, idx))));
+                return Err(Box::new(ParseError::new(&format!("volume[{}].content[{}] missing parameter source", vol_name, idx))));
             }
 
             let source =  match source.as_str() {
                 Some(str) => str,
-                None => return Err(Box::new(ParseError::new(&format!("volume[{}].contents[{}] parameter source is not a string", vol_name, idx))))
+                None => return Err(Box::new(ParseError::new(&format!("volume[{}].content[{}] parameter source is not a string", vol_name, idx))))
             };
-            println!("  using source: {}", source);
+            println!("  using source: '{}'", source);
 
             let target = &item["target"];
             let target = if target.is_badvalue() { "" } else {
                 match target.as_str() {
                     Some(str) => str,
-                    None => return Err(Box::new(ParseError::new(&format!("volume[{}].contents[{}] parameter target is not a string", vol_name, idx))))
+                    None => return Err(Box::new(ParseError::new(&format!("volume[{}].content[{}] parameter target is not a string", vol_name, idx))))
                 }
             };
-            println!("  - with target: {}", target);
+            println!("  - with target: '{}'", target);
 
             let filter = &item["filter"];
             let filter = if filter.is_badvalue() { "" } else {
                 match filter.as_str() {
                     Some(str) => str,
-                    None => return Err(Box::new(ParseError::new(&format!("volume[{}].contents[{}] parameter filter is not a string", vol_name, idx))))
+                    None => return Err(Box::new(ParseError::new(&format!("volume[{}].content[{}] parameter filter is not a string", vol_name, idx))))
                 }
             };
-            println!("  - with filter: {}", filter);
+            println!("  - with filter: '{}'", filter);
 
 
             match map_files(tmp_dir, vol_name, source, target, filter) {
@@ -222,7 +237,7 @@ fn evaluate_config (file_name: &String, tmp_dir: &str ) -> BoxResult<bool> {
 
         }
     }
-    return Ok(true);
+    return Ok(());
 }
 
 fn main () {
@@ -230,7 +245,7 @@ fn main () {
 
     if args.len() < 3 {
         println!("Please provide backup target file and backup definition file as command line parameters\n");
-        println!("Usange: data-migration <backup-file> <backup-def-file>\n");
+        println!("Usage: data-migration <backup-file> <backup-def-file>\n");
         exit(1);
     }
 
@@ -250,15 +265,14 @@ fn main () {
     println!("Using Temporary directory: '{}'", tmp_dir);
 
     match evaluate_config(def_file,&tmp_dir) {
-        Ok(_res) => {
-            eprintln!("success");
-        },
+        Ok(()) => println!("Backup set up successfully"),
         Err(e) => {
-            eprintln!("{:?}",e);
+            remove_dir_all(tmp_dir).expect("failed to remove temporary directory");
+            panic!("Failed to parse defintion file '{}', error: {:?}",def_file, e);
         }
     };
-
-    let cmd_str = &format!("tar -hzcf \"{}\" -C \"{}\" --exclude=\"{}\" .", backup_file, tmp_dir, backup_file);
+    
+    let cmd_str = &format!("tar -hzcf \"{}\" -C \"{}\" .", backup_file, tmp_dir);
     println!("Archiving with command string: '{}'", cmd_str);
     let _output = Command::new("sh")
         .arg("-c")
