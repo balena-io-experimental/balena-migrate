@@ -5,7 +5,7 @@
 #  - target - target file / directory in volume 
 #    If no filter is given, source will be mapped under this name in the volume directory
 #    If a filter is given and source is a directory, a directory under this name is created in 
-#    the volume and the filtered contents are mapped into that directory.
+#    the volume and the filtered content are mapped into that directory.
 #    If target is left away source is mapped to volume-name. This only makes sense for one source 
 #    per volume.
 #  - filter - filter sources by regex
