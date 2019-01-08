@@ -303,6 +303,20 @@ checkOs() {
     echo "$VERSION"
 }
 
+##########################################
+# copy a network manager wifi file
+##########################################
+
+function copy_nmgr_file {
+  local FILE_NAME=$1
+  if [ -f "${HOME_DIR}/${FILE_NAME}" ] ; then 
+    if [ -z "$NETWORK_CONFIGS" ] ; then
+      NETWORK_CONFIGS="$FILE_NAME"
+    else
+      NETWORK_CONFIGS="$NETWORK_CONFIGS $FILE_NAME"
+    fi    
+  fi
+}
 
 ##########################################
 # create a network manager wifi file
@@ -1302,11 +1316,12 @@ if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
       warn "no supported wifi config found"
     fi
   fi
+fi
 
-  if [ -n "$NETWORK_CONFIGS" ] ; then
-    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
-    echo "" >> ${MIGRATE_CONF}
-  fi
+if [ -n "$COPY_NMGR_FILES" ] ; then
+  for file in $COPY_NMGR_FILES ; do 
+    copy_nmgr_file $file
+  done
 fi
 
 
