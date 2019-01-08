@@ -139,7 +139,7 @@ function inform {
 }
 
 function warn {
-    printf " ${YELLOW}[%s %s] WARN:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
+    printf "${YELLOW}[%s %s] WARN:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function debug {

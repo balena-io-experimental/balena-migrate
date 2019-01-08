@@ -253,7 +253,7 @@ Wait time in seconds before before assuming, that a device has failed to show up
 900 (15 minutes). This timer starts after the devices has been migrated (STATUS="MIGRATED"). 
 
 
-### MIG_MIN_AGE
+#### MIG_MIN_AGE
 
 Used by: **migdb-migrate**
 
@@ -279,7 +279,7 @@ prior to using **migdb-migrate** with the --passwd option.
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere.
 
-### MIG_SSH_PORT
+#### MIG_SSH_PORT
 
 Used by: **migdb-add-unit**, **migdb-migrate**
 
@@ -291,7 +291,7 @@ If this parameter is present in **migdb-add-unit**, it will be written to the un
 override the same option given elsewhere. 
 
 
-### MIG_SSH_HOST
+#### MIG_SSH_HOST
 
 Used by: **migdb-add-unit**, **migdb-migrate**
 
@@ -302,7 +302,7 @@ The ssh host name or IP address of the device to migrate.
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere. 
 
-### MIG_SSH_OPTS
+#### MIG_SSH_OPTS
 
 Used by: **migdb-add-unit**
 
@@ -313,7 +313,7 @@ Unit specific ssh options.
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
 override the same option given elsewhere.   
 
-### MIG_SSH_USER
+#### MIG_SSH_USER
 
 Used by: **migdb-add-unit**, **migdb-migrate**
 
