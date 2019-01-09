@@ -571,9 +571,6 @@ If neither target nor filter is specified and source is a directory the source d
 such content definition should be given any volume. 
 
 
-
-
-
 Example:
 
 ``` yaml
@@ -615,15 +612,26 @@ Example:
 balena-migrate --balena-cfg=project-config.json
 ```
 
-##### BALENA\_WIFI
+#### BALENA\_WIFI
 
-**Default:** *BALENA\_WIFI="TRUE"
+**Default:** ```BALENA_WIFI="TRUE"```
 
-If this variable is set to *TRUE* and *BALENA\_CONFIG* points to a file in *HOME\_DIR* the file will be scanned for the
-ssid & key of a wifi network. If an SSID is found a network manager file will be created for this network and copied to
-*resin-boot/system-connections* in stage 2.
+If this variable is set to *TRUE* and ```BALENA_CONFIG``` points to a file in ```HOME_DIR``` the file will be scanned for the
+ssid & key of a wifi network. If an SSID is found a network manager file will be created for this network and copied
+to ```/boot/system-connections``` in stage 2. 
 
-##### DEBUG
+On boot BalenaOS will attempt to create a network connection for every file found in ```/boot/system-connections```.
+
+#### COPY\_NMGR\_FILES
+
+**Default:** ```COPY_NMGR_FILES=```
+
+If this variable is set to a space separated list of files, these files will be copied to the ```/boot/system-connections``` folder 
+in stage 2. The files must be located in ```HOME_DIR```. 
+
+On boot BalenaOS will attempt to create a network connection for every file found in ```/boot/system-connections```.
+
+#### DEBUG
 
 **Default:** *DEBUG=*
 
@@ -646,17 +654,17 @@ balena-migrate -r 10
 balena-migrate --reboot=10
 ```
 
-##### GRUB\_INSTALL
+#### GRUB\_INSTALL
 
 **Default:** *GRUB\_INSTALL=*
 
 The variable is the enabling flag for grub installation. If it is set to anything other than TRUE a grub boot manager will not be
 installed. The variable is only checked in intel 32/64 bit environments as these are the only setups in which grub is used.
-The most recent balenaOS x86 images contain a valid grub boot configuration so in most cases the variable can remain unset.
+The most recent balenaOS x86 images contain a valid grub boot configuration, so in most cases the variable can remain unset.
 
-When setting *GRUB\_INSTALL* to *TRUE* please supply a valid setup using the GRUB variables described in the following sections.
+When setting ```GRUB_INSTALL``` to *TRUE* please make sure to supply a valid setup using the GRUB variables described in the following sections.
 
-##### GRUB\_BOOT\_DEV
+#### GRUB\_BOOT\_DEV
 
 **Default:** *GRUB\_BOOT\_DEV=hd0*
 
@@ -668,7 +676,9 @@ boot device by using UUID tags. If this fails it will fallback to the above vari
 For root a partition of /dev/sda1 this would be either *msdos1* or *gpt1* depending on the type of partition table and
 thus result to a boot menu entry of
 
-*set root=hdo,msdos1*
+``` bash
+set root=hdo,msdos1
+```
 
 #### GRUB\_CFG
 
@@ -686,14 +696,13 @@ Newer versions of balenaOS (seen on 2.26) use a modified layout of the boot file
 to be provided using this variable.
 
 **Warning:** If an incompatible grub.cfg is used the system will not boot into balenaOS successfully. As the balenaOS
-image is already written to the disk, the only way to recover is to repair the boot configuration.         
-
+image is already written to the disk, the only way to recover is to repair the boot configuration.
 
 #### HAS\_WIFI\_CFG, MIGRATE\_ALL\_WIFIS, MIGRATE\_WIFI\_CFG
 
 Default:
 
-```
+``` bash
 HAS_WIFI_CFG=
 MIGRATE_ALL_WIFIS=
 MIGRATE_WIFI_CFG=
@@ -702,27 +711,22 @@ MIGRATE_WIFI_CFG=
 These variables configure the *balena-migrate* scripts attempts to
 migrate wifi configurations.
 
--   If *HAS\_WIFI\_CFG* is set to *TRUE* the balena-migrate script will assume that the balenaOS image already contains
-    one wifi configuration in */resin-boot/system-connections/resin-wifi01* and will attempt not to overwrite it.
-    The migrated configurations will start with *resin-wifi02*.
--   If *MIGRATE\_ALL\_WIFIS* is set to *TRUE* all wifi configurations found in */etc/wpa\_supplicant/wpa\_supplicant.conf*
-    or */etc/NetworkManager/system-connections* will result in a *resin-wifiXX* file that will be transferred to
-    */resin-boot/system-connections* in stage 2.
--   If *MIGRATE\_WIFI\_CFG* is set to the name of a file in *HOME\_DIR* the migrated wifi configurations will be filtered
-    by the contents of the file. The file is expected to contain one wifi name (ssid) per line. Only configurations
-    referenced in the file will result in a *resin-wifiXX* file in */resin-boot/system-connections*.
+* *If *HAS\_WIFI\_CFG* is set to *TRUE* the balena-migrate script will assume that the balenaOS image already contains one wifi configuration in */resin-boot/system-connections/resin-wifi01* and will attempt not to overwrite it. The migrated configurations will start with *resin-wifi02*.
+* If ```MIGRATE_ALL_WIFIS``` is set to *TRUE* all wifi configurations found in ```/etc/wpa\_supplicant/wpa\_supplicant.conf``` or ```/etc/NetworkManager/system-connections``` will result in a ```resin-wifiXX``` file that will be transferred to ```/resin-boot/system-connections``` in stage 2.
+* If *MIGRATE\_WIFI\_CFG* is set to the name of a file in *HOME\_DIR* the migrated wifi configurations will be filtered by the contents of the file. The file is expected to contain one wifi name (ssid) per line. Only configurations referenced in the file will result in a ```resin-wifiXX``` file in ```/resin-boot/system-connections```.
 
 #### HOME\_DIR
 
-**Default:** *HOME\_DIR=./*
+**Default:** ```HOME_DIR=./```
 
 The working directory of the migration script and the location where it expects to find initramfs-tools directory,
 as well as setup and image files. The default is to use the current working directory.
 
 This variable can be set on the command line using the --home parameter:
 
-*balena-migrate --home=/migrate-dir*  
-
+``` bash
+balena-migrate --home=/migrate-dir
+```
 
 #### IMAGE\_NAME
 
@@ -750,7 +754,7 @@ The script expects the file to be tagged with the target platform as follows:
 
 #### LOG\_DRIVE , LOG\_FS\_TYPE
 
-**Default:** *LOG\_DRIVE=*
+**Default:** ```LOG\_DRIVE=```
 
 Specify a separate device to receive log files written during stage 2. The device **must** be separate from the
 installation device (hard drive) to be able to survive flashing of the balenaOS image. Use a separate hard disk or a
@@ -758,33 +762,33 @@ USB stick. The logfiles can be used for debugging of problems in stage 2.
 
 **Example:**
 
-*LOG\_DRIVE=/dev/sdb1*
-
-*LOG\_FS\_TYPE=ext4*
-
+``` bash 
+LOG_DRIVE=/dev/sdb1
+LOG_FS_TYPE=ext4
+```
 
 #### NO\_FLASH
 
-**Default:** *NO\_FLASH=TRUE*
+**Default:** ```NO_FLASH=TRUE```
 
 When this variable is set to *TRUE* the script will proceed normally but will terminate at the point in stage 2 where
 the mounted root file system would be unmounted and the balenaOS image would be flashed to the device. How to terminate
-is determined by the value of the variable *TERM\_EXIT*.
+is determined by the value of the variable ```TERM_EXIT```.
 
 #### NO\_SETUP
 
-Default: *NO\_SETUP=*
+Default: ```NO_SETUP=```
 
 When this variable is set to *TRUE* the *balena-migrate* script does not attempt to modify the boot configuration.
 It will check the prerequisites create an initramfs but not create any disruptive configuration changes.
 
 #### TERM\_EXIT
 
-**Default:** *TERM\_EXIT="exit 0"*
+**Default:** ```TERM_EXIT="exit 0"```
 
 Determines how to exit when the script terminates prematurely. Default is *“exit 0”* in which case the boot process is
 continued normally. Alternative is *“reboot -f”* to force a reboot.
-**Warning:** If the boot configuration has not been reset successfully , setting *TERM\_EXIT="reboot -f"* can lead to
+**Warning:** If the boot configuration has not been reset successfully , setting ```TERM_EXIT="reboot -f"``` can lead to
 a boot loop.
 
 
@@ -794,69 +798,73 @@ Stage 2 is made up of a set of scripts that are run when the initramfs is starte
 that will orchestrate actions and call different scripts in different phases.
 
 Scripts in the *local-bottom* directory are called last and after the root file system has been mounted. Only remaining
-steps in initramfs are to identify the systems init script and hand over control to that. The balena-stage2 script runs
-in that stage. If it has successfully written and configured balenaOS it will terminate the boot process by forcing a
+steps in initramfs at that stage, are to identify the systems init script and hand over control to that script. The ```balena-stage2-default``` script runs
+in this stage. If it has successfully written and configured balenaOS it will terminate the boot process by forcing a
 reboot.  
 
-**Restore Boot Configuration**
+The ```balena-stage2-default``` script carries out the following tasks:
 
-The */local-bottom/balena-stage2-default* script attempts to open the balena-migrate-stage2.conf stored inside the initramfs from which it
+### Restore Boot Configuration
+
+The ```/local-bottom/balena-stage2-default``` script attempts to open the balena-migrate-stage2.conf from which it
 takes its configuration.
 
 First steps are to restore the original boot configuration on raspberry pi devices. To do this it attempts to mount the
-boot partition and restore /boot/config.txt and /boot/cmdline.txt from previously created backups.
+boot partition and restore ```/boot/config.txt``` and ```/boot/cmdline.txt``` from previously created backups.
 
 The script attempts do do this in a failsafe way, not terminating on failure.
 
-**Establish external Logging**
+### Establish external Logging
 
-If an external log device was configured the */local-bottom/balena-stage2-default* script attempts to mount the
-configured log drive and redirect all logging. The output can be found in the file migrate.log in the root of the device.
+If an external log device was configured the ```/local-bottom/balena-stage2-default``` script attempts to mount the
+configured log drive and redirect all logging. The output can be found in the file ```migrate.log``` in the root of the device.
 
 The script attempts do do this in a failsafe way, not terminating on failure.
 
-**Copy BalinaOS image, Backups and configs to TMPFS**
+### Copy BalinaOS image, Backups and configs to TMPFS
 
-Next the stage2 script attempts to copy all files, that need to be transferred to balinaOS to the tmpfs storage the
-initramfs resides in. This is a critical stage, that could fail in a non recoverable way. If too much data is copied to
-initramfs the system will run out of memory and will likely fail in a way that will stall the boot process. For this
-reason it is important to make sure that enough memory is available for files still leaving enough memory for initramfs
-processing to work.
+Next the stage2 script attempts to copy all files, that need to be transferred to balinaOS and are not yet contained in initramfs 
+to the tmpfs storage the initramfs resides in. This is a critical stage, that could fail in a non recoverable way. 
+If too much data is copied to initramfs the system will run out of memory and will likely fail in a way that will stall 
+the boot process. For this reason it is important to make sure that enough memory is available for files still leaving 
+enough memory for initramfs processing to work.
 
-The stage 2 script attempts to estimate the available space and will fail if insufficient space is available.
+The stage 2 script attempts to estimate the available space and will fail in a recoverable way if insufficient space is available.
 
-**Flash balenaOS**
+### Flash balenaOS
 
 After all the above preparations have succeeded the script will unmount the root file system and flash the balenaOS to
 the target device. Beginning with this stage the migration is not recoverable. The exit strategy on failure is changed
-to *reboot -f* to attempt to reboot into balenaOS if something goes wrong.
+to ```reboot -f``` to attempt to reboot into balenaOS if something goes wrong.
 
-For the raspberry PI platform this is likely to succeed, grub based systems currently need a further step to be able to
-boot successfully.
+For the raspberry PI platform and recent images in general a reboot at this stage this is likely to succeed, but the system is still missing
+network manager configuration files other than those contained in the image. This will result in the system will not configure its network. 
+Grub based systems based on version 2.26 and ealier balenaOS images need a further step to be able to boot successfully.
 
-**Transfer Data to BalenaOS**
+### Transfer Data to BalenaOS
 
-The script will now attempt to mount the */resin-boot* and */resin-data* partitions.
-To do this it calls *partprobe* on the root device to reread the changed partition tables.
+The script will now attempt to mount the ```/resin-boot``` and ```/resin-data``` partitions.
+To do this it calls ```partprobe``` on the root device to reread the changed partition tables.
 
-After the partitions have been mounted successfully the backup files are being transferred to */resin-data* and migrated
-wifi-configurations are copied to */resin-boot/system-connections*. If specified the config.json file is copied to
-*/resin-boot/*.
+After the partitions have been mounted successfully the backup files are being transferred to ```/resin-data``` and migrated
+wifi-configurations and other supplied network manager files are copied to ```/resin-boot/system-connections```.
+If specified the config.json file is copied to ```/resin-boot/```.
 
-**Installing a new Bootloader**
+### Installing a new Bootloader
 
-In case of a raspberry Pi the work is done after the last step.
+On intel based images grub boot manager installation can be configured. This is only necesarry for version 2.26 and earlier balenaOS images.
 
-In a grub booted environment a new bootloader has to be installed. As boot images (boot.img / core.img) and offsets are
-not yet available for all x86 platforms the current approach is to create a grub configuration and call grub-install from
-within the initramfs.
+There are two variants of how grub can be installed:
 
-All relevant files (mainly grub.cfg) have been prepared in stage 1 so the stage 2 script only places the files in the
-appropriate locations and calls grub-install with parameters prepared in stage 1. Calling grub-install from within
+* If the flasher image contains grub boot images (boot.img and core.img) these images and a valid grub.cfg file can be extracted from the flasher image and copied / flashed to the boot partition.
+* For images that do not contain the boot images, a boot loader can be installed using grub. Using this variant shoukd be thoroughly tested on the target platform as grub cannot be guaranted to work from within initramfs.
+
+All relevant files (mainly grub.cfg) have to be prepared in stage 1 so the stage 2 script only places the files in the
+appropriate locations / calls grub-install with parameters prepared in stage 1. Calling grub-install from within
 initramfs has to be thoroughly tested for all relevant platforms and grub versions. The program requires files to be
-copied to initramfs from */usr/share/grub* and attempts to access */usr/locale* but tolerates it not being available.
-Having ready made boot.img / core.img files (even integrated into the images) might be a more reliable solution.
+copied to initramfs from ```/usr/share/grub``` and attempts to access ```/usr/locale``` but tolerates it not being available.
+Having ready made boot.img / core.img files (even integrated into the images) is the more reliable solution.
 
-**Unmounting partitions and reboot**
+### Unmounting partitions and reboot
 
-Last step is to unmount all mounted partitions, reboot the system and hope for the best..
+Last step is to unmount all mounted partitions and reboot the system.
