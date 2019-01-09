@@ -14,7 +14,10 @@ It makes sense to read this document completely to understand the concepts and t
 
 ### Preparing the Migration Environment
 
-The *migratecfg* folder in this repository will be your migration environment.
+The *migratecfg* folder in this repository will be your migration environment. 
+
+Please note that all files referenced in the configuration and used during migration and are expected to be found in the 
+migratecfg directory and are referenced by pathnames relative to this directory.
 
 To migrate a device you will have to copy some more files into this directory and create / edit configuration files.
 Therefore it makes sense to copy the entire folder to a different location. Ultimately - once your setup is complete
@@ -46,6 +49,7 @@ and recompresss them using gzip. If you are planning to use the same setup multi
 image file to gzip manually to save time and disk space when devices are actually migrated. To do this use unzip
 to unpack the zip archive containing the image and then gzip to compress the unpacked file. You can then remove the
 zip archive and configure the gzipped file to be your image file.
+
 Example:
 
 ``` bash
@@ -84,7 +88,7 @@ Using the a text editor like nano, vim or gedit, edit your balena-migrate.conf f
 values:
 
 ``` bash
-IMAGE_NAME=<path to you zip or gzip image file>
+IMAGE_NAME=<name of your zip or gzip image file>
 ```
 
 Several other options can be set that are describe in section 'Configuration'.
@@ -93,6 +97,7 @@ Several other options can be set that are describe in section 'Configuration'.
 
 Once prepared the migration environment can be transferred to the target device. Migration is started by invoking
 balena-migrate as su from inside the migration environment.
+
 Example:
 
 ``` bash
@@ -143,7 +148,7 @@ tagged with the unit-id. Reusing unit-ids will lead to file name clashes and fai
 Non unit specfic parameters can be supplied as defaults when starting **migdb-migrate**. Options given to 
 **migdb-migrate** are defaults that will be used for all units if not overridden by unit files.
 
-Eg. if all devices use the same user and congfig directory, starting **migdb-migrate** as follows will supply a default 
+Eg. if all devices use the same user and config directory, starting **migdb-migrate** as follows will supply a default 
 user and configuration:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-migrate --user=pi --mig-cfg-dir=./migratecfg```
