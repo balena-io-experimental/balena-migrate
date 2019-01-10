@@ -107,19 +107,45 @@ function checkInit {
   inform "Database is in ${MIG_DB_DIR}/db"
 }
 
+
+################################################################################
+# Set var in file
+################################################################################
+
+function setVar {
+  local varName=$1
+  local value=$2
+  local file=$3
+
+  if [ ! -f "$file" ] ; then 
+    return 1
+  fi
+  
+  if grep "${varName}" "${file}" > /dev/null ; then 
+    sed -i 's/^\('${varName}'=\).*$/\1'${value}'/' "${file}"
+  else 
+    echo "${varName}=${value}" >> "${file}"
+  fi
+}
+
 ################################################################################
 # move source file target failing if it exists
 ################################################################################
 
 function moveFile {
   local src=$1
-  local tgt=$2
+  local dir=$2
+  local id=$3  
+  local target
+  
+  target=$(mktemp -p "${dir}" "unit-${id}-XXX") 
 
-  if mv -n "${src}" "${tgt}" ; then
+  if mv -n "${src}" "${target}" ; then
     if [ ! -f  "${src}" ] ; then
       return 0
     else
-      mv "${src}" "$(mktemp -p "${FAIL_DIR}" "move-fail-XXX")"
+      target=$(mktemp -p "${FAIL_DIR}" "move-fail-${id}-XXX")
+      mv "${src}" "$target"
       return 1
     fi
   else
@@ -127,8 +153,7 @@ function moveFile {
   fi
 }
 
-
-################################################################################
+#################################################################################
 # get a randoom number in the range $1 to $2
 ################################################################################
 
@@ -170,6 +195,7 @@ function getRandFile {
 ################################################################################
 # copy / append failed order file to fail dir
 ################################################################################
+
 function orderFailed {
   local orderId=$1
   local orderFile=$2
@@ -179,9 +205,9 @@ function orderFailed {
   now=$(date +%s)
   failFile=$(mktemp -p "${FAIL_DIR}" "fail-$orderId-XXX")
   mv "$orderFile" "$failFile"
-  echo "FAIL_TS=$now" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
-  echo "FAIL_MSG=\"$msg\"" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
-  echo "FAIL_LOG=\"$OUTPUT_LOG\"" >> "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
+  setVar  "FAIL_TS" "${now}" "${failFile}"
+  setVar  "FAIL_MSG" "$msg" "${failFile}"
+  setVar  "FAIL_LOG" "$OUTPUT_LOG" "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
   OUTPUT_LOG=
 }
 

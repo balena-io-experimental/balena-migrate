@@ -10,8 +10,11 @@ if [ -z "$MIG_DB_DIR" ] ; then
   MIG_DB_DIR=.
 fi
 
+#shellcheck disable=SC2034
 DEBUG_FUNCTS="main checkInit"
+#shellcheck disable=SC2034
 LOG_DEBUG="TRUE"
+#shellcheck disable=SC2034
 SCRIPT_NAME="migdb-add-unit"
 
 function printHelp {
@@ -172,13 +175,12 @@ fi
 
 checkInit
 
-UNIT_FILE="${UNIT_DIR}/unit-${UNIT_ID}"
-
-# echo "unit file: $UNIT_FILE"
-
-if [ -f "${UNIT_FILE}" ] ; then
-  fail "an order file for order $UNIT_ID exists"
-fi
+for file in ${UNIT_DIR}/* ; do
+  # echo "got $file"
+  if [[ $file =~ ^${UNIT_DIR}/unit-${UNIT_ID}-.* ]] ; then 
+    echo "an order file for order $UNIT_ID exists: ${UNIT_DIR}/${file}"
+  fi
+done
 
 TMP_FILE=$(mktemp -p "${TMP_DIR}")
 debug main "creating file ${TMP_FILE}"
@@ -232,12 +234,12 @@ EOI
   fi
 }  >> "${TMP_FILE}"
 
-if moveFile "$TMP_FILE" "${UNIT_FILE}" ; then
+if moveFile "$TMP_FILE" "${UNIT_DIR}" "${UNIT_ID}" ; then
   inform "order file created for order id ${UNIT_ID},  port $MIG_SSH_PORT in ${UNIT_FILE}"
 
   #if ! ps -av | grep migdb-process ; then
   #   inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
   #fi
 else
-  fail "failed to create order file for order ${UNIT_ID} in ${UNIT_FILE}"
+  fail "failed to create order file for order ${UNIT_ID} in ${UNIT_DIR}"
 fi

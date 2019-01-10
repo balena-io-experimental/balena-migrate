@@ -5,21 +5,23 @@ if [ -z "$MIG_DB_DIR" ] ; then
 fi
 
 COLOR=ON
+#shellcheck disable=SC2034
 DEBUG_FUNCTS="process"
+#shellcheck disable=SC2034
 LOG_DEBUG=FALSE
 
-
+#shellcheck disable=SC2034
 SCRIPT_NAME="migdb-check-done"
 SLEEP_DURATION=5
 
 SCRIPT_PATH=$(dirname "${0}")
-# shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
+
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  #shellcheck source=./migdb-common
   source "${SCRIPT_PATH}/migdb-common"
 else
-  echo "could not find ${SCRIPT_PATH}/migdb-common"
-  exit 1
+  fail "could not find ${SCRIPT_PATH}/migdb-common"  
 fi
 
 function printHelp {
@@ -114,7 +116,7 @@ function process {
   if [ $dueIn -gt  0 ] ; then
     # shellcheck disable=SC2153
     debug process "giving unit $UNIT_ID more time to connect"
-    moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}/process-${UNIT_ID}"
+    moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move unit file to ${PROCESS_DIR}, ${UNIT_ID}"
     sleep 5
     return 0
   fi
@@ -146,17 +148,13 @@ function process {
         DEVICE_ONLINE=TRUE
         now=$(date +%s)
 
-        sed -i 's/^\(STATUS=\).*$/\1DONE/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-
-        {
-        echo "STATUS_TS=$now"
-        echo "MIGRATE_S2_LOG=\"$OUTPUT_LOG\""
-        }  >> "$UNIT_FILE"
-
+        setvar "STATUS_TS" "${now}" "${UNIT_FILE}"
+        setvar "MIGRATE_S2_LOG" "${OUTPUT_LOG}" "${UNIT_FILE}"
+        setvar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
         OUTPUT_LOG=
 
         inform "success: device was found online, unit: ${UNIT_ID}, uuid: ${DEVICE_ID}"
-        moveFile "$UNIT_FILE" "${DONE_DIR}/done-${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}/done-${UNIT_ID}"
+        moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
         break;
       fi
     done
@@ -169,16 +167,15 @@ function process {
         orderFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
         return 0
       fi
-      DUE_TS=$((now + 60))
-      sed -i 's/^\(DUE_TS=\).*/\1'${DUE_TS}'/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+
+      setVar "DUE_TS" "$((now + 60))" "${UNIT_FILE}" || fail "failed to update ${UNIT_FILE}"
       inform "device not found for unitId: ${UNIT_ID}, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
-      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}/process-${UNIT_ID}"
+      moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}, ${UNIT_ID}"
       rm "$OUTPUT_LOG"
       OUTPUT_LOG=
     fi
   else
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"
-  	echo "failure"
+    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"  	
   fi
 
   return 0

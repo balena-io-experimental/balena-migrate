@@ -4,19 +4,24 @@ if [ -z "$MIG_DB_DIR" ] ; then
   MIG_DB_DIR=.
 fi
 
+MIG_CONN_ATTEMPTS=3 
+MIG_RECONN_TIME=600
+
 TGT_DIR="migrate"
 COLOR=ON
 
+#shellcheck disable=SC2034
 DEBUG_FUNCTS="process"
+#shellcheck disable=SC2034
 LOG_DEBUG=FALSE
-
+#shellcheck disable=SC2034
 SCRIPT_NAME="migdb-migrate"
 SLEEP_DURATION=5
 
 SCRIPT_PATH=$(dirname "${0}")
-# shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  #shellcheck source=./migdb-common
   source "${SCRIPT_PATH}/migdb-common"
 else
   echo "could not find ${SCRIPT_PATH}/migdb-common"
@@ -179,6 +184,22 @@ function getCmdArgs {
             inform "set MIG_DURATION=$MIG_DURATION"
             shift
             ;;
+          --conn-attempts)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_CONN_ATTEMPTS="$2"
+            inform "set MIG_CONN_ATTEMPTS=$MIG_CONN_ATTEMPTS"
+            shift
+            ;;
+          --reconn-time)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_RECONN_TIME="$2"
+            inform "set MIG_RECONN_TIME=$MIG_RECONN_TIME"
+            shift
+            ;;
 
           *)
             inform "unrecognized argument $1"
@@ -212,47 +233,15 @@ function process {
   # shellcheck disable=SC2153
   OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "s1-${UNIT_ID}-XXX")
 
-  #if [ -z "$PORT" ] ; then
-  #  PORT=22
-  #fi
-
   if [ -n "$MIG_SSH_PASSWD" ] ; then
     PASSWD_PRESENT="present"
   else
     PASSWD_PRESENT="none"
   fi
 
-  local now age
-  now=$(date +%s)
-  age=$((now-CREATE_TS))
-
-  inform "port=$MIG_SSH_PORT, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} age=${age} sec."
-
-  # shellcheck disable=SC2086
-  if [ -n "$MIG_MIN_AGE" ] && [ ${age} -lt ${MIG_MIN_AGE} ] ; then
-    inform "giving device more time to connect"
-    moveFile "$UNIT_FILE" "${UNIT_DIR}/unit-${UNIT_ID}" || fail "failed to restore unit file"
-    sleep 5
-    return 0
-  fi
-
-  if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
-    if ! sendTarCfg "$MIG_CFG_ARCHIVE" "$TGT_DIR" ; then
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to transmit configuration in ${CFG_ARCHIVE} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
-      return 0
-    fi
-  else
-    if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
-      if ! sendCfgDir "$MIG_CFG_DIR" "$TGT_DIR" ; then
-        orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
-        return 0
-      fi
-    fi
-  fi
-
   if [ -z "$MIG_SSH_HOST" ] ; then
-        orderFailed "$UNIT_ID" "$UNIT_FILE" "no ssh host given, please specify MIG_SSH_HOST / --host"
-        return 0
+      orderFailed "$UNIT_ID" "$UNIT_FILE" "no ssh host given, please specify MIG_SSH_HOST / --host"
+      return 0
   fi
 
   if [ -z "$MIG_APP" ] ; then
@@ -260,6 +249,67 @@ function process {
         return 0
   fi
 
+  local now dueIn
+  now=$(date +%s)
+
+  if [ -z "$DUE_TS" ] ; then 
+    if [ -z "$MIG_MIN_AGE" ] ; then 
+      DUE_TS=$now
+    else
+      DUE_TS=$((CREATE_TS+MIG_MIN_AGE))
+    fi
+  fi 
+  
+  dueIn=$((DUE_TS-now)) 
+
+  inform "port=$MIG_SSH_PORT, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
+
+  if [ $dueIn -gt  0 ] ; then    
+    inform "not processing device now, it is due in ${dueIn} seconds"
+    setVar "DUE_TS" "$DUE_TS" "$UNIT_FILE"
+    moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"
+    sleep 5
+    return 0
+  fi
+
+  local connRetryCount
+
+  if [ -n "$MIG_CONN_RETRIES" ] ; then 
+    connRetryCount=$MIG_CONN_RETRIES
+  else 
+    connRetryCount=0
+  fi
+
+  if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
+    if ! sendTarCfg "$MIG_CFG_ARCHIVE" "$TGT_DIR" ; then
+      connRetryCount=$((connRetryCount + 1))      
+      if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+        warn "connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+        setvar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
+        setvar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
+        moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
+      else      
+        orderFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${CFG_ARCHIVE} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+      fi                  
+      return 0
+    fi
+  else
+    if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
+      # TODO: same as above
+      if ! sendCfgDir "$MIG_CFG_DIR" "$TGT_DIR" ; then
+        connRetryCount=$((connRetryCount + 1))      
+        if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+          warn "connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+          setvar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
+          setvar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
+          moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
+        else      
+          orderFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+        fi                  
+        return 0
+      fi
+    fi
+  fi
 
 
   inform "registering device with MIG_APP=$MIG_APP"
@@ -285,9 +335,6 @@ function process {
   fi
 
   inform "using application UUID=$UUID"
-
-  # balena config generate --device 0e203b4 --version 2.26.0 --output config.json --network ethernet --appUpdatePollInterval 10
-
 
   local cfgFile
   cfgFile=$(mktemp -p "${TMP_DIR}" "s1-config-XXX")
@@ -338,28 +385,16 @@ function process {
         fi
       fi
 
-      sed -i 's/^\(STATUS=\).*$/\1MIGRATED/' "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-
       now=$(date +%s)
-
-      if ! grep "MIG_APP" "$UNIT_FILE" ; then
-        SET_APP=TRUE
-      fi
-
-
-      {
-      if [ "$SET_APP" == "TRUE" ] ; then
-        echo "MIG_APP=$MIG_APP"
-      fi
-      echo "STATUS_TS=$now"
-      echo "DUE_TS=$((now+MIG_DURATION))"
-      echo "DEVICE_ID=$UUID"
-      echo "MIGRATE_S1_LOG=\"$OUTPUT_LOG\""
-      }  >> "$UNIT_FILE"
+      setVar "STATUS_TS" "$now" "$UNIT_FILE"
+      setVar "DUE_TS" "$((now + MIG_DURATION))" "$UNIT_FILE"
+      setVar "DEVICE_ID" "$UUID" "$UNIT_FILE"
+      setVar "MIGRATE_S1_LOG" "$OUTPUT_LOG" "$UNIT_FILE"
+      setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
 
       OUTPUT_LOG=
 
-      moveFile "$UNIT_FILE" "${PROCESS_DIR}/process-${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}/process-${UNIT_ID}"
+      moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     else
       orderFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
       return 0
