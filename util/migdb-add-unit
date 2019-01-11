@@ -1,20 +1,15 @@
 #!/bin/bash
 
 SCRIPT_PATH=$(dirname "${0}")
-# shellcheck source=/home/thomas/develop/balena.io/migrate/util/migdb-common
+# shellcheck source=migdb-common
 source "${SCRIPT_PATH}/migdb-common"
 
 color ON
 
-if [ -z "$MIG_DB_DIR" ] ; then
-  MIG_DB_DIR=.
-fi
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 
-#shellcheck disable=SC2034
-DEBUG_FUNCTS="main checkInit"
-#shellcheck disable=SC2034
-LOG_DEBUG="TRUE"
-#shellcheck disable=SC2034
+DEBUG_FUNCTS="main checkInit moveFile"
+LOG_DEBUG= # ""
 SCRIPT_NAME="migdb-add-unit"
 
 function printHelp {
@@ -23,7 +18,7 @@ function printHelp {
   USAGE: migdb-add-unit [options] <unitId>
   options are:
     --app <balena-application>     - Unit specific balena application to register with
-    --base <db base dir>           - Base directory of order db
+    --base <db base dir>           - Base directory of unit db
     --cfg <migrate-config-file>    - Unit specific config variables in bash / sh format
     --cfg-dir <migratecfg dir>     - Unit specific migrate config directory
     --cfg-tgz <migratecfg archive> - Unit specific gzipped tar archive of migratecfg directory
@@ -163,7 +158,7 @@ function getCmdArgs {
   done
 }
 
-# debug main "base dir is: $MIG_DB_DIR, orders dir is: $ORDERS"
+# debug main "base dir is: $MIG_DB_DIR, units dir is: $ORDERS"
 
 getCmdArgs "$@"
 
@@ -178,7 +173,7 @@ checkInit
 for file in ${UNIT_DIR}/* ; do
   # echo "got $file"
   if [[ $file =~ ^${UNIT_DIR}/unit-${UNIT_ID}-.* ]] ; then 
-    echo "an order file for order $UNIT_ID exists: ${UNIT_DIR}/${file}"
+    fail "a unit file for unit id $UNIT_ID exists: ${file}"
   fi
 done
 
@@ -190,7 +185,7 @@ if [ $EUID -eq 0 ]; then
   chmod 777 "${TMP_FILE}"
 fi
 
-cat <<EOI > "${TMP_FILE}"  || fail "failed to create order file for orderid $UNIT_ID"
+cat <<EOI > "${TMP_FILE}"  || fail "failed to create unit file for unitid $UNIT_ID"
 UNIT_ID=${UNIT_ID}
 STATUS=INIT
 CREATE_TS=$(date +%s)
@@ -234,12 +229,14 @@ EOI
   fi
 }  >> "${TMP_FILE}"
 
-if moveFile "$TMP_FILE" "${UNIT_DIR}" "${UNIT_ID}" ; then
-  inform "order file created for order id ${UNIT_ID},  port $MIG_SSH_PORT in ${UNIT_FILE}"
+debug main "${TMP_FILE} contents:"
+
+if moveFile "${TMP_FILE}" "${UNIT_DIR}" "${UNIT_ID}" ; then
+  inform "a unit file was created for unit id ${UNIT_ID}"
 
   #if ! ps -av | grep migdb-process ; then
   #   inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
   #fi
 else
-  fail "failed to create order file for order ${UNIT_ID} in ${UNIT_DIR}"
+  fail "failed to create unit file for unit ${UNIT_ID} in ${UNIT_DIR}"
 fi

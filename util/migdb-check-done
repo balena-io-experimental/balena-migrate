@@ -1,24 +1,17 @@
 #!/bin/bash
 
-if [ -z "$MIG_DB_DIR" ] ; then
-  MIG_DB_DIR=.
-fi
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 
 COLOR=ON
-#shellcheck disable=SC2034
 DEBUG_FUNCTS="process"
-#shellcheck disable=SC2034
 LOG_DEBUG=FALSE
-
-#shellcheck disable=SC2034
 SCRIPT_NAME="migdb-check-done"
 SLEEP_DURATION=5
-
 SCRIPT_PATH=$(dirname "${0}")
 
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
-  #shellcheck source=./migdb-common
+  #shellcheck source=migdb-common
   source "${SCRIPT_PATH}/migdb-common"
 else
   fail "could not find ${SCRIPT_PATH}/migdb-common"  
@@ -125,7 +118,7 @@ function process {
 
   if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
     # shellcheck disable=SC2153
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "invalid status found in unit file $UNIT_FILE"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "invalid status found in unit file $UNIT_FILE"
     return 0
   fi
 
@@ -148,12 +141,12 @@ function process {
         DEVICE_ONLINE=TRUE
         now=$(date +%s)
 
-        setvar "STATUS_TS" "${now}" "${UNIT_FILE}"
-        setvar "MIGRATE_S2_LOG" "${OUTPUT_LOG}" "${UNIT_FILE}"
-        setvar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+        setVar "STATUS_TS" "${now}" "${UNIT_FILE}"
+        setVar "MIGRATE_S2_LOG" "${OUTPUT_LOG}" "${UNIT_FILE}"
+        setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
         OUTPUT_LOG=
 
-        inform "success: device was found online, unit: ${UNIT_ID}, uuid: ${DEVICE_ID}"
+        inform "success: device was found online, unit id: ${UNIT_ID}, uuid: ${DEVICE_ID}"
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
         break;
       fi
@@ -164,7 +157,7 @@ function process {
 
       statusAge=$((now - STATUS_TS))
       if [ $statusAge -gt "$MIG_MAX_STATUS_AGE" ] ; then
-        orderFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
         return 0
       fi
 
@@ -175,7 +168,7 @@ function process {
       OUTPUT_LOG=
     fi
   else
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"  	
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"  	
   fi
 
   return 0

@@ -52,6 +52,14 @@ function warn {
 }
 
 ##########################################
+# error : print error message
+##########################################
+
+function error {
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1"
+}
+
+##########################################
 # fail : print failurwe message and exit
 ##########################################
 
@@ -96,7 +104,7 @@ function checkInit {
 
   if [ ! -d "$MIG_DB_DIR" ] || [ ! -d "$UNIT_DIR" ] || [ ! -d "$FAIL_DIR" ] || [ ! -d "$DONE_DIR" ] || [ ! -d "$TMP_DIR" ] ; then
       inform "initializing directory structure in $MIG_DB_DIR"
-      mkdir -p "$UNIT_DIR" || fail "failed to create orders directory in $UNIT_DIR"
+      mkdir -p "$UNIT_DIR" || fail "failed to create unit directory in $UNIT_DIR"
       mkdir -p "$PROCESS_DIR" || fail "failed to create process directory in $PROCESS_DIR"
       mkdir -p "$DONE_DIR" || fail "failed to create done directory in $DONE_DIR"
       mkdir -p "$FAIL_DIR" || fail "failed to create fail directory in $FAIL_DIR"
@@ -138,18 +146,14 @@ function moveFile {
   local id=$3  
   local target
   
+  debug moveFile "src=${src} dir=${dir} id=${id}"
+
   target=$(mktemp -p "${dir}" "unit-${id}-XXX") 
 
-  if mv -n "${src}" "${target}" ; then
-    if [ ! -f  "${src}" ] ; then
-      return 0
-    else
-      target=$(mktemp -p "${FAIL_DIR}" "move-fail-${id}-XXX")
-      mv "${src}" "$target"
-      return 1
-    fi
-  else
-    return 2
+  if mv -f "${src}" "${target}" ; then
+    return 0
+  else 
+    return 1
   fi
 }
 
@@ -193,21 +197,21 @@ function getRandFile {
 
 
 ################################################################################
-# copy / append failed order file to fail dir
+# copy / append failed unit file to fail dir
 ################################################################################
 
-function orderFailed {
-  local orderId=$1
-  local orderFile=$2
+function unitFailed {
+  local unitId=$1
+  local unitFile=$2
   local msg=$3
   local now failFile
-  warn "ORDER ${orderId}: $msg"
+  error "unit id ${unitId}: $msg"
   now=$(date +%s)
-  failFile=$(mktemp -p "${FAIL_DIR}" "fail-$orderId-XXX")
-  mv "$orderFile" "$failFile"
+  failFile=$(mktemp -p "${FAIL_DIR}" "fail-${unitId}-XXX")
+  mv "$unitFile" "$failFile"
   setVar  "FAIL_TS" "${now}" "${failFile}"
   setVar  "FAIL_MSG" "$msg" "${failFile}"
-  setVar  "FAIL_LOG" "$OUTPUT_LOG" "${failFile}" || fail "failed to create fail file for order $orderId in $failFile"
+  setVar  "FAIL_LOG" "$OUTPUT_LOG" "${failFile}" || fail "failed to create fail file for unit id ${unitId} in ${failFile}"
   OUTPUT_LOG=
 }
 

@@ -1,20 +1,15 @@
 #!/bin/bash
 
-if [ -z "$MIG_DB_DIR" ] ; then
-  MIG_DB_DIR=.
-fi
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 
-MIG_CONN_ATTEMPTS=3 
-MIG_RECONN_TIME=600
+MIG_CONN_ATTEMPTS=${MIG_CONN_ATTEMPTS=3} 
+MIG_RECONN_TIME=${MIG_RECONN_TIME=600} 
 
 TGT_DIR="migrate"
 COLOR=ON
 
-#shellcheck disable=SC2034
 DEBUG_FUNCTS="process"
-#shellcheck disable=SC2034
 LOG_DEBUG=FALSE
-#shellcheck disable=SC2034
 SCRIPT_NAME="migdb-migrate"
 SLEEP_DURATION=5
 
@@ -219,6 +214,11 @@ function process {
   debug process "with $UNIT_FILE"
 
   MIG_SSH_OPTS=
+  MIG_CONN_RETRIES=0
+  DUE_TS=
+  UNIT_ID=
+  STATUS=INIT
+ 
   # shellcheck disable=SC1090
   source "$UNIT_FILE"
 
@@ -240,12 +240,12 @@ function process {
   fi
 
   if [ -z "$MIG_SSH_HOST" ] ; then
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "no ssh host given, please specify MIG_SSH_HOST / --host"
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "no ssh host given, please specify MIG_SSH_HOST / --host"
       return 0
   fi
 
   if [ -z "$MIG_APP" ] ; then
-        orderFailed "$UNIT_ID" "$UNIT_FILE" "no application given, please specify MIG_APP / --app"
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "no application given, please specify MIG_APP / --app"
         return 0
   fi
 
@@ -262,34 +262,29 @@ function process {
   
   dueIn=$((DUE_TS-now)) 
 
-  inform "port=$MIG_SSH_PORT, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
-
   if [ $dueIn -gt  0 ] ; then    
-    inform "not processing device now, it is due in ${dueIn} seconds"
+    inform "unit id ${UNIT_ID}, not processing device now, it is due in ${dueIn} seconds"
     setVar "DUE_TS" "$DUE_TS" "$UNIT_FILE"
     moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"
     sleep 5
     return 0
   fi
 
+  inform "unit id ${UNIT_ID}, port=${MIG_SSH_PORT}, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
   local connRetryCount
 
-  if [ -n "$MIG_CONN_RETRIES" ] ; then 
-    connRetryCount=$MIG_CONN_RETRIES
-  else 
-    connRetryCount=0
-  fi
+  connRetryCount=$MIG_CONN_RETRIES
 
   if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
     if ! sendTarCfg "$MIG_CFG_ARCHIVE" "$TGT_DIR" ; then
       connRetryCount=$((connRetryCount + 1))      
       if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
-        warn "connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
-        setvar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
-        setvar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
+        warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+        setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
+        setVar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
         moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
       else      
-        orderFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${CFG_ARCHIVE} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${CFG_ARCHIVE} to  ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
       fi                  
       return 0
     fi
@@ -299,12 +294,12 @@ function process {
       if ! sendCfgDir "$MIG_CFG_DIR" "$TGT_DIR" ; then
         connRetryCount=$((connRetryCount + 1))      
         if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
-          warn "connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
-          setvar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
-          setvar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
+          warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+          setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
+          setVar "DUE_TS" "$((now + MIG_RECONN_TIME))" "$UNIT_FILE"
           moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
         else      
-          orderFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+          unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
         fi                  
         return 0
       fi
@@ -318,9 +313,9 @@ function process {
   # shellcheck disable=SC2181
   if ! tmpStr=$(balena device register "$MIG_APP" 2>"${OUTPUT_LOG}") ; then
     if grep "You have to log in to continue" "${OUTPUT_LOG}" ; then 
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
     else
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
     fi
     return 0
   fi
@@ -330,7 +325,7 @@ function process {
   fi
 
   if [ -z "$UUID" ] ; then
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "no UUID found in register response <$tmpStr>"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "no UUID found in register response <$tmpStr>"
     return 0
   fi
 
@@ -340,12 +335,12 @@ function process {
   cfgFile=$(mktemp -p "${TMP_DIR}" "s1-config-XXX")
   inform "generating device config file in $cfgFile"
   if ! balena config generate --device "$UUID" --version "$MIG_BALENA_VER" --output "$cfgFile" --network ethernet --appUpdatePollInterval 10 > "$OUTPUT_LOG" 2>&1 ; then
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to create config using <balena config generate --device $UUID --version $MIG_BALENA_VER --output $cfgFile --network ethernet --appUpdatePollInterval 10>"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to create config using <balena config generate --device $UUID --version $MIG_BALENA_VER --output $cfgFile --network ethernet --appUpdatePollInterval 10>"
     return 0
   fi
 
   if ! grep "\"uuid\":\"$UUID\"" "$cfgFile" > "$OUTPUT_LOG" 2>&1 ; then
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "cannot find UUID=$UUID in $cfgFile"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find UUID=$UUID in $cfgFile"
     return 0
     fail ""
   fi
@@ -356,7 +351,7 @@ function process {
   sshCmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "$MIG_SSH_PASSWD")
 
   if ! sendFile "$cfgFile"  "$TGT_DIR/balena-migrate-config.json" ; then
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed to transmit generated config file to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to transmit generated config file to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
     rm "$cfgFile"
     return 0
   else
@@ -380,7 +375,7 @@ function process {
     if  [ -n "$successMsg" ] ; then
       if [[ "$successMsg" =~ .*please\ reboot\ system.* ]] ; then
         if ! "$sshCmd \"sudo reboot\"" >> "$OUTPUT_LOG" 2>&1 ; then
-          orderFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+          unitFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
           return 0
         fi
       fi
@@ -396,11 +391,11 @@ function process {
 
       moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     else
-      orderFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
       return 0
     fi
   else
-    orderFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
     return 0
   fi
 
