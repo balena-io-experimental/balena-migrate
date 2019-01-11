@@ -214,6 +214,16 @@ Command Line Option: ```--cfg-dir <path to migratecfg>```
 
 The path the migratecfg folder.   
 
+#### MIG_CONN_ATTEMPTS
+
+Used by: **migdb-migrate**
+
+Command Line Option: ```--conn-attempts <connect-attempts>```
+
+How often migdb-migrate will attempt to initiate a ssh connection before migration fails.
+
+The parameter ```MIG_RECONN_TIME``` determines the amount of time between two reconnect attempts.
+
 #### MIG_DB_DIR
 
 Used by: **migdb-add-unit**, **migdb-migrate**, **migdb-check-done**
@@ -265,6 +275,16 @@ Used by: **migdb-migrate**
 Command Line Option: ```--min-age <min age in seconds>```
 
 Miniumum age of a unit file before being processed in seconds.
+
+#### MIG_RECONN_TIME
+
+Used by: **migdb-migrate**
+
+Command Line Option: ```--reconn-time <seconds-between-reconnects>```
+
+How often long (in seconds) to wait between two reconnect attempts.
+
+The parameter ```MIG_CONN_ATTEMPTS``` determines how many reconnects to attempts before migration fails.
 
 #### MIG_SSH_PASSWD
 

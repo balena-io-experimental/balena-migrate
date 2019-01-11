@@ -36,11 +36,13 @@ function printHelp {
     --cfg-dir <migratecfg dir>       - Migrate config directory
     --cfg-tgz <migratecfg archive>   - Gzipped tar archive of migratecfg directory
     --color <ON/OFF>                 - Anything other than ON switches colored output off
+    --conn-attempts <attempts>       - Number of ssh connect attempts before failing migration on a unit
     --host <ssh-host>                - Default ssh host
     --log-to <log file>              - Write output to log file
     --min-age <age in seconds>       - Minimum age of unit file before processing
     --passwd <ssh password>          - Default ssh password
     -p | --port <ssh port>           - Default ssh port
+    --reconn-time <seconds>          - Time in seconds between two reconnect attempts
     --ssh-opts <ssh-opts>            - Default ssh options
     -u | --user <ssh user>           - Default ssh user
     --mig-dur <migration duration>   - Wait time before looking for migrated devices
