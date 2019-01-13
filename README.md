@@ -7,8 +7,6 @@ systems to balenaOS.
 
 **Warning:**
 
-[threst this](#BalenaOS Migration)
-
 * During the migration the primary storage of your device will be overwritten and all data that has not been saved prior to migration will be lost.
 * When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup thoroughly in a test environment before applying it to production devices.
 
@@ -16,19 +14,14 @@ It makes sense to read this document completely to understand the concepts and t
 
 ### Preparing the Migration Environment
 
-The *migratecfg* folder in this repository will be your migration environment. 
+The *migratecfg* folder in this repository will be your migration environment.
 
-Please note that all files referenced in the configuration and used during migration and are expected to be found in the 
-migratecfg directory and are referenced by pathnames relative to this directory.
+Please note that all files referenced in the configuration and used during migration and are expected to be found in the migratecfg directory and are referenced by pathnames relative to this directory.
 
-To migrate a device you will have to copy some more files into this directory and create / edit configuration files.
-Therefore it makes sense to copy the entire folder to a different location. Ultimately - once your setup is complete
-you will copy the directory to the device you want to migrate.
+To migrate a device you will have to copy some more files into this directory and create / edit configuration files. Therefore it makes sense to copy the entire folder to a different location. Ultimately - once your setup is complete you will copy the directory to the device you want to migrate.
 
-After copying the migration environment the next step is to create a balena-migrate.conf file, that will contain your
-configuration. There is a sample config file contained in the directory that you can use as a template. The
-easiest way is to copy that file to *balena-migrate.conf*.
-To migrate a Raspberry PI device you might invoke:
+After copying the migration environment the next step is to create a balena-migrate.conf file, that will contain your configuration. There is a sample config file contained in the directory that you can use as a template. The
+easiest way is to copy that file to *balena-migrate.conf*. To migrate a Raspberry PI device you might invoke:
 
 ``` bash
  cp balena-migrate-sample.conf balena-migrate.conf
@@ -36,21 +29,14 @@ To migrate a Raspberry PI device you might invoke:
 
 #### Preparing the OS Image
 
-Next copy the balenaOS image that you want to install to the migratecfg folder and set the *IMAGE\_FILE* variable in the config
-file to the name of the image.
+Next copy the balenaOS image that you want to install to the migratecfg folder and set the ```IMAGE\_FILE``` variable in the config file to the name of the image.
 
 When migrating Raspberry PI devices you can use the unmodified image, that you have downloaded from the dashboard.
 
-On intel-based devices you will have downloaded a flasher image that can not be used directly with *balena-migrate*.
-Please read the next section [Extracting the balenaOS image and grub config from a Flasher Image](#Extracting the balenaOS image and grub config from a Flasher Image) to extract your
+On intel-based devices you will have downloaded a flasher image that can not be used directly with *balena-migrate*. Please read the next section 'Extracting the balenaOS image and grub config from a Flasher Image' to extract your
 balenaOS image and grub config file.
 
-The image you downloaded is typically zip compressed. Internally balena-migrate works with the gzip format to be able
-to flash images directly from the compressed archive. For this reason balena-migrate will unzip zip-compressed image files
-and recompresss them using gzip. If you are planning to use the same setup multiple times it makes sense to convert the
-image file to gzip manually to save time and disk space when devices are actually migrated. To do this use unzip
-to unpack the zip archive containing the image and then gzip to compress the unpacked file. You can then remove the
-zip archive and configure the gzipped file to be your image file.
+The image you downloaded is typically zip compressed. Internally balena-migrate works with the gzip format to be able to flash images directly from the compressed archive. For this reason balena-migrate will unzip zip-compressed image files and recompresss them using gzip. If you are planning to use the same setup multiple times it makes sense to convert the image file to gzip manually to save time and disk space when devices are actually migrated. To do this use unzip to unpack the zip archive containing the image and then gzip to compress the unpacked file. You can then remove the zip archive and configure the gzipped file to be your image file.
 
 Example:
 
@@ -106,7 +92,7 @@ Example:
 sudo ./balena-migrate
 ```
 
-### Using the migdb scripts 
+### Using the migdb scripts
 
 If you are migrating a number of similar devices, you might want to use the migdb-scripts that are provided in the util 
 directory of this repository.
