@@ -112,7 +112,7 @@ MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG="TRUE"
+LOG_DEBUG= #"TRUE"
 
 ##########################################
 # log functions
@@ -1003,7 +1003,6 @@ else
   fi
 fi
 
-
 if [ -n "$PARAM_BALENA_CONFIG" ] ; then
   # cmd line params take precedence over config file
   BALENA_CONFIG="$PARAM_BALENA_CONFIG"
@@ -1288,7 +1287,7 @@ if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALEN
   # TODO: use jq instead ?
   jqPath="$(whereis -b jq | awk '{ print $2}')"
   if [ -z "$jqPath" ] ; then
-    fail "program jq is required to extract wifi config from balena config, please install the program"
+    fail "program jq is required to extract wifi config from balena config, please install the program or set BALENA_WIFI to FALSE"
   fi
 
   inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"

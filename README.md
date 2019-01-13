@@ -109,10 +109,15 @@ sudo ./balena-migrate
 If you are migrating a number of similar devices, you might want to use the migdb-scripts that are provided in the util 
 directory of this repository.
 
-**Please note:** The migdb scripts are work in progress. They will be adapted to requirements as we gain more experience 
-migrating devices.
+Please note that for the migdb scripts to work, the following conditions need to apply:
 
-Currently three scripts are involved in the process: 
+* migdb-migrate will use the balena-cli to pre-register devices. The balena-cli needs to be installed and logged in on the host running migdb-migrate.
+* migdb-migrate needs to be able to establish a ssh connection to the target devices.
+* Using a password to establish the ssh connection is not encouraged. Your password might be stored unencrypted in config or log files. Please use public key authentification instead. 
+* If you do use password authentification,  **migdb-migrate** will attempt to use the **sshpass** utility that needs to be installed prior to using **migdb-migrate** with the --passwd option.
+* The user you use to establish the ssh session needs to be able to invoke ```sudo``` **without password** on the target device. This can be achieved by adding an entry in the target devices ```/etc/sudoers``` file. 
+
+The following migdb scripts are available in the util directory:
 
 * **migdb-add-unit** will submit a device for migration.
 * **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.
@@ -296,7 +301,7 @@ SSH password for device.
 
 ##### Warning
 
-* Please be aware that passwords are being stored without encryption in text files and might show up in logs.
+* Please be aware that passwords are being stored unencrypted in text files and might show up in logs.
 It is recommended to use private/public key authentification instead.
 * When using this option the **migdb-migrate** will attempt to use **sshpass** utility that needs to be installed
 prior to using **migdb-migrate** with the --passwd option.
@@ -639,13 +644,17 @@ balena-migrate --balena-cfg=project-config.json
 
 #### BALENA\_WIFI
 
-**Default:** ```BALENA_WIFI="TRUE"```
+**Default:** ```BALENA_WIFI=```
 
-If this variable is set to *TRUE* and ```BALENA_CONFIG``` points to a file in ```HOME_DIR``` the file will be scanned for the
+If this variable is set to *TRUE* and ```BALENA_CONFIG``` points to a file in ```HOME_DIR``` the config file will be scanned for the
 ssid & key of a wifi network. If an SSID is found a network manager file will be created for this network and copied
 to ```/boot/system-connections``` in stage 2. 
 
 On boot BalenaOS will attempt to create a network connection for every file found in ```/boot/system-connections```.
+
+**Warning:** This option requires jq ( https://stedolan.github.io/jq/ ) to be installed on the target device. Migration will 
+fail with an error if jq is not available.
+
 
 #### COPY\_NMGR\_FILES
 

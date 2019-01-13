@@ -146,7 +146,7 @@ function process {
         setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
         OUTPUT_LOG=
 
-        inform "success: device was found online, unit id: ${UNIT_ID}, uuid: ${DEVICE_ID}"
+        inform "success: device was found online in balena-cloud, unit id: ${UNIT_ID}, uuid: ${DEVICE_ID}"
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
         break;
       fi
@@ -157,7 +157,7 @@ function process {
 
       statusAge=$((now - STATUS_TS))
       if [ $statusAge -gt "$MIG_MAX_STATUS_AGE" ] ; then
-        unitFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up after $statusAge sconds"
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up in balena-cloud after $statusAge sconds"
         return 0
       fi
 
