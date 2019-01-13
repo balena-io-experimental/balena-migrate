@@ -7,6 +7,8 @@ systems to balenaOS.
 
 **Warning:**
 
+[threst this](#BalenaOS Migration)
+
 * During the migration the primary storage of your device will be overwritten and all data that has not been saved prior to migration will be lost.
 * When migrating devices, that contain critical data or are not easily accessible, please make sure to test your setup thoroughly in a test environment before applying it to production devices.
 
@@ -40,7 +42,7 @@ file to the name of the image.
 When migrating Raspberry PI devices you can use the unmodified image, that you have downloaded from the dashboard.
 
 On intel-based devices you will have downloaded a flasher image that can not be used directly with *balena-migrate*.
-Please read the next section: 'Extracting the balenaOS image and grub config from a Flasher Image' to extract your
+Please read the next section [Extracting the balenaOS image and grub config from a Flasher Image](#Extracting the balenaOS image and grub config from a Flasher Image) to extract your
 balenaOS image and grub config file.
 
 The image you downloaded is typically zip compressed. Internally balena-migrate works with the gzip format to be able
@@ -80,7 +82,7 @@ The above command will extract the grub config and the gzipped image from a zip 
 
 The extract script can work with a zip archive or with the raw flasher image.
 
-**Warning:** If working on a zip archive please make sure you have about 3GB of disk space available to unpack the image.     
+**Warning:** If working on a zip archive please make sure you have about 3GB of disk space available to unpack the image.
 
 ##### Setting up the Config File
 
@@ -115,7 +117,7 @@ Please note that for the migdb scripts to work, the following conditions need to
 * migdb-migrate needs to be able to establish a ssh connection to the target devices.
 * Using a password to establish the ssh connection is not encouraged. Your password might be stored unencrypted in config or log files. Please use public key authentification instead. 
 * If you do use password authentification,  **migdb-migrate** will attempt to use the **sshpass** utility that needs to be installed prior to using **migdb-migrate** with the --passwd option.
-* The user you use to establish the ssh session needs to be able to invoke ```sudo``` **without password** on the target device. This can be achieved by adding an entry in the target devices ```/etc/sudoers``` file. 
+* The user you use to establish the ssh session needs to be able to invoke ```sudo``` **without password** on the target device. This can be achieved by adding an entry in the target devices ```/etc/sudoers``` file.
 
 The following migdb scripts are available in the util directory:
 
@@ -123,38 +125,26 @@ The following migdb scripts are available in the util directory:
 * **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.
 * **migdb-check-done** is the worker script that checks migrated devices to see if they come online in the balena backend. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.  
 
-The scripts use a migrate config that you provide and apply it to an number of devices. A directory structure is used to 
-submit devices for migration and track the state of the migration process. The scripts will pre register a device in the 
-balena dashboard for every unit file submitted and then attempt to migrate the unit.
-The balena cli is used to register devices and track the progress. The balena cli has to be installed and logged in on 
-the computer that runs the migdb scripts.
+The scripts use a migrate config that you provide and apply it to an number of devices. A directory structure is used to submit devices for migration and track the state of the migration process. The scripts will pre register a device in the balena dashboard for every unit file submitted and then attempt to migrate the unit.
+The balena cli is used to register devices and track the progress. The balena cli has to be installed and logged in on the computer that runs the migdb scripts.
 
-The migrated devices will come up in balena with the device uuid that was created during pre registration. This way the 
-success of every migration can be tracked end to end.
+The migrated devices will come up in balena with the device uuid that was created during pre registration. This way the success of every migration can be tracked end to end.
   
-The **migdb-migrate** script attempts to connect to the device using ssh. The ssh connection is then used to transmit the 
-migratecfg (migration environment). When the environment has been transmitted successfully the migdb-migrate script will 
-register the device, generate and transmit a config.json file and will then call **balena-migrate** on the device to 
-start the actual migration. 
+The **migdb-migrate** script attempts to connect to the device using ssh. The ssh connection is then used to transmit the migratecfg (migration environment). When the environment has been transmitted successfully the migdb-migrate script will register the device, generate and transmit a config.json file and will then call **balena-migrate** on the device to start the actual migration.
 
-Options and parameters given in **migdb-add-unit** are mostly unit specific. They will be written to the unit file 
-and will override any parameters given to **migdb-migrate** on the command line or in environment variables. 
-The (unit specific) information necessary to create a ssh connection needs to be provided when creating a unit file. 
-Example: 
+Options and parameters given in **migdb-add-unit** are mostly unit specific. They will be written to the unit file and will override any parameters given to **migdb-migrate** on the command line or in environment variables. The (unit specific) information necessary to create a ssh connection needs to be provided when creating a unit file.
+
+Example:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-add-unit --host=192.168.1.15 --user=pi --passwd=secret my-unit-id```
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Will create a unit file with the given ssh credentials and will attempt to migrate 
-that host.
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Will create a unit file with the given ssh credentials and will attempt to migrate that host.
 
-The **unit-id** is a unique identifier for the device. It can be used to track the unit during migration by looking for files 
-tagged with the unit-id. Reusing unit-ids will lead to file name clashes and failure of the migdb processes.   
+The **unit-id** is a unique identifier for the device. It can be used to track the unit during migration by looking for files tagged with the unit-id. Reusing unit-ids will lead to file name clashes and failure of the migdb processes.
 
-Non unit specfic parameters can be supplied as defaults when starting **migdb-migrate**. Options given to 
-**migdb-migrate** are defaults that will be used for all units if not overridden by unit files.
+Non unit specfic parameters can be supplied as defaults when starting **migdb-migrate**. Options given to **migdb-migrate** are defaults that will be used for all units if not overridden by unit files.
 
-Eg. if all devices use the same user and config directory, starting **migdb-migrate** as follows will supply a default 
-user and configuration:
+Eg. if all devices use the same user and config directory, starting **migdb-migrate** as follows will supply a default user and configuration:
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-migrate --user=pi --mig-cfg-dir=./migratecfg```
 
@@ -176,12 +166,9 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option: ```--app <application>``` 
 
-The balena application to register the device to. The **migdb-migrate** script will attempt to pre register a device with 
-balena and retrieve a uuid and a config file (config.json) for the device. This way  the device can be tracked. The device 
-UUID will be saved in the device unit file.
+The balena application to register the device to. The **migdb-migrate** script will attempt to pre register a device with balena and retrieve a uuid and a config file (config.json) for the device. This way  the device can be tracked. The device UUID will be saved in the device unit file.
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere. 
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 #### MIG_BALENA_VER
 
@@ -189,7 +176,8 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option: ```--balena-ver <version>```
 
-The balena version that will be installed on the device. This is needed for preregistering the device in Balena. 
+The balena version that will be installed on the device. This is needed for preregistering the device in Balena.
+
 Example:
 
 ```MIG_BALENA_VER="2.26.0"```
@@ -200,8 +188,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**, **migdb-check-done**
 
 Command Line Option: ```--cfg <config file>```
 
-Path to a configuration file. The script will read the file (in bash syntax) and use the variables defined in it. It can contain any of the variables 
-listed here and will override values given on the command line or in the environment. 
+Path to a configuration file. The script will read the file (in bash syntax) and use the variables defined in it. It can contain any of the variables listed here and will override values given on the command line or in the environment.
 
 #### MIG_CFG_ARCHIVE
 
@@ -209,7 +196,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option: ```--cfg-tgz <path to tar archive>```
 
-The path to a compressed tar archive containing the migratecfg folder.   
+The path to a compressed tar archive containing the migratecfg folder.
 
 #### MIG_CFG_DIR
 
@@ -217,7 +204,7 @@ Used by: **migdb-add-unit**, **migdb-migrate**
 
 Command Line Option: ```--cfg-dir <path to migratecfg>```
 
-The path the migratecfg folder.   
+The path the migratecfg folder.
 
 #### MIG_CONN_ATTEMPTS
 
@@ -245,7 +232,7 @@ Command Line Option in migdb-migrate: ```--ssh-opts <ssh options>```
 
 Default ssh options.
 
-Example: ```--ssh-opts "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"``` 
+Example: ```--ssh-opts "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"```
 
 #### MIG_DURATION
 
@@ -269,8 +256,7 @@ Used by: **migdb-check-done**
 
 Command Line Option: ```--max-age <age in seconds>```
 
-Wait time in seconds before before assuming, that a device has failed to show up in the balena backend. Defaults to 
-900 (15 minutes). This timer starts after the devices has been migrated (STATUS="MIGRATED"). 
+Wait time in seconds before before assuming, that a device has failed to show up in the balena backend. Defaults to 900 (15 minutes). This timer starts after the devices has been migrated (STATUS="MIGRATED").
 
 
 #### MIG_MIN_AGE
@@ -301,13 +287,10 @@ SSH password for device.
 
 ##### Warning
 
-* Please be aware that passwords are being stored unencrypted in text files and might show up in logs.
-It is recommended to use private/public key authentification instead.
-* When using this option the **migdb-migrate** will attempt to use **sshpass** utility that needs to be installed
-prior to using **migdb-migrate** with the --passwd option.
+* Please be aware that passwords are being stored unencrypted in text files and might show up in logs. It is recommended to use private/public key authentification instead.
+* When using this option the **migdb-migrate** will attempt to use **sshpass** utility that needs to be installed prior to using **migdb-migrate** with the --passwd option.
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere.
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 #### MIG_SSH_PORT
 
@@ -317,8 +300,7 @@ Command Line Option in migdb-migrate: ```--port <port>```
 
 SSH port used to connect to the device, defaults to 22.
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere. 
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 
 #### MIG_SSH_HOST
@@ -329,8 +311,7 @@ Command Line Option in migdb-migrate: ```--host <ssh host>```
 
 The ssh host name or IP address of the device to migrate. 
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere. 
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 #### MIG_SSH_OPTS
 
@@ -340,8 +321,7 @@ Command Line Option in migdb-add-unit: ```--ssh-opts <ssh options>```
 
 Unit specific ssh options. 
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere.   
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 #### MIG_SSH_USER
 
@@ -351,8 +331,7 @@ Command Line Option in migdb-migrate: ```--user <ssh user>```
 
 The ssh user name used to connected to the device.
 
-If this parameter is present in **migdb-add-unit**, it will be written to the unit file and 
-override the same option given elsewhere. 
+If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
 
 ## Strategy
@@ -363,57 +342,34 @@ configured to do so.
 
 ### Stage 1
 
-The first stage ensures that all requirements are met, triggers the creation of a modified initramfs and installs
-it to be used at the next system reboot. It will reboot the system if configured to do so.
+The first stage ensures that all requirements are met, triggers the creation of a modified initramfs and installs it to be used at the next system reboot. It will reboot the system if configured to do so.
 
 
-The balena-migrate script will create a configuration file in */etc/balena-migration-stage2.conf* that will determine
-the actions and required files during initramfs creation as well as for stage 2 which is run from inside initramfs after
-booting the device.
+The balena-migrate script will create a configuration file in */etc/balena-migration-stage2.conf* that will determine the actions and required files during initramfs creation as well as for stage 2 which is run from inside initramfs after booting the device.
 
-The balena-migrate script creates an initramfs file that contains all scripts, programs and configuration files needed
-for phase 2.
+The balena-migrate script creates an initramfs file that contains all scripts, programs and configuration files needed for phase 2.
 
-The stage 1 script will also perform migration tasks such as creating a backup (that will be transferred to resin-data)
-and migrating network (WIFI) configurations to be installed in balenaOS (resin-boot/system-connections).
-The backup files files as well as the actual balenaOS image file are likely too big to be contained in the root partition
-where the initramfs resides and will be copied from the root file system to initramfs in stage 2.
+The stage 1 script will also perform migration tasks such as creating a backup (that will be transferred to resin-data) and migrating network (WIFI) configurations to be installed in balenaOS (resin-boot/system-connections).
+The backup files files as well as the actual balenaOS image file are likely too big to be contained in the root partition where the initramfs resides and will be copied from the root file system to initramfs in stage 2.
 
-The stage 1 script will reconfigure the bootloader of the system to use the created initramfs and optionally reboot
-the system. On systems using grub as bootloader the system is configured to have one shot at the modified boot configuration
-using grub-reboot. On RPI the */boot/config.txt* and */boot/cmdline.txt* files are modified. They are restored to their
-original values by the stage 2 script.
+The stage 1 script will reconfigure the bootloader of the system to use the created initramfs and optionally reboot the system. On systems using grub as bootloader the system is configured to have one shot at the modified boot configuration using grub-reboot. On RPI the */boot/config.txt* and */boot/cmdline.txt* files are modified. They are restored to their original values by the stage 2 script.
 
 
 ### Stage 2
 
-When booted from the modified initramfs the contained stage 2 scripts will attempt to store all required files
-inside the tmpfs that the initram system is mounted on. The configuration created in stage 1
+When booted from the modified initramfs the contained stage 2 scripts will attempt to store all required files inside the tmpfs that the initram system is mounted on. The configuration created in stage 1
 (*/etc/balena-migrate-stage2.conf*) contains instructions on which files to transfer to the tmpfs.
 
-Any failures up to this point can be tolerated by resetting the boot configuration to the prior state. In grub based
-boot loaders this is achieved automatically, for RPI devices the */boot/config.txt* and */boot/cmdline.txt* files have
-to be restored to their prior state and the systems should be able to reboot into its former configuration.
-For Raspberry PI's the stage 1 script stores copies of the original files in the boot partition renamed to config.txt.TS
-and cmdline.txt.TS where TS is a timestamp.
+Any failures up to this point can be tolerated by resetting the boot configuration to the prior state. In grub based boot loaders this is achieved automatically, for RPI devices the */boot/config.txt* and */boot/cmdline.txt* files have to be restored to their prior state and the systems should be able to reboot into its former configuration. For Raspberry PI's the stage 1 script stores copies of the original files in the boot partition renamed to config.txt.TS and cmdline.txt.TS where TS is a timestamp.
 
-After all files have been secured, the stage 2 scripts will unmount the former root file system and flash the configured
-balenaOS image to the target device. After flashing, the script will trigger a reread of the devices partition information
-and attempt to mount resin-boot and resin-data to transfer files to.
+After all files have been secured, the stage 2 scripts will unmount the former root file system and flash the configured balenaOS image to the target device. After flashing, the script will trigger a reread of the devices partition information and attempt to mount resin-boot and resin-data to transfer files to.
 
-On recent Balena images and generally on raspberry PI devices the balenaOS image contains all information necessary to 
-reboot the system.
+On recent Balena images and generally on raspberry PI devices the balenaOS image contains all information necessary to reboot the system.
 
-On older Balena images (up to version 2.15) for the x86 platform, the boot loader is not contained in the image. 
-For these installs the stage 2 script needs to create a new boot loader configuration by copying a *grub.cfg* to the 
-resin-boot partition and then calling grub-install or flashing boot loader images on the boot device. 
-This process is enabled by setting the **GRUB\_INSTALL** variable to **TRUE** in the balena-migrate.conf file.   
+On older Balena images (up to version 2.15) for the x86 platform, the boot loader is not contained in the image. For these installs the stage 2 script needs to create a new boot loader configuration by copying a *grub.cfg* to the 
+resin-boot partition and then calling grub-install or flashing boot loader images on the boot device. This process is enabled by setting the **GRUB\_INSTALL** variable to **TRUE** in the balena-migrate.conf file.
 
-A grub.cfg can be supplied by seting the parameter *GRUB_CFG* in the config file. If this parameter is not set, the script 
-will use a simple grub.cfg created by the stage 1 script. Due to changes in recent versions of balenaOS the autocreated 
-grub.cfg does not work any more.
-The safe way to do this is to supply a cfg.grub that matches the OS version that is being installed by extracting it
-from the flasher image.
+A grub.cfg can be supplied by seting the parameter *GRUB_CFG* in the config file. If this parameter is not set, the script will use a simple grub.cfg created by the stage 1 script. Due to changes in recent versions of balenaOS the autocreated grub.cfg does not work any more. The safe way to do this is to supply a cfg.grub that matches the OS version that is being installed by extracting it from the flasher image.
 
 
 ## Supported Platforms
@@ -432,36 +388,25 @@ Work is in progress on following platforms: beaglebone green
 
 ## Migration Stage 1 in Detail
 
-The script *balena-migrate* will check the prerequisites for migration before it attempts to modify the system.
-It reads its configuration from a file and also supports a number of command line parameters.
-Parameters set on the command line override options given in the config file.
+The script *balena-migrate* will check the prerequisites for migration before it attempts to modify the system. It reads its configuration from a file and also supports a number of command line parameters. Parameters set on the command line override options given in the config file.
 
-The script itself can be located anywhere in the file system. It attempts to read its configuration from a file which  defaults to
-**balena-migrate.conf**. It will look for the file in the current directory and in the ```HOME_DIR```
-The location and name of the config file and ```HOME_DIR``` can both be set using command line parameters.
+The script itself can be located anywhere in the file system. It attempts to read its configuration from a file which  defaults to **balena-migrate.conf**. It will look for the file in the current directory and in the ```HOME_DIR``` The location and name of the config file and ```HOME_DIR``` can both be set using command line parameters.
 
-The directory specified by ```HOME_DIR``` is used to store temporary files and is also expected to contain the
-initramfs-tools directory provided in this repository. All other paths given in the config file or on the command line
+The directory specified by ```HOME_DIR``` is used to store temporary files and is also expected to contain the initramfs-tools directory provided in this repository. All other paths given in the config file or on the command line
 are expected to be relative to ```HOME_DIR``` which defaults to the current working directory.
 
-All parameters have a default except for ```IMAGE_NAME``` which **must** be set in the config file or using command line
-parameters. It points to the balenaOS image to be flashed.
+All parameters have a default except for ```IMAGE_NAME``` which **must** be set in the config file or using command line parameters. It points to the balenaOS image to be flashed.
 
-
-The script contains a list of supported operating systems and hardware platforms that it has been tested on. It will
-reject any OS or hardware not contained in that list.
+The script contains a list of supported operating systems and hardware platforms that it has been tested on. It will reject any OS or hardware not contained in that list.
 
 ### Prerequisites
 
 #### Environment
 
-The stage 1 scripts expects the boot configuration to be available under ```/boot```. It expects the ```/boot``` directory to
-be on the same hard drive as the root file system and will fail with an error message if this is not the case.
+The stage 1 scripts expects the boot configuration to be available under ```/boot```. It expects the ```/boot``` directory to be on the same hard drive as the root file system and will fail with an error message if this is not the case.
 
 
-To create the initramfs *balena-migrate* will create a copy of the systems initramfs in configuration that is expected to
-be found in ```/etc/initramfs-tools```. It will then set up a modified version using migration scripts contained in the
-init-scripts folder in *HOME\_DIR*.  
+To create the initramfs *balena-migrate* will create a copy of the systems initramfs in configuration that is expected to be found in ```/etc/initramfs-tools```. It will then set up a modified version using migration scripts contained in the init-scripts folder in *HOME\_DIR*.  
 
 * balena-init - this script copies programs & files to the initramfs at creation time.
 * balena-common* - this script contains some helper functions used from other scripts during initramfs boot.
