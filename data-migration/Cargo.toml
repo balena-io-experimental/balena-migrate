@@ -1,0 +1,8 @@
+[package]
+name = "data-migration"
+version = "0.1.0"
+authors = ["samothx <thomasr@balena.io>"]
+
+[dependencies]
+yaml-rust = "0.4"
+regex = "1"

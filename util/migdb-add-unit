@@ -1,0 +1,242 @@
+#!/bin/bash
+
+SCRIPT_PATH=$(dirname "${0}")
+# shellcheck source=migdb-common
+source "${SCRIPT_PATH}/migdb-common"
+
+color ON
+
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
+
+DEBUG_FUNCTS="main checkInit moveFile"
+LOG_DEBUG= # ""
+SCRIPT_NAME="migdb-add-unit"
+
+function printHelp {
+  cat << EOI
+
+  USAGE: migdb-add-unit [options] <unitId>
+  options are:
+    --app <balena-application>     - Unit specific balena application to register with
+    --base <db base dir>           - Base directory of unit db
+    --cfg <migrate-config-file>    - Unit specific config variables in bash / sh format
+    --cfg-dir <migratecfg dir>     - Unit specific migrate config directory
+    --cfg-tgz <migratecfg archive> - Unit specific gzipped tar archive of migratecfg directory
+    --color <ON/OFF>               - Anything other than ON switches colored output off
+    -h|--help                      - Show this help screen
+    --host <ssh-host>              - Unit specific ssh host
+    --passwd <ssh password>        - Unit specific ssh password
+    -p|--port <ssh port>           - Unit specific ssh port to use
+    --ssh-opts <ssh-opts>          - Unit specfic ssh options
+    -u|--user <ssh user>           - Unit specific ssh user
+
+EOI
+return 0
+}
+
+function getCmdArgs {
+
+  if [[ $# -eq 0 ]] ; then
+    echo "no command line arguments."
+    printHelp
+    exit 1
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+      --cfg)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG="$2"
+        debug getCmdArgs "set MIG_CFG=$MIG_CFG"
+        shift
+        ;;
+      --ssh-opts)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_OPTS="$2"
+        debug getCmdArgs "set MIG_SSH_OPTS=$MIG_SSH_OPTS"
+        shift
+        ;;
+      --app)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_APP="$2"
+        debug getCmdArgs "set MIG_APP=$MIG_APP"
+        shift
+        ;;
+      --balena-ver)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_BALENA_VER="$2"
+        debug getCmdArgs "set MIG_BALENA_VER=$MIG_BALENA_VER"
+        shift
+        ;;
+      --host)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_HOST="$2"
+        debug getCmdArgs "set MIG_SSH_HOST=$MIG_SSH_HOST"
+        shift
+        ;;
+      --base)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_DB_DIR="$2"
+        debug getCmdArgs "set MIG_DB_DIR=$MIG_DB_DIR"
+        shift
+        ;;
+      --color)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        COLOR="$2"
+        debug getCmdArgs "set COLOR=$COLOR"
+        shift
+        ;;
+      -p|--port)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_PORT="$2"
+        debug getCmdArgs "set MIG_SSH_PORT=$MIG_SSH_PORT"
+        shift
+        ;;
+      -u|--user)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_USER="$2"
+        debug getCmdArgs "set MIG_SSH_USER=$MIG_SSH_USER"
+        shift
+        ;;
+      --passwd)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_SSH_PASSWD="$2"
+        debug getCmdArgs "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
+        shift
+        ;;
+      --cfg-dir)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG_DIR="$2"
+        inform "set MIG_CFG_DIR=$MIG_CFG_DIR"
+        shift
+        ;;
+      --cfg-tgz)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_CFG_ARCHIVE="$2"
+        inform "set MIG_CFG_DIR=$MIG_CFG_ARCHIVE"
+        shift
+        ;;
+      *)
+        if [[ $1 =~ ^-.* ]] ; then
+          fail "unrecognized option $1"
+        else
+          UNIT_ID="$1"
+          debug getCmdArgs "set UNIT_ID=$UNIT_ID"
+        fi
+      ;;
+    esac
+    shift
+  done
+}
+
+# debug main "base dir is: $MIG_DB_DIR, units dir is: $ORDERS"
+
+getCmdArgs "$@"
+
+if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
+  inform "loading config from $MIG_CFG"
+  # shellcheck disable=SC1090
+  source "$MIG_CFG"
+fi
+
+checkInit
+
+for file in ${UNIT_DIR}/* ; do
+  # echo "got $file"
+  if [[ $file =~ ^${UNIT_DIR}/unit-${UNIT_ID}-.* ]] ; then 
+    fail "a unit file for unit id $UNIT_ID exists: ${file}"
+  fi
+done
+
+TMP_FILE=$(mktemp -p "${TMP_DIR}")
+debug main "creating file ${TMP_FILE}"
+
+if [ $EUID -eq 0 ]; then
+  # allow non root user to modify file, otherwise migdb-process needs sudo too
+  chmod 777 "${TMP_FILE}"
+fi
+
+cat <<EOI > "${TMP_FILE}"  || fail "failed to create unit file for unitid $UNIT_ID"
+UNIT_ID=${UNIT_ID}
+STATUS=INIT
+CREATE_TS=$(date +%s)
+EOI
+
+{
+  if [ -n "$MIG_SSH_HOST" ] ; then
+    echo "MIG_SSH_HOST=${MIG_SSH_HOST}"
+  fi
+
+  if [ -n "$MIG_SSH_USER" ] ; then
+    echo "MIG_SSH_USER=${MIG_SSH_USER}"
+  fi
+
+  if [ -n "$MIG_SSH_PASSWD" ] ; then
+    echo "MIG_SSH_PASSWD=\"${MIG_SSH_PASSWD}\""
+  fi
+
+  if [ -n "$MIG_SSH_PORT" ] ; then
+    echo "MIG_SSH_PORT=${MIG_SSH_PORT}"
+  fi
+
+  if [ -n "$MIG_SSH_OPTS" ] ; then
+    echo "MIG_SSH_OPTS=\"${MIG_SSH_OPTS}\""
+  fi
+
+  if [ -n "$MIG_APP" ] ; then
+    echo "MIG_APP=\"${MIG_APP}\""
+  fi
+
+  if [ -n "$MIG_BALENA_VER" ] ; then
+    echo "MIG_BALENA_VER=\"${MIG_BALENA_VER}\""
+  fi
+
+  if [ -n "$MIG_CFG_ARCHIVE" ] ; then
+    echo "MIG_CFG_ARCHIVE=\"${MIG_CFG_ARCHIVE}\""
+  fi
+
+  if [ -n "$MIG_CFG_DIR" ] ; then
+    echo "MIG_CFG_DIR=\"${MIG_CFG_DIR}\""
+  fi
+}  >> "${TMP_FILE}"
+
+debug main "${TMP_FILE} contents:"
+
+if moveFile "${TMP_FILE}" "${UNIT_DIR}" "${UNIT_ID}" ; then
+  inform "a unit file was created for unit id ${UNIT_ID}"
+
+  #if ! ps -av | grep migdb-process ; then
+  #   inform "it appears that the migdb-process script is not running, please run the script to process your unit files"
+  #fi
+else
+  fail "failed to create unit file for unit ${UNIT_ID} in ${UNIT_DIR}"
+fi
