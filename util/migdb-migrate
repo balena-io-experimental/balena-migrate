@@ -459,7 +459,9 @@ if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
 fi
 
 if [ -n "$MIG_BALENA_TOKEN" ] ; then 
-  balena login -t "$MIG_BALENA_TOKEN" || fail "failed to log in to balena"
+  if ! balena apps > /dev/null 2>&1 ; then 
+    balena login -t "$MIG_BALENA_TOKEN" || fail "failed to log in to balena"
+  fi
 fi
 
 
