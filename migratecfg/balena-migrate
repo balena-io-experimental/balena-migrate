@@ -112,7 +112,8 @@ MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG= #"TRUE"
+LOG_DEBUG="TRUE"
+DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean bbg_setup "
 
 ##########################################
 # log functions
@@ -556,25 +557,25 @@ function checkArmDevs {
       if listContains "${RASPI_1_REVS}" ${RPI_HW_REV} ; then
         devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
-        if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
-          fail "expected raspberrypi1 image, got $IMAGE_NAME"
-        fi
+        # if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
+        #   fail "expected raspberrypi1 image, got $IMAGE_NAME"
+        # fi
       else
           # shellcheck disable=SC2086
           if listContains "${RASPI_2_REVS}" ${RPI_HW_REV} ; then
             devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
-            if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
-              fail "expected raspberrypi2 image, got $IMAGE_NAME"
-            fi
+            # if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
+            #   fail "expected raspberrypi2 image, got $IMAGE_NAME"
+            # fi
           else
             # shellcheck disable=SC2086
             if listContains "${RASPI_3_REVS}" ${RPI_HW_REV} ; then
               devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
-              if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
-                fail "expected raspberrypi3 image, got $IMAGE_NAME"
-              fi
+              # if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
+              #   fail "expected raspberrypi3 image, got $IMAGE_NAME"
+              # fi
             else
               fail "no known PI revision found: $RPI_HW_REV"
             fi
@@ -583,8 +584,9 @@ function checkArmDevs {
     ;;
     beaglebone)
       # eg.: TI AM335x BeagleBone Green
-      local tmp, variant
-      tmp=$(cat "/proc/device-tree/model")
+      local tmp variant
+      tmp="$(cat /proc/device-tree/model | tr '\0' '\n')"
+      
       if [[ $tmp =~ .*\ BeagleBone\ ([^\ ]+) ]] ; then
         variant="${BASH_REMATCH[1]}" # $(expr match "$tmp" '')
       fi
@@ -593,9 +595,9 @@ function checkArmDevs {
 
       case "$variant" in
         Green)
-          if [[ ! $IMAGE_NAME =~ beaglebone-green ]] ; then
-            fail "expected beaglebone-green image, got $IMAGE_NAME"
-          fi
+          # if [[ ! $IMAGE_NAME =~ beaglebone-green ]] ; then
+          #   fail "expected beaglebone-green image, got $IMAGE_NAME"
+          # fi
           devType="armv7_bb_green"
         ;;
         *)
@@ -620,6 +622,11 @@ function setupBootCfg_rpi {
   ##########################
   ## Modify /boot/config.txt
   ##########################
+  # raspi config.txt to modify
+  CONFIG_TXT="/boot/config.txt"
+  # raspi cmdline.txt to modify
+  CMDLINE_TXT="/boot/cmdline.txt"
+
 
   INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} cp cat rm sleep"
 
@@ -691,6 +698,78 @@ function setupBootCfg_rpi {
   fi
 }
 
+function bbg_setup() {
+  debug bbg_setup "entered"
+
+  UBOOT_ENV="/uEnv.txt"
+  debug bbg_setup "for $devType"
+
+  KERNEL_NAME=
+  for file in /boot/* ; do     
+    if [[ $file =~ ^/boot/vmlinuz-(.*)$ ]] ; then
+      local kUName sUName
+      kUName=${BASH_REMATCH[1]}
+      sUName=$(uname -r)
+      if [ -z "$kUName" ] || [ "$kUName" == "$sUName" ] ; then 
+        debug bbg_setup "found: ${file}"
+        KERNEL_NAME="$file"
+        break;
+      fi
+    fi
+  done
+
+  if [ -z "${KERNEL_NAME}" ] ; then 
+    fail "unable to determine kernel image file name"
+  else
+    inform "using kernel: $KERNEL_NAME"
+  fi
+
+  if [ -f "${UBOOT_ENV}" ] ; then
+    UENV_TXT_BACKUP="${UBOOT_ENV}.$(date +%Y%m%d-%H-%M-%S)"
+    cp "${UBOOT_ENV}" "/${UENV_TXT_BACKUP}" || fail "failed to backup boot config"
+    inform "created backup of ${UBOOT_ENV} in /${UENV_TXT_BACKUP}"
+    RESTORE_BOOT_CFG_STAGE1="mv /${UENV_TXT_BACKUP} ${UBOOT_ENV}"
+    RESTORE_BOOT_CFG_STAGE2="cp ${S2_BOOT_PATH}/${UENV_TXT_BACKUP} ${S2_BOOT_PATH}${UBOOT_ENV}"
+  else
+    RESTORE_BOOT_CFG_STAGE1="rm ${UBOOT_ENV}"
+    RESTORE_BOOT_CFG_STAGE2="rm ${S2_BOOT_PATH}${UBOOT_ENV}"
+  fi
+      
+  cat <<"EOI" > "${UBOOT_ENV}"
+##Rename as: uEnv.txt to override old bootloader in eMMC
+##These are needed to be compliant with Angstrom's 2013.06.20 u-boot.
+
+loadaddr=0x82000000
+fdtaddr=0x88000000
+rdaddr=0x88080000
+
+initrd_high=0xffffffff
+fdt_high=0xffffffff
+
+##These are needed to be compliant with Debian 2014-05-14 u-boot.
+
+loadximage=echo debug: [__KERNEL_NAME__] ... ; load mmc 0:1 ${loadaddr} __KERNEL_NAME__
+loadxfdt=echo debug: [/boot/dtbs/${uname_r}/${fdtfile}] ... ;load mmc 0:1 ${fdtaddr} /boot/dtbs/${uname_r}/${fdtfile}
+loadxrd=echo debug: [__INIIRAMFS_NAME__] ... ; load mmc 0:1 ${rdaddr} __INIIRAMFS_NAME__; setenv rdsize ${filesize}
+check_dtb=if test -n ${dtb}; then setenv fdtfile ${dtb};fi;
+check_uboot_overlays=if test -n ${enable_uboot_overlays}; then setenv enable_uboot_overlays ;fi;
+loadall=run check_dtb; run check_uboot_overlays; run loadximage; run loadxrd; run loadxfdt;
+mmcargs=setenv bootargs console=tty0 console=${console} ${optargs} ${cape_disable} ${cape_enable} root=/dev/mmcblk0p1 rootfstype=${mmcrootfstype} ${cmdline} __INITRAMFS_DEBUG__
+
+uenvcmd=run loadall; run mmcargs; echo debug: [${bootargs}] ... ; echo debug: [bootz ${loadaddr} ${rdaddr}:${rdsize} ${fdtaddr}] ... ; bootz ${loadaddr} ${rdaddr}:${rdsize} ${fdtaddr};
+EOI
+
+sed -i 's#__INIIRAMFS_NAME__#'${INITRAMFS_NAME}'#g' "${UBOOT_ENV}"
+sed -i 's#__KERNEL_NAME__#'${KERNEL_NAME}'#g' "${UBOOT_ENV}"
+local iDebug=
+if [ "$DEBUG" == "TRUE" ] ; then 
+  iDebug="debug"
+fi
+sed -i 's#__INITRAMFS_DEBUG__#'${iDebug}'#g' "${UBOOT_ENV}"
+}
+
+
+
 ####################################################
 ## setup beaglebone device to boot with initramfs
 ####################################################
@@ -699,50 +778,12 @@ function setupBootCfg_bb {
   debug setupBootCfg_bb "invoked"
   case $devType in
     armv7_bb_green)
-      debug setupBootCfg_bb "for $devType"
-    # modify bbb_uEnv.txt ?
-    # TODO:
-    #   target boot device mmcblk1 == eMMC ?
-    #   determine current boot device mmcblk0 == SD , mmcblk1 == eMMC ?
-    #   replace initramfs file or rename /bbb_uEnv.txt to /uEnv.txt and use alt initramfs
-    #
-      ##########################################################################
-      # copy /bbb-uEnv.txt to /uEnv.txt if necessary, create restore cmd
-      # TODO: make sure it is original/unmodified or create it fromm scratch
-      ##########################################################################
-      if [ ! -f "/uEnv.txt" ] ; then
-          if [ -f "/bbb-uEnv.txt" ] ; then
-            debug setupBootCfg_bb "found /bbb-uEnv.txt"
-            cp /bbb-uEnv.txt /uEnv.txt || fail "failed to copy /bbb-uEnv.txt to /uEnv.txt"
-            RESTORE_BOOT_CFG_STAGE1="rm /uEnv.txt"
-            RESTORE_BOOT_CFG_STAGE2="\"rm ${S2_ROOTMOUNT}/uEnv.txt\""
-          fi
-      else
-        debug setupBootCfg_bb "/uEnv.txt exists"
-        local uEnvBckup
-        uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
-        cp /uEnv.txt "$uEnvBckup"
-        RESTORE_BOOT_CFG_STAGE1="cp $uEnvBckup /uEnv.txt"
-        if [ "$ROOT_PART_NO" -eq "$BOOT_PART_NO" ] ; then
-          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_ROOTMOUNT}${uEnvBckup} ${S2_ROOTMOUNT}/uEnv.txt\""
-        else
-          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_BOOTMOUNT}${uEnvBckup} ${S2_BOOTMOUNT}/uEnv.txt\""
-        fi
-      fi
-
-      if [ ! -f "/uEnv.txt" ] ; then
-        fail "setupBootCfg_bb, devType=${devType} could not find /uEnv.txt or /bbb-uEnv.txt"
-      fi
-
-      # fail "setupBootCfg_bb not implemented for devType=${devType}"
+      bbg_setup
       ;;
     *)
       fail "setupBootCfg_bb not implemented for devType=${devType}"
     ;;
   esac
-
-
-
 }
 
 ####################################################
@@ -763,38 +804,17 @@ function setupBootCfg_x86 {
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
-  local KERNEL_CMD_LINE_RAW
-  KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
-  if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
+  # local KERNEL_CMD_LINE_RAW
+  KERNEL_CMD_LINE=$(cat /proc/cmdline)
+  if [ -z "$KERNEL_CMD_LINE" ] ; then
     fail "no kernel command line found"
   fi
 
-  case "$KERNEL_CMD_LINE_RAW" in
-     BOOT_IMAGE=*)
-        # Ubuntu version
-        if [[ $KERNEL_CMD_LINE_RAW =~ ^BOOT_IMAGE=(.*) ]] ; then
-          KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
-        fi
-
-        # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
-        local TMP=($KERNEL_CMD_LINE)
-
-        #KBOOT_DIR=$(dirname ${TMP[0]})
-        #if [ "$KBOOT_DIR" != "/boot" ] ; then
-        #   # boot config does not appear to be on root partition
-        #  if [ "$KBOOT_DIR" == "." ] ; then
-        #    $KBOOT_DIR=
-        #  else
-        #     $KBOOT_DIR="$KBOOT_DIR/"
-        #  fi
-        #else
-        #  KBOOT_DIR="${KBOOT_DIR}/"
-        #fi
-        ;;
-        *)
-          fail "not a known command line format $KERNEL_CMD_LINE_RAW"
-        ;;
-  esac
+  #if [[ $KERNEL_CMD_LINE_RAW =~ ^.*BOOT_IMAGE=[^[:space:]]+[[:space:]]+(.*) ]] ; then
+  #  KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
+  #else
+  #  fail "not a known command line format $KERNEL_CMD_LINE_RAW"
+  #fi
 
   if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
     KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
@@ -930,8 +950,8 @@ fi
 ####################################################################################
 ####################################################################################
 
-# DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
+
+
 
 # script namme for logging
 SCRIPT_NAME="balena-migrate"
@@ -952,16 +972,11 @@ fi
 if [ -n "$PARAM_HOME_DIR" ] ; then
   HOME_DIR=$PARAM_HOME_DIR
 fi
+inform "using home dir:     $HOME_DIR"
 
 if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
 fi
-
-if [ -n "$PARAM_HOME_DIR" ] ; then
-  # cmd line params take precedence over config file
-  HOME_DIR=$PARAM_HOME_DIR
-fi
-inform "using home dir:     $HOME_DIR"
 
 if [[ $HAS_WIFI_CFG =~ ^[0-9]+$ ]] ; then
   NEXT_WIFI_IDX=$((HAS_WIFI_CFG + 1))
@@ -1020,10 +1035,6 @@ BACKUP_FILE=backup.tgz
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
 
-# raspi config.txt to modify
-CONFIG_TXT="/boot/config.txt"
-# raspi cmdline.txt to modify
-CMDLINE_TXT="/boot/cmdline.txt"
 # supported / tested OSSE's so far
 SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04 raspbian-9 debian-9"
 # supported / tested platforms so far
@@ -1160,6 +1171,8 @@ if ! listContains "$SUPPORTED_ARCHS" "$ARCH" ; then
   fail "not a supported architecture: $ARCH"
 fi
 
+# TODO: this does not make a lot of sense. Either do it properly by scanning the image 
+#       or just accept the image as is
 case $ARCH in
   armv*)
     checkArmDevs
@@ -1167,16 +1180,16 @@ case $ARCH in
   x86_64)
     inform "ARCH=$ARCH"
     devType="x86_64"
-    if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
-        warn "expected genericx86-64 image, got $IMAGE_NAME"
-    fi
+#    if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
+#        warn "expected genericx86-64 image, got $IMAGE_NAME"
+#    fi
     ;;
   i686)
     devType="i686"
     inform "ARCH=$ARCH"
-    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
-        warn "expected intel-core2-32 image, got $IMAGE_NAME"
-    fi
+#    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
+#        warn "expected intel-core2-32 image, got $IMAGE_NAME"
+#    fi
     ;;
   *)
     fail "unknown / unsupported architecture: $ARCH"
@@ -1256,7 +1269,7 @@ do
   fi
 done < <(parted -s "${BOOT_DEV}" print)
 
-inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
+inform "BOOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
 ###########################
 ## create boot configuration
@@ -1274,6 +1287,9 @@ case "$devType" in
     x86_64|i686)
       inform "performing boot setup for other: $devType"
       setupBootCfg_x86
+    ;;
+    *) 
+      fail "Not a supported device type: $devType"
     ;;
 esac
 
