@@ -197,7 +197,14 @@ function getCmdArgs {
             inform "set MIG_RECONN_TIME=$MIG_RECONN_TIME"
             shift
             ;;
-
+          --balena-token)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_BALENA_TOKEN="$2"
+            inform "set MIG_BALENA_TOKEN=$MIG_BALENA_TOKEN"
+            shift
+            ;;
           *)
             inform "unrecognized argument $1"
             printHelp
@@ -450,6 +457,11 @@ if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
         fail "no migrate config given, please specify MIG_CFG_DIR / --cfg-dir or MIG_CFG_ARCHIVE / --cfg-archive"
     fi
 fi
+
+if [ -n "$MIG_BALENA_TOKEN" ] ; then 
+  balena login -t "$MIG_BALENA_TOKEN" || fail "failed to log in to balena"
+fi
+
 
 while true ; do
   debug "main" "attempting to get a unit file"
