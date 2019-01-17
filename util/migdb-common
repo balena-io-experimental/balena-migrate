@@ -188,7 +188,7 @@ function getRandFile {
   pick=$(random 0 ${upper})
   debug getRandFile "pick: ${pick} ${files[$pick]}"
   selFile="${dir}/${files[$pick]}"
-  if mv -f "$selFile" "$file" ; then
+  if mv -f "$selFile" "$file" 2>/dev/null ; then
       return 0
   else
       return 1
