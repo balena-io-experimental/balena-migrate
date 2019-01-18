@@ -318,12 +318,23 @@ function sendTarCfg {
 
   cmd="$cmd \"$remoteCmd\" < \"${cfgFile}\""
 
+  local start end dur
+  
+  start=$(date +%s)
+
   truncate -s 0 "$OUTPUT_LOG"
   debug sendTarCfg "attempting /bin/bash -c $cmd"
   if /bin/bash -c "$cmd" > "$OUTPUT_LOG" 2>&1 ; then
+    end=$(date +%s)
+    dur=$((end - start))
+    inform "sucessfully transfered migratecfg in ${dur} seconds" 
     return 0
   else
-    return $?
+    local retCode=$?
+    end=$(date +%s)
+    dur=$((end - start))
+    warn "unsuccessful transfer of migratecfg ended after ${dur} seconds" 
+    return $retCode
   fi
 }
 
@@ -362,9 +373,19 @@ function sendCfgDir {
 
   truncate -s 0 "$OUTPUT_LOG"
   debug sendCfgDir "attempting /bin/bash -c $cmd"
+  local start end dur
+  start=$(date +%s)
+
   if /bin/bash -c "$cmd" > "$OUTPUT_LOG" 2>&1  ; then
+    end=$(date +%s)
+    dur=$((end - start))
+    inform "sucessfully transfered migratecfg in ${dur} seconds" 
     return 0
   else
-    return $?
+    local retCode=$?
+    end=$(date +%s)
+    dur=$((end - start))
+    warn "unsuccessful transfer of migratecfg ended after ${dur} seconds" 
+    return $retCode
   fi
 }

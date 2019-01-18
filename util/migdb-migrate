@@ -229,7 +229,28 @@ function process {
   STATUS=INIT
  
   # shellcheck disable=SC1090
-  source "$UNIT_FILE"
+  source "$UNIT_FILE" || fail "unable to read unit file $UNIT_FILE"
+
+  local now dueIn
+  now=$(date +%s)
+
+  if [ -z "$DUE_TS" ] ; then 
+    if [ -z "$MIG_MIN_AGE" ] ; then 
+      DUE_TS=$now
+    else
+      DUE_TS=$((CREATE_TS+MIG_MIN_AGE))
+    fi
+  fi 
+  
+  dueIn=$((DUE_TS-now)) 
+
+  if [ $dueIn -gt  0 ] ; then    
+    debug process "unit id ${UNIT_ID}, not processing device now, it is due in ${dueIn} seconds"
+    setVar "DUE_TS" "$DUE_TS" "$UNIT_FILE"
+    moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"
+    sleep 5
+    return 0
+  fi
 
   if [ -n "$OUTPUT_LOG" ] && [ -f "$OUTPUT_LOG" ] ; then
     rm "$OUTPUT_LOG"
@@ -258,26 +279,6 @@ function process {
         return 0
   fi
 
-  local now dueIn
-  now=$(date +%s)
-
-  if [ -z "$DUE_TS" ] ; then 
-    if [ -z "$MIG_MIN_AGE" ] ; then 
-      DUE_TS=$now
-    else
-      DUE_TS=$((CREATE_TS+MIG_MIN_AGE))
-    fi
-  fi 
-  
-  dueIn=$((DUE_TS-now)) 
-
-  if [ $dueIn -gt  0 ] ; then    
-    inform "unit id ${UNIT_ID}, not processing device now, it is due in ${dueIn} seconds"
-    setVar "DUE_TS" "$DUE_TS" "$UNIT_FILE"
-    moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"
-    sleep 5
-    return 0
-  fi
 
   inform "unit id ${UNIT_ID}, port=${MIG_SSH_PORT}, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
   local connRetryCount
@@ -458,12 +459,15 @@ if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
     fi
 fi
 
-if [ -n "$MIG_BALENA_TOKEN" ] ; then 
-  if ! balena apps > /dev/null 2>&1 ; then 
-    balena login -t "$MIG_BALENA_TOKEN" || fail "failed to log in to balena"
+
+if ! balena apps > /dev/null 2>&1 ; then 
+  if [ -n "$MIG_BALENA_TOKEN" ] ; then 
+    inform "balena logging with token"
+    balena login -t "$MIG_BALENA_TOKEN" >/dev/null || fail "failed to log in to balena"
+  else
+    fail "balena cli does not appear to be logged in\n please login usin balena login or supply an API token in MIG_BALENA_TOKEN or using the --balena-token option"
   fi
 fi
-
 
 while true ; do
   debug "main" "attempting to get a unit file"

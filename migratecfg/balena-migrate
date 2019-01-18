@@ -763,38 +763,17 @@ function setupBootCfg_x86 {
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
-  local KERNEL_CMD_LINE_RAW
-  KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
-  if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
+  KERNEL_CMD_LINE=$(cat /proc/cmdline)
+
+  if [ -z "$KERNEL_CMD_LINE" ] ; then
     fail "no kernel command line found"
   fi
 
-  case "$KERNEL_CMD_LINE_RAW" in
-     BOOT_IMAGE=*)
-        # Ubuntu version
-        if [[ $KERNEL_CMD_LINE_RAW =~ ^BOOT_IMAGE=(.*) ]] ; then
-          KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
-        fi
-
-        # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
-        local TMP=($KERNEL_CMD_LINE)
-
-        #KBOOT_DIR=$(dirname ${TMP[0]})
-        #if [ "$KBOOT_DIR" != "/boot" ] ; then
-        #   # boot config does not appear to be on root partition
-        #  if [ "$KBOOT_DIR" == "." ] ; then
-        #    $KBOOT_DIR=
-        #  else
-        #     $KBOOT_DIR="$KBOOT_DIR/"
-        #  fi
-        #else
-        #  KBOOT_DIR="${KBOOT_DIR}/"
-        #fi
-        ;;
-        *)
-          fail "not a known command line format $KERNEL_CMD_LINE_RAW"
-        ;;
-  esac
+  if [[ "$KERNEL_CMD_LINE" =~ ^BOOT_IMAGE=(.*)$ ]] ; then
+    KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
+  else 
+    fail "unexpected command line: $KERNEL_CMD_LINE"
+  fi
 
   if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
     KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
