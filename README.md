@@ -156,6 +156,20 @@ The balena application to register the device to. The **migdb-migrate** script w
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
+#### MIG_BALENA_TOKEN
+
+Used by: **migdb-migrate**
+
+Command Line Option: ```--balena-token <api-token>```
+
+At startup the ```migdb-migrate``` command will check if a user is logged in to the balena cli and fail if that is not the case. 
+
+If ```MIG_BALENA_TOKEN``` is set the script will attempt to log in a user using ```balena login -t <api-token>``` and only fail if login does not succeed. 
+
+Example:
+
+```MIG_BALENA_VER="secretapitokenvalue"```
+
 #### MIG_BALENA_VER
 
 Used by: **migdb-add-unit**, **migdb-migrate**
