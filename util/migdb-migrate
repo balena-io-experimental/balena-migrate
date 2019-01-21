@@ -322,7 +322,8 @@ function process {
   echo "---- registering device"
   # shellcheck disable=SC2181
   if ! tmpStr=$(balena device register "$MIG_APP") ; then
-    if grep "You have to log in to continue" "${UNIT_OUTPUT_LOG}" ; then 
+    echo "$tmpStr" 
+    if grep "You have to log in to continue" "${UNIT_OUTPUT_LOG}" ; then      
       unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
     else
       unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
@@ -435,11 +436,14 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   source "$MIG_CFG"
 fi
 
+if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
+  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+else
+  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
+fi 
 
-MIG_LOG_TO=${MIG_LOG_TO="${PWD}/${SCRIPT_NAME}-${$}.log"}
-
-if [ ! -f "$MIG_LOG_TO" ] ; then
-   touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
+if [ ! -f "$MIG_LOG_FILE" ] ; then
+   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
 fi
 
 checkInit

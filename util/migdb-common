@@ -36,7 +36,7 @@ function listContains {
 ##########################################
 
 function inform {  
-  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_TO"
+  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
 }
 
 
@@ -45,7 +45,7 @@ function inform {
 ##########################################
 
 function warn {
-  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_TO"
+  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
 }
 
 ##########################################
@@ -53,7 +53,7 @@ function warn {
 ##########################################
 
 function error {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_TO"
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
 }
 
 ##########################################
@@ -61,7 +61,7 @@ function error {
 ##########################################
 
 function fail {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_TO" 
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE" 
   exit -1
 }
 
@@ -74,7 +74,7 @@ function debug {
   local msg=$2
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
-    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg" >> "$MIG_LOG_TO"
+    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg" >> "$MIG_LOG_FILE"
   fi
 }
 

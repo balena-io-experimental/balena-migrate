@@ -195,10 +195,14 @@ if [ -z "$MIG_MAX_STATUS_AGE" ] ; then
   MIG_MAX_STATUS_AGE=900
 fi
 
-MIG_LOG_TO=${MIG_LOG_TO="${PWD}/${SCRIPT_NAME}-${$}.log"}
+if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
+  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+else
+  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
+fi 
 
-if [ ! -f "$MIG_LOG_TO" ] ; then
-   touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
+if [ ! -f "$MIG_LOG_FILE" ] ; then
+   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
 fi
 
 inform "started"
