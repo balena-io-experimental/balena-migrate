@@ -8,12 +8,11 @@ MIG_RECONN_TIME=${MIG_RECONN_TIME=600}
 TGT_DIR="migrate"
 COLOR=ON
 
-DEBUG_FUNCTS="process"
+DEBUG_FUNCTS="process logRedirect"
 LOG_DEBUG=FALSE
-SCRIPT_NAME="migdb-migrate"
-SLEEP_DURATION=5
-
+SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
+SLEEP_DURATION=5
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
   #shellcheck source=./migdb-common
@@ -227,6 +226,7 @@ function process {
   DUE_TS=
   UNIT_ID=
   STATUS=INIT
+  UNIT_OUTPUT_LOG=
  
   # shellcheck disable=SC1090
   source "$UNIT_FILE" || fail "unable to read unit file $UNIT_FILE"
@@ -252,16 +252,16 @@ function process {
     return 0
   fi
 
-  if [ -n "$OUTPUT_LOG" ] && [ -f "$OUTPUT_LOG" ] ; then
-    rm "$OUTPUT_LOG"
+  if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
+    UNIT_OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "log-${UNIT_ID}-XXX")
+    setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
   fi
+
+  logRedirect "$UNIT_OUTPUT_LOG" || error "failed to redirect output to $UNIT_OUTPUT_LOG"
 
   if [ -n "$MIG_DEF_SSH_OPTS" ] ; then
     MIG_SSH_OPTS="${MIG_SSH_OPTS} ${MIG_DEF_SSH_OPTS}"
   fi
-
-  # shellcheck disable=SC2153
-  OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "s1-${UNIT_ID}-XXX")
 
   if [ -n "$MIG_SSH_PASSWD" ] ; then
     PASSWD_PRESENT="present"
@@ -275,10 +275,9 @@ function process {
   fi
 
   if [ -z "$MIG_APP" ] ; then
-        unitFailed "$UNIT_ID" "$UNIT_FILE" "no application given, please specify MIG_APP / --app"
-        return 0
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "no application given, please specify MIG_APP / --app"
+      return 0
   fi
-
 
   inform "unit id ${UNIT_ID}, port=${MIG_SSH_PORT}, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
   local connRetryCount
@@ -317,12 +316,13 @@ function process {
   fi
 
 
-  inform "registering device with MIG_APP=$MIG_APP"
+  inform "unit id ${UNIT_ID}, registering device with MIG_APP=$MIG_APP"
   local tmpStr
 
+  echo "---- registering device"
   # shellcheck disable=SC2181
-  if ! tmpStr=$(balena device register "$MIG_APP" 2>"${OUTPUT_LOG}") ; then
-    if grep "You have to log in to continue" "${OUTPUT_LOG}" ; then 
+  if ! tmpStr=$(balena device register "$MIG_APP") ; then
+    if grep "You have to log in to continue" "${UNIT_OUTPUT_LOG}" ; then 
       unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
     else
       unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
@@ -339,23 +339,25 @@ function process {
     return 0
   fi
 
-  inform "using application UUID=$UUID"
+  setVar "DEVICE_ID" "$UUID" "$UNIT_FILE"      
+  inform "unit id ${UNIT_ID}, using device-UUID=$UUID"
 
   local cfgFile
   cfgFile=$(mktemp -p "${TMP_DIR}" "s1-config-XXX")
-  inform "generating device config file in $cfgFile"
-  if ! balena config generate --device "$UUID" --version "$MIG_BALENA_VER" --output "$cfgFile" --network ethernet --appUpdatePollInterval 10 > "$OUTPUT_LOG" 2>&1 ; then
+  inform "unit id ${UNIT_ID}, generating device config file in $cfgFile"
+  echo "---- creating device config"
+  if ! balena config generate --device "$UUID" --version "$MIG_BALENA_VER" --output "$cfgFile" --network ethernet --appUpdatePollInterval 10 ; then
     unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to create config using <balena config generate --device $UUID --version $MIG_BALENA_VER --output $cfgFile --network ethernet --appUpdatePollInterval 10>"
     return 0
   fi
 
-  if ! grep "\"uuid\":\"$UUID\"" "$cfgFile" > "$OUTPUT_LOG" 2>&1 ; then
+  if ! grep "\"uuid\":\"$UUID\"" "$cfgFile" >/dev/null ; then
     unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find UUID=$UUID in $cfgFile"
     return 0
     fail ""
   fi
 
-  inform "device config file appears valid, copying to $TGT_DIR/balena-migrate-config.json on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+  inform "unit id ${UNIT_ID}, device config file appears valid, copying to $TGT_DIR/balena-migrate-config.json on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
 
   local sshCmd
   sshCmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "$MIG_SSH_PASSWD")
@@ -376,15 +378,17 @@ function process {
   remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 2 --balena-cfg balena-migrate-config.json"
   cmd="$sshCmd \"$remoteCmd\""
 
-  debug process "attempting </bin/bash -c ${cmd}>"
-  truncate -s 0 "$OUTPUT_LOG"
-  if /bin/bash -c "$cmd" 2>&1 | tee "$OUTPUT_LOG" ; then
+  debug process "unit id ${UNIT_ID}, attempting </bin/bash -c ${cmd}>"
+
+  echo "---- calling migrate"
+  if /bin/bash -c "$cmd" ; then
     local successMsg
-    successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," "$OUTPUT_LOG")
-    debug process "successMsg: $successMsg"
+    echo "---- scanning for success msg"
+    successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," "$UNIT_OUTPUT_LOG")
+    debug process "unit id ${UNIT_ID}, successMsg: $successMsg"
     if  [ -n "$successMsg" ] ; then
       if [[ "$successMsg" =~ .*please\ reboot\ system.* ]] ; then
-        if ! "$sshCmd \"sudo reboot\"" >> "$OUTPUT_LOG" 2>&1 ; then
+        if ! "$sshCmd \"sudo reboot\"" ; then
           unitFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
           return 0
         fi
@@ -393,11 +397,7 @@ function process {
       now=$(date +%s)
       setVar "STATUS_TS" "$now" "$UNIT_FILE"
       setVar "DUE_TS" "$((now + MIG_DURATION))" "$UNIT_FILE"
-      setVar "DEVICE_ID" "$UUID" "$UNIT_FILE"
-      setVar "MIGRATE_S1_LOG" "$OUTPUT_LOG" "$UNIT_FILE"
       setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-
-      OUTPUT_LOG=
 
       moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     else
@@ -427,9 +427,7 @@ else
   color OFF
 fi
 
-if [ -z "$MIG_DURATION" ] ; then
-  MIG_DURATION=180
-fi
+MIG_DURATION=${MIG_DURATION=180} 
 
 if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"
@@ -437,19 +435,16 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   source "$MIG_CFG"
 fi
 
-if [ -n "$MIG_LOG_TO" ] ; then
-  if [ ! -f "$MIG_LOG_TO" ] ; then
-    touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
-  fi
 
-  # Open STDOUT as $LOG_FILE file for read and write.
-  exec 1>>"$MIG_LOG_TO" 2>&1
-  # Redirect STDERR to STDOUT
+MIG_LOG_TO=${MIG_LOG_TO="${PWD}/${SCRIPT_NAME}-${$}.log"}
+
+if [ ! -f "$MIG_LOG_TO" ] ; then
+   touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
 fi
 
-inform "started"
-
 checkInit
+
+inform "started"
 
 debug main "MIG_DB_DIR=$MIG_DB_DIR"
 
@@ -459,11 +454,10 @@ if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
     fi
 fi
 
-
-if ! balena apps > /dev/null 2>&1 ; then 
+if ! balena apps 1>/dev/null 2>&1 ; then 
   if [ -n "$MIG_BALENA_TOKEN" ] ; then 
     inform "balena logging with token"
-    balena login -t "$MIG_BALENA_TOKEN" >/dev/null || fail "failed to log in to balena"
+    balena login -t "$MIG_BALENA_TOKEN" 1>/dev/null || fail "failed to log in to balena"
   else
     fail "balena cli does not appear to be logged in\n please login usin balena login or supply an API token in MIG_BALENA_TOKEN or using the --balena-token option"
   fi
@@ -471,7 +465,7 @@ fi
 
 while true ; do
   debug "main" "attempting to get a unit file"
-  UNIT_FILE=$(mktemp -p "$TMP_DIR" "s1-proc-XXX")
+  UNIT_FILE=$(mktemp -p "$TMP_DIR" "s1-process-XXX")
   # debug main "UNIT_FILE=$UNIT_FILE"
   if getRandFile "$UNIT_DIR" "$UNIT_FILE" ; then
     debug main "getOrder success, unit file: $UNIT_FILE"

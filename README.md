@@ -150,7 +150,7 @@ The migdb scripts can be configured using using command line parameters or envir
 
 Used by: **migdb-add-unit**, **migdb-migrate**  
 
-Command Line Option: ```--app <application>``` 
+Command Line Option: ```--app <application>```
 
 The balena application to register the device to. The **migdb-migrate** script will attempt to pre register a device with balena and retrieve a uuid and a config file (config.json) for the device. This way  the device can be tracked. The device UUID will be saved in the device unit file.
 
@@ -162,9 +162,9 @@ Used by: **migdb-migrate**
 
 Command Line Option: ```--balena-token <api-token>```
 
-At startup the ```migdb-migrate``` command will check if a user is logged in to the balena cli and fail if that is not the case. 
+At startup the ```migdb-migrate``` command will check if a user is logged in to the balena cli and fail if that is not the case.
 
-If ```MIG_BALENA_TOKEN``` is set the script will attempt to log in a user using ```balena login -t <api-token>``` and only fail if login does not succeed. 
+If ```MIG_BALENA_TOKEN``` is set, the script will attempt to log in a user using ```balena login -t <api-token>``` and only fail if login does not succeed.
 
 Example:
 
@@ -244,11 +244,11 @@ Wait time in seconds before looking for migrated devices in balena, defaults to 
 
 #### MIG_LOG_TO
 
-Used by: **migdb-migrate**, **migdb-check-done**
+Used by: **migdb-add-unit**, **migdb-check-done**, **migdb-migrate**
 
 Command Line Option: ```--log-to <log-file>```
 
-The path to a file to log output to.
+The path to a directory to log output to.
 
 #### MIG_MAX_STATUS_AGE
 

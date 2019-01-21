@@ -1,5 +1,6 @@
 #!/bin/bash
 
+SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 # shellcheck source=migdb-common
 source "${SCRIPT_PATH}/migdb-common"
@@ -10,7 +11,6 @@ MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 
 DEBUG_FUNCTS="main checkInit moveFile"
 LOG_DEBUG= # ""
-SCRIPT_NAME="migdb-add-unit"
 
 function printHelp {
   cat << EOI
@@ -166,6 +166,16 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"
   # shellcheck disable=SC1090
   source "$MIG_CFG"
+fi
+
+if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
+  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+else
+  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
+fi 
+
+if [ ! -f "$MIG_LOG_FILE" ] ; then
+   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
 fi
 
 checkInit

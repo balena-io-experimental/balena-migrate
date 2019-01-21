@@ -5,8 +5,9 @@ MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 COLOR=ON
 DEBUG_FUNCTS="process"
 LOG_DEBUG=FALSE
-SCRIPT_NAME="migdb-check-done"
 SLEEP_DURATION=5
+
+SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 
 
@@ -96,6 +97,8 @@ function getCmdArgs {
 function process {
   debug process "with $UNIT_FILE"
 
+  UNIT_OUTPUT_LOG=
+
   # shellcheck disable=SC1090
   source "$UNIT_FILE"
 
@@ -122,16 +125,17 @@ function process {
   fi
 
 
-
-  if [ -n "$OUTPUT_LOG" ] && [ -f "$OUTPUT_LOG" ] ; then
-    rm "$OUTPUT_LOG"
+  if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
+    UNIT_OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "log-${UNIT_ID}-XXX")
+    setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
   fi
-
-  # shellcheck disable=SC2153
-  OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "s2-${UNIT_ID}-XXX")
+  
+  logRedirect "$UNIT_OUTPUT_LOG" || error "failed to redirect output to $UNIT_OUTPUT_LOG"
 
   DEVICE_ONLINE=
-  if BALENA_RES=$(balena device "$DEVICE_ID" 2>&1 | tee "$OUTPUT_LOG") ; then
+  echo "---- balena device query"
+  if BALENA_RES=$(balena device "$DEVICE_ID") ; then    
+    echo "$BALENA_RES"
     IFS_BAK=$IFS
     IFS=$'\n'
     for line in $BALENA_RES
@@ -140,10 +144,8 @@ function process {
         DEVICE_ONLINE=TRUE
         now=$(date +%s)
 
-        setVar "STATUS_TS" "${now}" "${UNIT_FILE}"
-        setVar "MIGRATE_S2_LOG" "${OUTPUT_LOG}" "${UNIT_FILE}"
+        setVar "STATUS_TS" "${now}" "${UNIT_FILE}"        
         setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-        OUTPUT_LOG=
 
         inform "success: device was found online in balena-cloud, unit id: ${UNIT_ID}, uuid: ${DEVICE_ID}"
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
@@ -163,8 +165,6 @@ function process {
       setVar "DUE_TS" "$((now + 60))" "${UNIT_FILE}" || fail "failed to update ${UNIT_FILE}"
       warn "device not found for unitId: ${UNIT_ID}, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
       moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}, ${UNIT_ID}"
-      rm "$OUTPUT_LOG"
-      OUTPUT_LOG=
     fi
   else
     unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"  	
@@ -178,8 +178,6 @@ function process {
 ################################################################################
 
 getCmdArgs "$@"
-
-
 
 if [ -n "$COLOR" ] ; then
   color "$COLOR"
@@ -197,14 +195,10 @@ if [ -z "$MIG_MAX_STATUS_AGE" ] ; then
   MIG_MAX_STATUS_AGE=900
 fi
 
-if [ -n "$MIG_LOG_TO" ] ; then
-  if [ ! -f "$MIG_LOG_TO" ] ; then
-    touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
-  fi
+MIG_LOG_TO=${MIG_LOG_TO="${PWD}/${SCRIPT_NAME}-${$}.log"}
 
-  # Open STDOUT as $LOG_FILE file for read and write.
-  exec 1>>"$MIG_LOG_TO" 2>&1
-  # Redirect STDERR to STDOUT
+if [ ! -f "$MIG_LOG_TO" ] ; then
+   touch "$MIG_LOG_TO" || fail "unable to write ot log file $MIG_LOG_TO"
 fi
 
 inform "started"
