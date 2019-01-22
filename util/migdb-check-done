@@ -212,6 +212,11 @@ checkInit
 debug main "MIG_DB_DIR=$MIG_DB_DIR"
 
 while true ; do
+  if [ -f "${TMP_DIR}/migdb-stop" ] ; then 
+    inform "found stop file, terminating"
+    exit 0
+  fi
+
   debug "main" "attempting to get a processed file"
   UNIT_FILE=$(mktemp -p "$TMP_DIR" "s2-proc-XXX")
   # debug main "UNIT_FILE=$UNIT_FILE"
