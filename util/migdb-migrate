@@ -382,12 +382,13 @@ function process {
   debug process "unit id ${UNIT_ID}, attempting </bin/bash -c ${cmd}>"
 
   echo "---- calling migrate"
-  if /bin/bash -c "$cmd" ; then
-    local successMsg
-    echo "---- scanning for success msg"
-    successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," "$UNIT_OUTPUT_LOG")
-    debug process "unit id ${UNIT_ID}, successMsg: $successMsg"
-    if  [ -n "$successMsg" ] ; then
+  tmpStr=$(/bin/bash -c "$cmd")
+
+  echo "$tmpStr" 
+  local successMsg
+  successMsg=$(echo "$tmpStr" | grep -E "\[[^\]+\]*.INFO:.*migration successful,")
+
+  if [ $? -eq 0 ] && [ -n "$successMsg" ] ; then    
       if [[ "$successMsg" =~ .*please\ reboot\ system.* ]] ; then
         if ! "$sshCmd \"sudo reboot\"" ; then
           unitFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
@@ -401,13 +402,9 @@ function process {
       setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
 
       moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
-    else
-      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
-      return 0
-    fi
   else
-    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed run migrate cmd on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
-    return 0
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find success message in migrate log from ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+      return 0
   fi
 
   sleep 3
