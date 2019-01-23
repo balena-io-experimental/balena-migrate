@@ -428,6 +428,9 @@ function canConnect {
     if read -r -t 1 line ; then 
       if [[ $line =~ ^Connected\ to ]] ; then 
         echo "%q" > "$tStdIn"
+        now=$(date +%s)
+        elapsed=$((now - start))
+        inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
         sleep 1
         kill -9 $tPid >/dev/null 2>&1
         rm -rf "$fifoDir"
@@ -436,10 +439,10 @@ function canConnect {
     else
       now=$(date +%s)
       elapsed=$((now - start))
-
       if [ $elapsed -ge "$timeout" ] ; then 
           kill -9 $tPid >/dev/null 2>&1
           rm -rf "$fifoDir"
+          inform "failed to established connection to ${host}:${port}, timeout after ${elapsed} seconds"
           return 1
       fi 
     fi
