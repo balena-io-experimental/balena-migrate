@@ -1131,11 +1131,12 @@ inform "HOME_DIR=$HOME_DIR"
 
 inform "checking connectivity"
 
-if ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
+
+if [ -n "$BALENA_API_HOST" ] && ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
   fail "unable to connect to ${BALENA_API_HOST}:${BALENA_API_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
 fi
 
-if ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
+if [ -n "$BALENA_VPN_HOST" ] && ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
   fail "unable to connect to ${BALENA_VPN_HOST}:${BALENA_VPN_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
 fi
 

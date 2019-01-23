@@ -381,6 +381,7 @@ function process {
 
   debug process "unit id ${UNIT_ID}, attempting </bin/bash -c ${cmd}>"
 
+  inform "unit id ${UNIT_ID}, invoking migrate script on device"
   echo "---- calling migrate"
   tmpStr=$(/bin/bash -c "$cmd")
 

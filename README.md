@@ -572,6 +572,19 @@ Example:
     filter: '.*\.conf'
 ```
 
+
+#### BALENA\_API\_HOST, BALENA\_API\_PORT
+
+**Default:** 
+``` bash
+BALENA_API_HOST=api.balena-cloud.com
+BALENA_API_PORT=443
+```
+
+If ```BALENA_API_HOST``` is not empty, the script will attempt to connect to the host and port specified and fail if a connection cannot be  established within the time period specified by ```BALENA_CONNECT_TIMEOUT```.
+The parameters can be set to the empty string to disable connection testing or to an alternate URL when using a different API host.  
+
+
 #### BALENA\_CONFIG
 
 **Default:** *BALENA\_CONFIG=
@@ -586,6 +599,25 @@ Example:
 ``` bash
 balena-migrate --balena-cfg=project-config.json
 ```
+
+
+#### BALENA\_CONNECT\_TIMEOUT
+
+**Default:** ```BALENA_CONNECT_TIMEOUT=20```
+
+Provides the timeout for the connection attempt triggered by ```BALENA_API_HOST``` or ```BALENA_VPN_HOST```. The timeout in seconds to wait for a connection to the hosts.
+
+
+#### BALENA\_VPN\_HOST, BALENA\_VPN\_PORT
+
+**Default:**
+``` bash
+BALENA_VPN_HOST=vpn.balena-cloud.com
+BALENA_VPN_PORT=443
+```
+
+If ```BALENA_VPN_HOST``` is not empty, the script will attempt to connect to the host and port specified and fail if a connection cannot be established within the time period specified by ```BALENA_CONNECT_TIMEOUT```.
+The parameters can be set to the empty string to disable connection testing or to an alternate URL when using a different VPN host.  
 
 #### BALENA\_WIFI
 
