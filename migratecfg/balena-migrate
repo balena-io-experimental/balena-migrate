@@ -99,8 +99,16 @@ NO_FLASH= #"TRUE"
 NO_SETUP= #{ }"TRUE"
 
 ################################################################################
-# create initramfs in contrast to using an initramfs supplied
-MK_INITRAMFS="TRUE"
+# Test connectivity to API and VPN hosts"
+BALENA_API_HOST="api.balena-cloud.com"
+BALENA_API_PORT=443
+BALENA_VPN_HOST="vpn.balena-cloud.com"
+BALENA_VPN_PORT=443
+BALENA_CONNECT_TIMEOUT=20
+
+################################################################################
+# Fail if no network manager file is created
+REQUIRE_NMGR_FILE=TRUE
 
 ################################################################################
 # DEBUG verbose build process
@@ -385,6 +393,59 @@ function migrate_this_wifi {
   debug "migrate_this_wifi" " wifi not found, return 1"
   return 1
 }
+
+################################################################################
+# Try to connect to host / port
+################################################################################
+
+
+function canConnect {
+  local host port timeout fifoDir tStdOut tStdIn tPid start
+  host=$1
+  port=$2
+  timeout=$3
+  
+  if [ -z "$timeout" ] ; then 
+    timeout=20
+  fi   
+
+  fifoDir=$(mktemp -d dir-XXXX) || fail "unable to create fifo dir"
+  tStdOut="${fifoDir}/stdOut"
+  mkfifo "$tStdOut" || fail "failed to create fifo"
+  exec 3<> "$tStdOut"
+
+  tStdIn="${fifoDir}/stdIn"
+  mkfifo "$tStdIn" || fail "failed to create fifo"
+  exec 4<> "$tStdIn"
+
+  telnet -e % "$host" "$port" < "$tStdIn" > "$tStdOut" & 
+  tPid=$!
+
+  start=$(date +%s)
+
+  while true ;  
+  do 
+    if read -r -t 1 line ; then 
+      if [[ $line =~ ^Connected\ to ]] ; then 
+        echo "%q" > "$tStdIn"
+        sleep 1
+        kill -9 $tPid >/dev/null 2>&1
+        rm -rf "$fifoDir"
+        return 0
+      fi
+    else
+      now=$(date +%s)
+      elapsed=$((now - start))
+
+      if [ $elapsed -ge "$timeout" ] ; then 
+          kill -9 $tPid >/dev/null 2>&1
+          rm -rf "$fifoDir"
+          return 1
+      fi 
+    fi
+  done <"$tStdOut"
+}
+
 
 ####################################################################################
 # extract wifi network config from wpa_supplicant.conf
@@ -913,7 +974,7 @@ fi
 DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
 
 # script namme for logging
-SCRIPT_NAME="balena-migrate"
+SCRIPT_NAME=$(basename "${0}")
 
 CONFIG_FILE=balena-migrate.conf
 HOME_DIR=./
@@ -1045,7 +1106,7 @@ inform "establishing required programs"
 #       possible candidates: parted (on debian, beaglebone) blkid
 
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot sleep stat sync touch udevadm"
-REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl telnet"
 # shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
@@ -1067,6 +1128,16 @@ if [ ! -d "$HOME_DIR" ] ; then
 fi
 
 inform "HOME_DIR=$HOME_DIR"
+
+inform "checking connectivity"
+
+if ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
+  fail "unable to connect to ${BALENA_API_HOST}:${BALENA_API_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+fi
+
+if ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
+  fail "unable to connect to ${BALENA_VPN_HOST}:${BALENA_VPN_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+fi
 
 ##########################################
 # prepare initramfs-tools dir in $HOME_DIR
@@ -1173,10 +1244,6 @@ inform "OS_VERSION=$OS_VERSION"
 
 if ! listContains "${SUPPORTED_OSSES}" "${OS_VERSION}" ; then
     fail "not a supported OS ${OS_VERSION}"
-fi
-
-if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
-  fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
 
 getBootInfo
@@ -1298,10 +1365,17 @@ fi
 
 if [ -n "$COPY_NMGR_FILES" ] ; then
   for file in $COPY_NMGR_FILES ; do 
-    copy_nmgr_file $file
+    copy_nmgr_file "$file"
   done
 fi
 
+if [ -z "$NETWORK_CONFIGS" ] ; then
+  if [ "$REQUIRE_NMGR_FILE" == "TRUE" ] ; then 
+    fail "no network manager configurations found"
+  else 
+    warn "no network manager configurations found, device might be able to come online"
+  fi  
+fi 
 
 ###########################
 ## write /etc/migrate.conf
@@ -1366,26 +1440,24 @@ EOI
 ## create initramfs
 ###########################
 
-if [ "${MK_INITRAMFS}" == TRUE ] ; then
-    # set gzip compression
-    sed -i 's/^\(COMPRESS\s*=\s*\).*$/\1gzip/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+# set gzip compression
+sed -i 's/^\(COMPRESS\s*=\s*\).*$/\1gzip/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
-    OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
-    if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
-      OPTS="-v $OPTS"
-    fi
-
-    if [ "$MK_INITRAM_RETAIN" == "TRUE" ] ; then
-      OPTS="-k $OPTS"
-    fi
-
-    inform "creating initramfs: mkinitramfs $OPTS"
-    # shellcheck disable=SC2086
-    mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
-
-    inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
-    cp "${HOME_DIR}/${INITRAMFS_NAME}" "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
+if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
+  OPTS="-v $OPTS"
 fi
+
+if [ "$MK_INITRAM_RETAIN" == "TRUE" ] ; then
+  OPTS="-k $OPTS"
+fi
+
+inform "creating initramfs: mkinitramfs $OPTS"
+# shellcheck disable=SC2086
+mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
+
+inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+cp "${HOME_DIR}/${INITRAMFS_NAME}" "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
 
 if [ -n "$BALENA_TMP_FILE" ] && [ -f "$BALENA_TMP_FILE" ] ; then
   rm "$BALENA_TMP_FILE"
