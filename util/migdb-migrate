@@ -315,7 +315,6 @@ function process {
     fi
   fi
 
-
   inform "unit id ${UNIT_ID}, registering device with MIG_APP=$MIG_APP"
   local tmpStr
 

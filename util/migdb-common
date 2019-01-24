@@ -296,7 +296,7 @@ function sendFile {
 
 function logRedirect {
   local logFile=$1
-  debug logRedirect "$REDIRECTED=$REDIRECTED logFile=$logFile"
+  debug logRedirect "REDIRECTED=$REDIRECTED logFile=$logFile"
   if [ "$REDIRECTED" != "TRUE" ] ; then 
     if [ -n "$logFile" ] ; then  
       debug logRedirect "redirecting"

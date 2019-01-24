@@ -124,7 +124,7 @@ MIN_ROOT_AVAIL=10240
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG= #"TRUE"
+LOG_DEBUG="FALSE"
 
 ##########################################
 # log functions
@@ -404,7 +404,7 @@ function migrate_this_wifi {
 
 
 function canConnect {
-  local host port timeout tmpStr
+  local host port timeout start now elapsed
   host=$1
   port=$2
   timeout=$3
@@ -413,16 +413,28 @@ function canConnect {
     timeout=20
   fi   
 
-  tmpStr=$(nc -zvw${timeout} $host $port)
-  echo "$tmpstr"
+  start=$(date +%s)
+  # Connection to api.balena-cloud.com 443 port [tcp/https] succeeded!
 
-  if [[ $tmpStr =~ succeeded!$ ]] ; then     
-    inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
-    return 0
-  else
-    inform "failed to established connection to ${host}:${port}, timeout after ${elapsed} seconds"
-    return 1    
-  fi
+  debug canConnect "start nc -zvw${timeout} $host $port"
+
+  while read -r line ; 
+  do
+    debug canConnect "ouput: $line" 
+    if [[ $line =~ .*succeeded\!.*$ ]] ; then   
+	  now=$(date +%s)
+  	elapsed=$((now - start))
+	  inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
+   	return 0
+    fi 
+   done < <(nc -zvw${timeout} $host $port 2>&1)
+  
+  echo "done"
+
+  now=$(date +%s)
+  elapsed=$((now - start))
+  inform "failed to establish connection to ${host}:${port}, timeout after ${elapsed} seconds"
+  return 1
 }
 
 
@@ -1365,7 +1377,7 @@ if [ -z "$NETWORK_CONFIGS" ] ; then
   if [ "$REQUIRE_NMGR_FILE" == "TRUE" ] ; then 
     fail "no network manager configurations found"
   else 
-    warn "no network manager configurations found, device might be able to come online"
+    warn "no network manager configurations found, device might not be able to come online"
   fi  
 fi 
 
@@ -1568,8 +1580,10 @@ debug main "using DO_REBOOT: $DO_REBOOT"
 
 if [[ $DO_REBOOT =~ ^[0-9]+$ ]] ; then
   delay=${BASH_REMATCH[0]}
-  inform "migration successful, rebooting system in ${delay} minutes"
-  shutdown -r +${delay}
+  debug main "attempting \"nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &\""  
+  nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &
+  inform "migration successful, rebooting system in ${delay} minutes"  
 else
   inform "migration successful, please reboot system"
 fi
+exit 0
