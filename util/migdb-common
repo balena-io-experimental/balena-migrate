@@ -6,12 +6,14 @@ function color {
     BROWN='\033[0;33m'
     GREEN='\033[0;32m'
     RED='\033[0;31m'
+    BLUE='\033[0;34m'
     NC='\033[0m' # No Color
   else
     YELLOW=
     BROWN=
     GREEN=
     RED=
+    BLUE=
     NC=
   fi
 }
@@ -30,6 +32,16 @@ function listContains {
     done
     return 1
 }
+
+
+##########################################
+# success: log info message
+##########################################
+
+function success {  
+  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+}
+
 
 ##########################################
 # inform: log info message

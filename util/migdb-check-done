@@ -116,7 +116,7 @@ function process {
     return 0
   fi
 
-  inform "uuid=${DEVICE_ID}, status:${STATUS}, age ${age} secs,  status age ${statusAge} secs,  due in $dueIn secs"
+  inform "unit id ${UNIT_ID}, uuid=${DEVICE_ID}, status:${STATUS}, age ${age} secs,  status age ${statusAge} secs,  due in $dueIn secs"
 
   if [ -z "$STATUS" ] && [ "$STATUS" != "MIGRATED" ] ; then
     # shellcheck disable=SC2153
@@ -147,8 +147,9 @@ function process {
         setVar "STATUS_TS" "${now}" "${UNIT_FILE}"        
         setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
 
-        inform "success: device was found online in balena-cloud, unit id: ${UNIT_ID}, uuid: ${DEVICE_ID}"
+        
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
+        success "unit id ${UNIT_ID}, uuid=${DEVICE_ID}, success: device was found online in balena-cloud"
         break;
       fi
     done
@@ -158,16 +159,16 @@ function process {
 
       statusAge=$((now - STATUS_TS))
       if [ $statusAge -gt "$MIG_MAX_STATUS_AGE" ] ; then
-        unitFailed "$UNIT_ID" "$UNIT_FILE" "Device has not shown up in balena-cloud after $statusAge seconds"
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "uuid=${DEVICE_ID}, Device has not shown up in balena-cloud after $statusAge seconds"
         return 0
       fi
 
       setVar "DUE_TS" "$((now + 60))" "${UNIT_FILE}" || fail "failed to update ${UNIT_FILE}"
-      warn "device not found for unitId: ${UNIT_ID}, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
+      warn "unit id ${UNIT_ID}, device not found, DEVICE_ID:${DEVICE_ID}, snoozing  unit for 1 minute"
       moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to restore unit file ${PROCESS_DIR}, ${UNIT_ID}"
     fi
   else
-    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to retrieve device information from balena"  	
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "uuid=${DEVICE_ID}, failed to retrieve device information from balena"  	
   fi
 
   return 0
