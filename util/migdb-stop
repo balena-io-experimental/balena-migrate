@@ -98,7 +98,7 @@ if [ ! -f "$MIG_LOG_FILE" ] ; then
    touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
 fi
 
-if ! pgrep "(migdb-migrate|migdb-check-done)" > /dev/null ; then 
+if ! pgrep "migdb-(migrate|check)" > /dev/null ; then 
     inform "no processes found, terminating"
     exit 0
 fi
@@ -109,9 +109,8 @@ inform "creating stop file in ${TMP_DIR}/migdb-stop"
 touch "${TMP_DIR}/migdb-stop" || fail "could not create stop file ${TMP_DIR}/migdb-stop"
 
 sleep $SLEEP_DURATION
-
 while true ; do 
-  if ! pgrep "(migdb-migrate|migdb-check-done)" > /dev/null ; then 
+  if ! pgrep "migdb-(migrate|check)" > /dev/null ; then 
       inform "no more processes found, terminating"
       rm "${TMP_DIR}/migdb-stop"
       exit 0
