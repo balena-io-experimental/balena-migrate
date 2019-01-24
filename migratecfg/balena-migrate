@@ -119,6 +119,10 @@ MK_INITRAM_VERBOSE= # "TRUE"
 MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
+# Minimum required free diskspace in KB, default 10MB
+MIN_ROOT_AVAIL=10240 
+
+################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
 LOG_DEBUG= #"TRUE"
 
@@ -400,7 +404,7 @@ function migrate_this_wifi {
 
 
 function canConnect {
-  local host port timeout fifoDir tStdOut tStdIn tPid start
+  local host port timeout tmpStr
   host=$1
   port=$2
   timeout=$3
@@ -409,44 +413,16 @@ function canConnect {
     timeout=20
   fi   
 
-  fifoDir=$(mktemp -d dir-XXXX) || fail "unable to create fifo dir"
-  tStdOut="${fifoDir}/stdOut"
-  mkfifo "$tStdOut" || fail "failed to create fifo"
-  exec 3<> "$tStdOut"
+  tmpStr=$(nc -zvw${timeout} $host $port)
+  echo "$tmpstr"
 
-  tStdIn="${fifoDir}/stdIn"
-  mkfifo "$tStdIn" || fail "failed to create fifo"
-  exec 4<> "$tStdIn"
-
-  telnet -e % "$host" "$port" < "$tStdIn" > "$tStdOut" & 
-  tPid=$!
-
-  start=$(date +%s)
-
-  while true ;  
-  do 
-    if read -r -t 1 line ; then 
-      if [[ $line =~ ^Connected\ to ]] ; then 
-        echo "%q" > "$tStdIn"
-        now=$(date +%s)
-        elapsed=$((now - start))
-        inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
-        sleep 1
-        kill -9 $tPid >/dev/null 2>&1
-        rm -rf "$fifoDir"
-        return 0
-      fi
-    else
-      now=$(date +%s)
-      elapsed=$((now - start))
-      if [ $elapsed -ge "$timeout" ] ; then 
-          kill -9 $tPid >/dev/null 2>&1
-          rm -rf "$fifoDir"
-          inform "failed to established connection to ${host}:${port}, timeout after ${elapsed} seconds"
-          return 1
-      fi 
-    fi
-  done <"$tStdOut"
+  if [[ $tmpStr =~ succeeded!$ ]] ; then     
+    inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
+    return 0
+  else
+    inform "failed to established connection to ${host}:${port}, timeout after ${elapsed} seconds"
+    return 1    
+  fi
 }
 
 
@@ -1108,12 +1084,24 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot sleep stat sync touch udevadm"
-REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl telnet"
+INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm"
+REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+
+if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then 
+  REQUIRED_PGMS="$REQUIRED_PGMS nc"
+fi 
+
 # shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
-inform "checked required programs"
+inform "found all required programs"
+
+inform "checking disk space"
+rootAvail=$(df / --output=avail | sed -n 2p)
+if [ $rootAvail -lt $MIN_ROOT_AVAIL ] ; then 
+  fail "not enough disk space available for migration, found ${rootAvail}KB, require  ${MIN_ROOT_AVAIL}KB"
+fi
+inform "found ${rootAvail}KB of space on / "
 
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
@@ -1567,7 +1555,7 @@ if [[ ! $DO_REBOOT =~ ^[0-9]+$ ]] ; then
     case $DO_REBOOT in
       TRUE)
         debug main "DO_REBOOT is TRUE: $DO_REBOOT"
-        DO_REBOOT=5
+        DO_REBOOT=1
         ;;
       *)
         debug main "DO_REBOOT is OTHER: $DO_REBOOT"
@@ -1580,13 +1568,8 @@ debug main "using DO_REBOOT: $DO_REBOOT"
 
 if [[ $DO_REBOOT =~ ^[0-9]+$ ]] ; then
   delay=${BASH_REMATCH[0]}
-  inform "rebooting system in ${delay} seconds"
-  if [ "$delay" -gt 1 ] ; then
-    sleep $((delay -1))
-  fi
-  inform "migration successful, rebooting system in 1 second"
-  sleep 1
-  reboot
+  inform "migration successful, rebooting system in ${delay} minutes"
+  shutdown -r +${delay}
 else
   inform "migration successful, please reboot system"
 fi
