@@ -29,7 +29,7 @@ easiest way is to copy that file to *balena-migrate.conf*. To migrate a Raspberr
 
 #### Preparing the OS Image
 
-Next copy the balenaOS image that you want to install to the migratecfg folder and set the ```IMAGE\_FILE``` variable in the config file to the name of the image.
+Next copy the balenaOS image that you want to install to the migratecfg folder and set the ```IMAGE_FILE``` variable in the config file to the name of the image.
 
 When migrating Raspberry PI devices you can use the unmodified image, that you have downloaded from the dashboard.
 
@@ -48,27 +48,29 @@ rm balena-cloud-appname-paspberrypi3-2.26.0+rev1-dev-v8.0.0.img.zip
 
 ##### Extracting the balenaOS image and grub config from a Flasher Image
 
-The easiest way to extract the balenaOS image and grub config is to use the extract.sh script supplied in the util folder 
+The easiest way to extract the balenaOS image is to use the extract.sh script supplied in the util folder 
 of this repository.
 The extract script can be invoked as follows:
 
 ``` bash
-sudo <path to repo>/util/extract.sh --grub <grub file destination> --img <image destination> <flasher image>
+sudo <path to repo>/util/extract.sh --img <image destination> <flasher image>
 ```
 
 Example:
 
 ``` bash
-sudo extract --grub grub.cfg \
-               --img resin-image-genericx86-64.resinos.img.gz \
+sudo extract  --img resin-image-genericx86-64.resinos.img.gz \
                balena-cloud-appname-intel-nuc-2.26.0+rev1-dev-v8.0.0.img.zip
 ```
 
-The above command will extract the grub config and the gzipped image from a zip archive containing the flasher image.
+The above command will extract the gzipped image from a zip archive containing the flasher image.
 
 The extract script can work with a zip archive or with the raw flasher image.
 
 **Warning:** If working on a zip archive please make sure you have about 3GB of disk space available to unpack the image.
+
+The extract.sh script can also be used to extract grub configuration or boot images from the balena flasher image. Please call ```extract.sh -h``` for a complete list of options.
+
 
 ##### Setting up the Config File
 
@@ -99,7 +101,7 @@ directory of this repository.
 
 Please note that for the migdb scripts to work, the following conditions need to apply:
 
-* migdb-migrate will use the balena-cli to pre-register devices. The balena-cli needs to be installed and logged in on the host running migdb-migrate.
+* migdb-migrate will use the balena-cli to pre-register devices. The balena-cli needs to be installed on the host running migdb-migrate. The balena-cli either needs to be logged in with an appropriate user or a valid api token for login needs to be provided using the ```MIG_BALENA_TOKEN``` option.
 * migdb-migrate needs to be able to establish a ssh connection to the target devices.
 * Using a password to establish the ssh connection is not encouraged. Your password might be stored unencrypted in config or log files. Please use public key authentification instead. 
 * If you do use password authentification,  **migdb-migrate** will attempt to use the **sshpass** utility that needs to be installed prior to using **migdb-migrate** with the --passwd option.
@@ -110,6 +112,7 @@ The following migdb scripts are available in the util directory:
 * **migdb-add-unit** will submit a device for migration.
 * **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.
 * **migdb-check-done** is the worker script that checks migrated devices to see if they come online in the balena backend. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.  
+* **migdb-stop** will gracefully stop all running migdb-migrate or migdb-check-done scripts.
 
 The scripts use a migrate config that you provide and apply it to an number of devices. A directory structure is used to submit devices for migration and track the state of the migration process. The scripts will pre register a device in the balena dashboard for every unit file submitted and then attempt to migrate the unit.
 The balena cli is used to register devices and track the progress. The balena cli has to be installed and logged in on the computer that runs the migdb scripts.
@@ -198,6 +201,8 @@ Command Line Option: ```--cfg-tgz <path to tar archive>```
 
 The path to a compressed tar archive containing the migratecfg folder.
 
+The migdb utilities expect this archive to contain only the contents of the migratecfg folder, not the folder itself.
+
 #### MIG_CFG_DIR
 
 Used by: **migdb-add-unit**, **migdb-migrate**
@@ -215,6 +220,8 @@ Command Line Option: ```--conn-attempts <connect-attempts>```
 How often migdb-migrate will attempt to initiate a ssh connection before migration fails.
 
 The parameter ```MIG_RECONN_TIME``` determines the amount of time between two reconnect attempts.
+
+The time between reconnect attempts will grow exponentially. The first reconnect will take place after the time specified in  ```MIG_RECONN_TIME```. On further reconnects the time will be multiplied by 2 to the power the number of attempts. For example with a reconnect time of 10 seconds reconnects will take place after 10, 20, 40, 80, 160 seconds up to a maximum of 24 hours.
 
 #### MIG_DB_DIR
 
@@ -349,7 +356,7 @@ The balena-migrate script will create a configuration file in */etc/balena-migra
 
 The balena-migrate script creates an initramfs file that contains all scripts, programs and configuration files needed for phase 2.
 
-The stage 1 script will also perform migration tasks such as creating a backup (that will be transferred to resin-data) and migrating network (WIFI) configurations to be installed in balenaOS (resin-boot/system-connections).
+The stage 1 script will also perform migration tasks such as creating a backup and migrating network (WIFI) configurations to be installed in balenaOS (resin-boot/system-connections).
 The backup files files as well as the actual balenaOS image file are likely too big to be contained in the root partition where the initramfs resides and will be copied from the root file system to initramfs in stage 2.
 
 The stage 1 script will reconfigure the bootloader of the system to use the created initramfs and optionally reboot the system. On systems using grub as bootloader the system is configured to have one shot at the modified boot configuration using grub-reboot. On RPI the */boot/config.txt* and */boot/cmdline.txt* files are modified. They are restored to their original values by the stage 2 script.
@@ -384,13 +391,15 @@ So far the scripts are being tested and are working on the following platforms:
 * 32 bit intel devices running Ubuntu 14.04 in grub legacy mode
 
 
-Work is in progress on following platforms: beaglebone green
+Work is in progress on following platforms: 
+
+* beaglebone black/green
 
 ## Migration Stage 1 in Detail
 
 The script *balena-migrate* will check the prerequisites for migration before it attempts to modify the system. It reads its configuration from a file and also supports a number of command line parameters. Parameters set on the command line override options given in the config file.
 
-The script itself can be located anywhere in the file system. It attempts to read its configuration from a file which  defaults to **balena-migrate.conf**. It will look for the file in the current directory and in the ```HOME_DIR``` The location and name of the config file and ```HOME_DIR``` can both be set using command line parameters.
+The script itself can be located anywhere in the file system. It attempts to read its configuration from a file which  defaults to **balena-migrate.conf**. It will look for the file in the current directory and in the directory pointed to by ```HOME_DIR```. The location and name of the config file and ```HOME_DIR``` can both be set using command line parameters.
 
 The directory specified by ```HOME_DIR``` is used to store temporary files and is also expected to contain the initramfs-tools directory provided in this repository. All other paths given in the config file or on the command line
 are expected to be relative to ```HOME_DIR``` which defaults to the current working directory.
@@ -447,6 +456,7 @@ software depends on the architecture and OS and includes the following:
   |sed            |all                       |unspecified|
   |mkinitramfs    |all                       |unspecified|
   |grub-update    |x86\_64, i686             |V2|
+  |nc    |all             |unspecified|
   |Stage 2|||
   |mount          |all                       |unspecified|
   |dd             |all                       |unspecified|
@@ -459,10 +469,9 @@ software depends on the architecture and OS and includes the following:
 
 ### Configuration
 
-The script *balena-migrate* uses a configuration file to read its configuration from. It defaults to 
-```balena-migrate.conf```.
+The script *balena-migrate* uses a configuration file to read its configuration from. It defaults to ```balena-migrate.conf```.
 
-*balena-migrate* will print a simple help message when called with the -h or --help option that states the available command
+*balena-migrate* will print a help message when called with the -h or --help option that states the available command
 line options.
 
 The **config file** can be specified on the commandline using the -c or --config option:
@@ -475,6 +484,8 @@ balena-migrate --config ./migrate.conf
 The config file uses shell syntax, valid settings for this file are as follows.
 
 #### BACKUP\_SCRIPT, BACKUP\_DEFINITION
+
+**Warning:** The ```BACKUP\_DEFINITION``` is unfinished / work in progress. This feature is unlikely to work in the current state of the project and my be subject to changes of definition and implementation in future versions.
 
 **Default:**
 
@@ -561,7 +572,7 @@ Example:
   content:
   # map source dir to be volume directory
   - source: 'path-to-source-dir'
-- volume: 'sample-volume2' 
+- volume: 'sample-volume3'
   content:
   # store all conf files in source directory in target directory 
   - source: 'path-to-source-dir'
@@ -575,7 +586,8 @@ Example:
 
 #### BALENA\_API\_HOST, BALENA\_API\_PORT
 
-**Default:** 
+**Default:**
+
 ``` bash
 BALENA_API_HOST=api.balena-cloud.com
 BALENA_API_PORT=443
@@ -589,8 +601,7 @@ The parameters can be set to the empty string to disable connection testing or t
 
 **Default:** *BALENA\_CONFIG=
 
-If specified, the name of a file in *HOME\_DIR* that will be interpreted as config.json file and copied to the
-resin-boot partition in stage 2.
+If specified, the name of a file in ```HOME_DIR``` that will be interpreted as config.json file and copied to the resin-boot partition in stage 2.
 
 The balena config.json file can be specified as a command line parameter using the *--balena-cfg* option as follows:
 
@@ -600,17 +611,16 @@ Example:
 balena-migrate --balena-cfg=project-config.json
 ```
 
-
 #### BALENA\_CONNECT\_TIMEOUT
 
 **Default:** ```BALENA_CONNECT_TIMEOUT=20```
 
 Provides the timeout for the connection attempt triggered by ```BALENA_API_HOST``` or ```BALENA_VPN_HOST```. The timeout in seconds to wait for a connection to the hosts.
 
-
 #### BALENA\_VPN\_HOST, BALENA\_VPN\_PORT
 
 **Default:**
+
 ``` bash
 BALENA_VPN_HOST=vpn.balena-cloud.com
 BALENA_VPN_PORT=443
@@ -644,25 +654,25 @@ On boot BalenaOS will attempt to create a network connection for every file foun
 
 #### DEBUG
 
-**Default:** *DEBUG=*
+**Default:** ```DEBUG=```
 
 Sets the debug flag in the kernel command line if set to *TRUE*. If this setting is enabled the initramfs log can be
 found in */run/initramfs/initramfs.debug*.
 
 ##### DO\_REBOOT
 
-**Default:** *DO\_REBOOT=*
+**Default:** ```DO_REBOOT=```
 
 When this variable is set to a numeric value the *balena-migrate* script will reboot the computer after finishing successfully.
-It will display a warning and reboot after the number of seconds specified in *DO\_REBOOT*. By default this option is
+It will display a warning and reboot after the number of minutes specified in *DO\_REBOOT*. By default this option is
 disabled and the device has to be rebooted manually after stage 1 has terminated.
 
 The variable can be set on the command line by using the -r or --reboot parameters:
 
 ``` bash
-balena-migrate -r 10
+balena-migrate -r 1
 
-balena-migrate --reboot=10
+balena-migrate --reboot=1
 ```
 
 #### GRUB\_INSTALL
@@ -719,12 +729,11 @@ MIGRATE_ALL_WIFIS=
 MIGRATE_WIFI_CFG=
 ```
 
-These variables configure the *balena-migrate* scripts attempts to
-migrate wifi configurations.
+These variables configure the *balena-migrate* scripts attempts to migrate wifi configurations.
 
-* *If *HAS\_WIFI\_CFG* is set to *TRUE* the balena-migrate script will assume that the balenaOS image already contains one wifi configuration in */resin-boot/system-connections/resin-wifi01* and will attempt not to overwrite it. The migrated configurations will start with *resin-wifi02*.
-* If ```MIGRATE_ALL_WIFIS``` is set to *TRUE* all wifi configurations found in ```/etc/wpa\_supplicant/wpa\_supplicant.conf``` or ```/etc/NetworkManager/system-connections``` will result in a ```resin-wifiXX``` file that will be transferred to ```/resin-boot/system-connections``` in stage 2.
-* If *MIGRATE\_WIFI\_CFG* is set to the name of a file in *HOME\_DIR* the migrated wifi configurations will be filtered by the contents of the file. The file is expected to contain one wifi name (ssid) per line. Only configurations referenced in the file will result in a ```resin-wifiXX``` file in ```/resin-boot/system-connections```.
+* *If ```HAS_WIFI_CFG``` is set to ```TRUE``` the balena-migrate script will assume that the balenaOS image already contains one wifi configuration in ```/resin-boot/system-connections/resin-wifi01``` and will attempt not to overwrite it. The migrated configurations will start with *resin-wifi02*.
+* If ```MIGRATE_ALL_WIFIS``` is set to ```TRUE``` all wifi configurations found in ```/etc/wpa\_supplicant/wpa\_supplicant.conf``` or ```/etc/NetworkManager/system-connections``` will result in a ```resin-wifiXX``` file that will be transferred to ```/resin-boot/system-connections``` in stage 2.
+* If ```MIGRATE_WIFI_CFG``` is set to the name of a file in ```HOME_DIR``` the migrated wifi configurations will be filtered by the contents of the file. The file is expected to contain one wifi name (ssid) per line. Only configurations referenced in the file will result in a ```resin-wifiXX``` file in ```/resin-boot/system-connections```.
 
 #### HOME\_DIR
 
@@ -747,17 +756,7 @@ The script will fail if the file is not specified or does not exist.
 The script expects the image to be in gzipped or zip format. In case of a zip archive the file will
 be unpacked and recompressed using gzip.  
 
-The script expects the file to be tagged with the target platform as follows:
-
-
-  |**Platform**    |**Image tag**|
-  |--------------- |----------------|
-  |  Raspberry PI1|   raspberry-pi1|
-  |Raspberry PI2   |raspberry-pi2|
-  |Raspberry PI3   |raspberrypi3|
-  |x86\_64         |genericx86-64|
-  |i686            |intel-core2-32|
-
+**Warning:** Please make sure to supply a valid image for the device. The scripts do not currently ensure a valid image type for the target device. Specifying an invalid image will lead to devices failing to boot. 
 
 **Example:**
 *IMAGE\_NAME="resin-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz*"
