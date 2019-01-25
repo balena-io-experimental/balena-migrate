@@ -485,7 +485,7 @@ The config file uses shell syntax, valid settings for this file are as follows.
 
 #### BACKUP\_SCRIPT, BACKUP\_DEFINITION
 
-**Warning:** The ```BACKUP\_DEFINITION``` is unfinished / work in progress. This feature is unlikely to work in the current state of the project and my be subject to changes of definition and implementation in future versions.
+**Warning:** Processing of the ```BACKUP_DEFINITION``` variable is unfinished / work in progress. This feature is unlikely to work in the current state of the project and my be subject to changes of definition and implementation in future versions.
 
 **Default:**
 
@@ -496,7 +496,7 @@ BACKUP_DEFINITION=
 
 These variables define how to backup the system.
 
-If ```BACKUP_SCRIPT``` is specified balena-migrate will invoke the script with one parameter, which specifies the name of the backup file to
+:If ```BACKUP_SCRIPT``` is specified balena-migrate will invoke the script with one parameter, which specifies the name of the backup file to
 create. This is currently the file ```backup.tgz``` and the backup script is expected to create a gzipped tar file with the
 given name (eg. by calling ```tar -czf backup.tgz /path-to-backup-directories```).
 
