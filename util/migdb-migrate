@@ -1,0 +1,496 @@
+#!/bin/bash
+
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
+
+MIG_CONN_ATTEMPTS=${MIG_CONN_ATTEMPTS=3} 
+MIG_RECONN_TIME=${MIG_RECONN_TIME=600} 
+
+TGT_DIR="migrate"
+COLOR=ON
+
+DEBUG_FUNCTS="process logRedirect"
+LOG_DEBUG=FALSE
+SCRIPT_NAME=$(basename "${0}")
+SCRIPT_PATH=$(dirname "${0}")
+SLEEP_DURATION=5
+
+if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  #shellcheck source=./migdb-common
+  source "${SCRIPT_PATH}/migdb-common"
+else
+  echo "could not find ${SCRIPT_PATH}/migdb-common"
+  exit 1
+fi
+
+function printHelp {
+  cat << EOI
+
+  USAGE: migdb-migrate [options]
+  Migrate Worker Process for Balena Migration
+  options are:
+    --app <balena-application>       - Balena application to register with
+    --balena-ver <version>           - Balena version of image
+    --base <db base dir>             - Base directory of db, defaults to ./
+    -c | --cfg <migrate-config-file> - Config variables in bash / sh format
+    --cfg-dir <migratecfg dir>       - Migrate config directory
+    --cfg-tgz <migratecfg archive>   - Gzipped tar archive of migratecfg directory
+    --color <ON/OFF>                 - Anything other than ON switches colored output off
+    --conn-attempts <attempts>       - Number of ssh connect attempts before failing migration on a unit
+    --host <ssh-host>                - Default ssh host
+    --log-to <log file>              - Write output to log file
+    --min-age <age in seconds>       - Minimum age of unit file before processing
+    --passwd <ssh password>          - Default ssh password
+    -p | --port <ssh port>           - Default ssh port
+    --reconn-time <seconds>          - Time in seconds between two reconnect attempts
+    --ssh-opts <ssh-opts>            - Default ssh options
+    -u | --user <ssh user>           - Default ssh user
+    --mig-dur <migration duration>   - Wait time before looking for migrated devices
+                                       in balena, defaults to 180 sec.
+
+EOI
+return 0
+}
+
+
+function getCmdArgs {
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+          -c|--cfg)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_CFG="$2"
+            inform  "set MIG_CFG=$MIG_CFG"
+            shift
+            ;;
+          --ssh-opts)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_DEF_SSH_OPTS="$2"
+            inform  "set MIG_DEF_SSH_OPTS=$MIG_DEF_SSH_OPTS"
+            shift
+            ;;
+          --log-to)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_LOG_TO="$2"
+            inform "set MIG_LOG_TO=$MIG_LOG_TO"
+            shift
+            ;;
+          --base)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_DB_DIR="$2"
+            inform  "set MIG_DB_DIR=$MIG_DB_DIR"
+            shift
+            ;;
+          --color)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            COLOR="$2"
+            inform  "set COLOR=$COLOR"
+            shift
+            ;;
+          -p|--port)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_SSH_PORT="$2"
+            inform  "set MIG_SSH_PORT=$MIG_SSH_PORT"
+            shift
+            ;;
+          --host)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_SSH_HOST="$2"
+            inform "set MIG_SSH_HOST=$MIG_SSH_HOST"
+            shift
+            ;;
+          -u|--user)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_SSH_USER="$2"
+            inform  "set MIG_SSH_USER=$MIG_SSH_USER"
+            shift
+            ;;
+          --passwd)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_SSH_PASSWD="$2"
+            inform "set MIG_SSH_PASSWD=$MIG_SSH_PASSWD"
+            shift
+            ;;
+          --cfg-dir)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_CFG_DIR="$2"
+            inform "set MIG_CFG_DIR=$MIG_CFG_DIR"
+            shift
+            ;;
+          --cfg-tgz)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_CFG_ARCHIVE="$2"
+            inform "set MIG_CFG_DIR=$MIG_CFG_ARCHIVE"
+            shift
+            ;;
+          --min-age)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_MIN_AGE="$2"
+            inform "set MIG_MIN_AGE=$MIG_MIN_AGE"
+            shift
+            ;;
+          --app)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_APP="$2"
+            inform  "set MIG_APP=$MIG_APP"
+            shift
+            ;;
+          --balena-ver)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_BALENA_VER="$2"
+            inform "set MIG_BALENA_VER=$MIG_BALENA_VER"
+            shift
+            ;;
+          --mig-dur)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_DURATION="$2"
+            inform "set MIG_DURATION=$MIG_DURATION"
+            shift
+            ;;
+          --conn-attempts)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_CONN_ATTEMPTS="$2"
+            inform "set MIG_CONN_ATTEMPTS=$MIG_CONN_ATTEMPTS"
+            shift
+            ;;
+          --reconn-time)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_RECONN_TIME="$2"
+            inform "set MIG_RECONN_TIME=$MIG_RECONN_TIME"
+            shift
+            ;;
+          --balena-token)
+            if [ -z "$2" ]; then
+              fail "\"$1\" argument needs a value."
+            fi
+            MIG_BALENA_TOKEN="$2"
+            inform "set MIG_BALENA_TOKEN=$MIG_BALENA_TOKEN"
+            shift
+            ;;
+          *)
+            inform "unrecognized argument $1"
+            printHelp
+            exit 1
+            ;;
+    esac
+    shift
+  done
+}
+
+################################################################################
+# process unit file
+################################################################################
+
+function process {
+  debug process "with $UNIT_FILE"
+
+  MIG_SSH_OPTS=
+  MIG_CONN_RETRIES=0
+  DUE_TS=
+  UNIT_ID=
+  STATUS=INIT
+  UNIT_OUTPUT_LOG=
+ 
+  # shellcheck disable=SC1090
+  source "$UNIT_FILE" || fail "unable to read unit file $UNIT_FILE"
+
+  local now dueIn
+  now=$(date +%s)
+
+  if [ -z "$DUE_TS" ] ; then 
+    if [ -z "$MIG_MIN_AGE" ] ; then 
+      DUE_TS=$now
+    else
+      DUE_TS=$((CREATE_TS+MIG_MIN_AGE))
+    fi
+  fi 
+  
+  dueIn=$((DUE_TS-now)) 
+
+  if [ $dueIn -gt  0 ] ; then    
+    debug process "unit id ${UNIT_ID}, not processing device now, it is due in ${dueIn} seconds"
+    setVar "DUE_TS" "$DUE_TS" "$UNIT_FILE"
+    moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"
+    sleep 5
+    return 0
+  fi
+
+  if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
+    UNIT_OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "log-${UNIT_ID}-XXX")
+    setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
+  fi
+
+  logRedirect "$UNIT_OUTPUT_LOG" || error "failed to redirect output to $UNIT_OUTPUT_LOG"
+
+  if [ -n "$MIG_DEF_SSH_OPTS" ] ; then
+    MIG_SSH_OPTS="${MIG_SSH_OPTS} ${MIG_DEF_SSH_OPTS}"
+  fi
+
+  if [ -n "$MIG_SSH_PASSWD" ] ; then
+    PASSWD_PRESENT="present"
+  else
+    PASSWD_PRESENT="none"
+  fi
+
+  if [ -z "$MIG_SSH_HOST" ] ; then
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "no ssh host given, please specify MIG_SSH_HOST / --host"
+      return 0
+  fi
+
+  if [ -z "$MIG_APP" ] ; then
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "no application given, please specify MIG_APP / --app"
+      return 0
+  fi
+
+  inform "unit id ${UNIT_ID}, port=${MIG_SSH_PORT}, user=${MIG_SSH_USER}, status:${STATUS}, passwd=${PASSWD_PRESENT} dueIn=${dueIn} sec."
+  local connRetryCount factor timeTillNext
+
+  
+  connRetryCount=$MIG_CONN_RETRIES
+  factor=$((2**connRetryCount))
+  connRetryCount=$((connRetryCount + 1))
+  timeTillNext=$((MIG_RECONN_TIME * factor))
+  # restrict timeTillNext to 1 day
+  if [ $timeTillNext -gt 86400 ] ; then 
+    timeTillNext=86400
+  fi
+
+  if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
+    if ! sendTarCfg "$MIG_CFG_ARCHIVE" "$TGT_DIR" ; then
+      if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+        warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+        setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
+        setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
+        inform "unit id ${UNIT_ID}, will retry in ${timeTillNext} seconds"
+        moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
+      else      
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${CFG_ARCHIVE} to  ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+      fi                  
+      return 0
+    fi
+  else
+    if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
+      # TODO: same as above
+      if ! sendCfgDir "$MIG_CFG_DIR" "$TGT_DIR" ; then        
+        if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+          warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
+          setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"          
+          setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
+          inform "unit id ${UNIT_ID}, will retry in ${timeTillNext} seconds"
+          moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
+        else      
+          unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
+        fi                  
+        return 0
+      fi
+    fi
+  fi
+
+  inform "unit id ${UNIT_ID}, registering device with MIG_APP=$MIG_APP"
+  local tmpStr
+
+  echo "---- registering device"
+  # shellcheck disable=SC2181
+  if ! tmpStr=$(balena device register "$MIG_APP") ; then
+    echo "$tmpStr" 
+    if grep "You have to log in to continue" "${UNIT_OUTPUT_LOG}" ; then      
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP, please log in using balena login"
+    else
+      unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to register device to MIG_APP=$MIG_APP"
+    fi
+    return 0
+  fi
+
+  if [[ $tmpStr =~ ^[^:]+:\ *([^\ ]+)$ ]] ; then
+    UUID="${BASH_REMATCH[1]}"
+  fi
+
+  if [ -z "$UUID" ] ; then
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "no UUID found in register response <$tmpStr>"
+    return 0
+  fi
+
+  setVar "DEVICE_ID" "$UUID" "$UNIT_FILE"      
+  inform "unit id ${UNIT_ID}, using device-UUID=$UUID"
+
+  local cfgFile
+  cfgFile=$(mktemp -p "${TMP_DIR}" "s1-config-XXX")
+  inform "unit id ${UNIT_ID}, generating device config file in $cfgFile"
+  echo "---- creating device config"
+  if ! balena config generate --device "$UUID" --version "$MIG_BALENA_VER" --output "$cfgFile" --network ethernet --appUpdatePollInterval 10 ; then
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to create config using <balena config generate --device $UUID --version $MIG_BALENA_VER --output $cfgFile --network ethernet --appUpdatePollInterval 10>"
+    return 0
+  fi
+
+  if ! grep "\"uuid\":\"$UUID\"" "$cfgFile" >/dev/null ; then
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find UUID=$UUID in $cfgFile"
+    return 0
+    fail ""
+  fi
+
+  inform "unit id ${UNIT_ID}, device config file appears valid, copying to $TGT_DIR/balena-migrate-config.json on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+
+  local sshCmd
+  sshCmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "$MIG_SSH_PASSWD")
+
+  if ! sendFile "$cfgFile"  "$TGT_DIR/balena-migrate-config.json" ; then
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to transmit generated config file to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+    rm "$cfgFile"
+    return 0
+  else
+    rm "$cfgFile"
+  fi
+
+  local remoteCmd=
+  if [ -n "$TGT_DIR" ] && [ "$TGT_DIR" != "./" ] && [ "$TGT_DIR" != "." ] ; then
+    remoteCmd="cd '$TGT_DIR' && "
+  fi
+
+  remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 1 --balena-cfg balena-migrate-config.json"
+  cmd="$sshCmd \"$remoteCmd\""
+
+  debug process "unit id ${UNIT_ID}, attempting </bin/bash -c ${cmd}>"
+
+  inform "unit id ${UNIT_ID}, invoking migrate script on device"
+  echo "---- calling migrate"
+  tmpStr=$(/bin/bash -c "$cmd")
+
+  echo "$tmpStr" 
+  local successMsg
+  successMsg=$(echo "$tmpStr" | grep -E "\[[^\]+\]*.INFO:.*migration successful,")
+
+  if [ $? -eq 0 ] && [ -n "$successMsg" ] ; then    
+    
+
+    if [[ $successMsg =~ .*please\ reboot\ system.* ]] ; then
+      inform "unit id ${UNIT_ID}, rebooting device"
+      if ! "$sshCmd \"sudo nohub shutdown -r +1 >/dev/null 2>&1 </dev/null\"" ; then
+        unitFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+        return 0
+      fi
+    fi
+
+    now=$(date +%s)
+    setVar "STATUS_TS" "$now" "$UNIT_FILE"
+    setVar "DUE_TS" "$((now + MIG_DURATION))" "$UNIT_FILE"
+    setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+
+    moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
+    success "unit id ${UNIT_ID}, uuid=${UUID}, successfully finished stage 1 of migration"
+  else
+    unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find success message in migrate log from ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
+    return 0
+  fi
+
+  sleep 3
+  if [ -f "$UNIT_FILE" ] ; then
+    rm "$UNIT_FILE"
+  fi
+}
+
+################################################################################
+# main
+################################################################################
+
+getCmdArgs "$@"
+
+if [ -n "$COLOR" ] ; then
+  color "$COLOR"
+else
+  color OFF
+fi
+
+MIG_DURATION=${MIG_DURATION=180} 
+
+if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
+  inform "loading config from $MIG_CFG"
+  # shellcheck disable=SC1090
+  source "$MIG_CFG"
+fi
+
+if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
+  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+else
+  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
+fi 
+
+if [ ! -f "$MIG_LOG_FILE" ] ; then
+   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
+fi
+
+checkInit
+
+inform "started"
+
+debug main "MIG_DB_DIR=$MIG_DB_DIR"
+
+if [ -z "$MIG_CFG_ARCHIVE" ] || [ ! -f "$MIG_CFG_ARCHIVE" ] ; then
+    if [ -z "$MIG_CFG_DIR" ] || [ ! -d "$MIG_CFG_DIR" ] ; then
+        fail "no migrate config given, please specify MIG_CFG_DIR / --cfg-dir or MIG_CFG_ARCHIVE / --cfg-archive"
+    fi
+fi
+
+if ! balena apps 1>/dev/null 2>&1 ; then 
+  if [ -n "$MIG_BALENA_TOKEN" ] ; then 
+    inform "balena logging with token"
+    balena login -t "$MIG_BALENA_TOKEN" 1>/dev/null || fail "failed to log in to balena"
+  else
+    fail "balena cli does not appear to be logged in\n please login usin balena login or supply an API token in MIG_BALENA_TOKEN or using the --balena-token option"
+  fi
+fi
+
+while true ; do
+  if [ -f "${TMP_DIR}/migdb-stop" ] ; then 
+    inform "found stop file, terminating"
+    exit 0
+  fi
+
+  debug "main" "attempting to get a unit file"
+  UNIT_FILE=$(mktemp -p "$TMP_DIR" "s1-process-XXX")
+  # debug main "UNIT_FILE=$UNIT_FILE"
+  if getRandFile "$UNIT_DIR" "$UNIT_FILE" ; then
+    debug main "getOrder success, unit file: $UNIT_FILE"
+    process
+  else
+    rm "$UNIT_FILE"
+    debug "main" "getOrder returned no unit, sleeping for ${SLEEP_DURATION} s"
+    sleep $SLEEP_DURATION
+  fi
+done

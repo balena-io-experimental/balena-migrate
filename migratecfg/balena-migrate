@@ -21,7 +21,7 @@
 
 ################################################################################
 # attempt to mount and log initramfs logs to external drive if set
-LOG_DRIVE=/dev/sdb1
+LOG_DRIVE= # /dev/sdb1
 LOG_FS_TYPE=ext4
 
 ################################################################################
@@ -40,9 +40,6 @@ DO_REBOOT= # "TRUE"
 # IMAGE_NAME="resin-image-genericx86-64.resinos-img.gz"
 # IMAGE_NAME="resin-resintest-raspberrypi3-2.15.1+rev2-dev-v7.16.6.img.gz"
 
-################################################################################
-# Use wifi config provided in image if set to TRUE
-HAS_WIFI_CFG="FALSE" # set to "TRUE" if a wifi config is provided in image
 
 ################################################################################
 # create NM configs from all configs found in this system
@@ -68,16 +65,12 @@ BALENA_WIFI=
 DEBUG= # "TRUE"
 
 ################################################################################
-# name of backup file to create/transfer to balena-data
-BACKUP_FILE=backup.tgz
-
-################################################################################
-# TODO: customer defined backup script to call
+# customer defined backup script to call
 BACKUP_SCRIPT=
 
 ################################################################################
-# arguments to tar -czf $BACKUP_FILE if no backup script is given
-BACKUP_DIRECTORIES="/etc"
+# Backup definition file
+BACKUP_DEFINITION=
 
 ################################################################################
 # Grub boot device in grub notation - usually not nee
@@ -106,8 +99,16 @@ NO_FLASH= #"TRUE"
 NO_SETUP= #{ }"TRUE"
 
 ################################################################################
-# create initramfs in contrast to using an initramfs supplied
-MK_INITRAMFS="TRUE"
+# Test connectivity to API and VPN hosts"
+BALENA_API_HOST="api.balena-cloud.com"
+BALENA_API_PORT=443
+BALENA_VPN_HOST="vpn.balena-cloud.com"
+BALENA_VPN_PORT=443
+BALENA_CONNECT_TIMEOUT=20
+
+################################################################################
+# Fail if no network manager file is created
+REQUIRE_NMGR_FILE=TRUE
 
 ################################################################################
 # DEBUG verbose build process
@@ -118,8 +119,12 @@ MK_INITRAM_VERBOSE= # "TRUE"
 MK_INITRAM_RETAIN= # "TRUE"
 
 ################################################################################
+# Minimum required free diskspace in KB, default 10MB
+MIN_ROOT_AVAIL=10240 
+
+################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG="TRUE"
+LOG_DEBUG="FALSE"
 
 ##########################################
 # log functions
@@ -142,30 +147,32 @@ function color {
 }
 
 function inform {
-    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} ${1}\n"
+    printf "${GREEN}[%s %s] INFO:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function warn {
-    printf "${YELLOW}[$(date +%T) ${SCRIPT_NAME}] WARN: ${NC} ${1}\n"
+    printf "${YELLOW}[%s %s] WARN:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function debug {
-    if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" $1 ; then
-      printf "${BROWN}[$(date +%T) ${SCRIPT_NAME}] DEBUG:${NC} ${1}: ${2}\n"
+    if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "${1}" ; then
+      printf "${BROWN}[%s %s] DEBUG:${NC} %s: %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}" "${2}"
     fi
 }
 
 function simulate {
-    printf "${GREEN}[$(date +%T) ${SCRIPT_NAME}] INFO: ${NC} would execute \"$*\"\n"
+    printf "${GREEN}[%s %s] INFO:${NC}  %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
 }
 
 function clean {
     if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] ; then
+      debug clean "removing $TMP_DIR"
       rm -rf "$TMP_DIR"
     fi
 
     if [ -n "$RESTORE_BOOT_CFG_STAGE1" ] ; then
-      $RESTORE_BOOT_CFG_STAGE1
+      debug clean "attempting <sh -c ${RESTORE_BOOT_CFG_STAGE1}>"
+      sh -c "$RESTORE_BOOT_CFG_STAGE1"
     fi
 }
 
@@ -174,7 +181,7 @@ function clean {
 ##########################################
 
 function fail {
-    printf "${RED}[$(date +%T) ${SCRIPT_NAME}] ERROR:${NC} $1\n"
+    printf "${RED}[%s %s] ERROR:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
     clean
     exit -1
 }
@@ -184,16 +191,19 @@ function fail {
 ##########################################
 
 function printHelp {
-  echo "balena-stage1"
-  echo "  prepare host for migration to balena-os"
-  echo "  USAGE balena-stage1 [OPTIONS]"
-  echo "  please run as root"
-  echo "  OPTIONS: "
-  echo "    -c <config file> | --config=<config file> : use given config file instead of /etc/balena-migrate.log "
-  echo "    --home=<HOME_DIR>                         : use given path as home directory"
-  echo "    -h | --help                               : print this help and exit"
-  echo "    -r <DELAY> | --reboot=<DELAY>             : reboot when done after a delay of DELAY seconds"
-  echo "    -u <UUID> | --uuid=<UUID>                 : use given UUID as baleanOS host id"
+  cat << EOI
+
+  balena-migrate
+    prepare host for migration to balena-os
+    USAGE balena-stage1 [OPTIONS]
+    please run as root
+    OPTIONS:
+      -c | --config <config file>  - Use given config file instead of /etc/balena-migrate.log
+      --home <HOME_DIR>            - Use given path as home directory
+      -h | --help                  - Print this help and exit
+      -r | --reboot <DELAY>        - Reboot when done after a delay of DELAY seconds
+
+EOI
   exit 0
 }
 
@@ -202,93 +212,52 @@ function printHelp {
 ##########################################
 
 function getCmdArgs {
-  cmd=
-  for var in "$@"
-  do
-    debug getCmdArgs "looking at $var"
-    if [ -n "$cmd" ]  ; then
-      case $cmd in
-        config)
-          $PARAM_CONFIG_FILE=$var
-          cmd=
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
           ;;
-        uuid)
-          $PARAM_UUID=$var
-          cmd=
+        -c|--config)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_CONFIG_FILE="$2"
+          debug getCmdArgs "set PARAM_CONFIG_FILE=$PARAM_CONFIG_FILE"
+          shift
           ;;
-        home)
-          $PARAM_HOME_DIR=$var
-          cmd=
+        --home)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_HOME_DIR="$2"
+          debug getCmdArgs "set PARAM_HOME_DIR=$PARAM_HOME_DIR"
+          shift
+          ;;
+        --balena-cfg)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_BALENA_CONFIG="$2"
+          debug getCmdArgs "set PARAM_BALENA_CONFIG=$PARAM_BALENA_CONFIG"
+          shift
+          ;;
+        --reboot)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_REBOOT="$2"
+          debug getCmdArgs "set PARAM_REBOOT=$PARAM_REBOOT"
+          shift
           ;;
         *)
-          fail "unrecognized parameter ${var}"
+          fail "invalid command $arg"
           ;;
-      esac
-    else
-      if [[ "$var" =~ ^--.* ]] ; then
-        cmd=$(expr match "$var" '^--\([^=]\+\).*')
-        param=$(expr match "$var" '^--[^=]\+=\(.*\)$') || true
-        case "$cmd" in
-          config)
-            if [ -n "$param" ] ; then
-              PARAM_CONFIG_FILE="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          uuid)
-            if [ -n "$param" ] ; then
-              PARAM_UUID=$param
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          home)
-            if [ -n "$param" ] ; then
-              PARAM_HOME_DIR="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          balena-cfg)
-            if [ -n "$param" ] ; then
-              PARAM_BALENA_CONFIG="$param"
-            else
-              fail "missing parameter for $var"
-            fi
-            ;;
-          help)
-            printHelp
-            ;;
-          *)
-            fail "invalid command $var"
-            ;;
-        esac
-        cmd=
-      else
-        if [[ "$var" =~ ^-.* ]] ; then
-          debug getCmdArgs "$var starts with -"
-          case "$var" in
-            -c)
-              cmd="config"
-              ;;
-            -u)
-              cmd="uuid"
-              ;;
-            -h)
-              printHelp
-              ;;
-            *)
-              fail "unrecognized command: $var"
-              cmd=
-              ;;
-          esac
-        else
-          fail "unrecognized command: $var"
-        fi
-      fi
-    fi
-    debug getCmdArgs "command=$cmd"
+    esac
+    shift
   done
 }
 
@@ -313,9 +282,12 @@ function listContains {
 ##########################################
 
 function checkPgms {
+  # shellcheck disable=SC2048
   for pgm in $*
   do
-      local pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+      debug checkPgms "checking $pgm"
+      local pgmPath
+      pgmPath="$(whereis -b "$pgm" | awk '{ print $2}')"
       if [ -z "$pgmPath" ] || [ ! -f "$pgmPath" ] ; then
         fail "cannot find required program: $pgm as $pgmPath"
      fi
@@ -327,9 +299,10 @@ function checkPgms {
 # try to establish OS release
 ##########################################
 checkOs() {
+    local OS_ID OS_VERSION VERSION
     if [ -f /etc/os-release ]; then
-        local OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
-        local OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
+        OS_ID=$(grep -e ^ID= /etc/os-release | sed "s/^ID=\(.*\)$/\1/")
+        OS_VERSION=$(grep -e ^VERSION_ID= /etc/os-release | sed -n 's/^VERSION_ID="\?\([^"]*\)"\?$/\1/p')
         VERSION="$OS_ID-$OS_VERSION"
     else
         # other methods for other osses
@@ -343,6 +316,21 @@ checkOs() {
 }
 
 ##########################################
+# copy a network manager wifi file
+##########################################
+
+function copy_nmgr_file {
+  local FILE_NAME=$1
+  if [ -f "${HOME_DIR}/${FILE_NAME}" ] ; then 
+    if [ -z "$NETWORK_CONFIGS" ] ; then
+      NETWORK_CONFIGS="$FILE_NAME"
+    else
+      NETWORK_CONFIGS="$NETWORK_CONFIGS $FILE_NAME"
+    fi    
+  fi
+}
+
+##########################################
 # create a network manager wifi file
 ##########################################
 
@@ -350,9 +338,11 @@ function create_nmgr_file {
   local WIFI_NO=$1
   local WIFI_SSID=$2
   local WIFI_PSK=$3
-  local FILE_NAME="resin-wifi-`printf %02d $WIFI_NO`"
+  local FILE_NAME
+  # shellcheck disable=SC2086
+  FILE_NAME="resin-wifi-$(printf %02d $WIFI_NO)"
 
-  cat << EOI > ${FILE_NAME}
+  cat << EOI > "${FILE_NAME}"
   [connection]
   id=$FILE_NAME
   type=wifi
@@ -394,7 +384,7 @@ function migrate_this_wifi {
   else
       if [ -n "$MIGRATE_WIFI_CFG" ] && [ -f "${HOME_DIR}/${MIGRATE_WIFI_CFG}" ] ; then
           # debug "migrate_this_wifi: looking at ${HOME_DIR}/${MIGRATE_WIFI_CFG}"
-          while read line
+          while read -r line
           do
             # debug "migrate_this_wifi: compare to: <$line>"
             if [ "$line" == "$ssid" ] ; then
@@ -408,32 +398,67 @@ function migrate_this_wifi {
   return 1
 }
 
+################################################################################
+# Try to connect to host / port
+################################################################################
+
+
+function canConnect {
+  local host port timeout start now elapsed
+  host=$1
+  port=$2
+  timeout=$3
+  
+  if [ -z "$timeout" ] ; then 
+    timeout=20
+  fi   
+
+  start=$(date +%s)
+  # Connection to api.balena-cloud.com 443 port [tcp/https] succeeded!
+
+  debug canConnect "start nc -zvw${timeout} $host $port"
+
+  while read -r line ; 
+  do
+    debug canConnect "ouput: $line" 
+    if [[ $line =~ .*succeeded\!.*$ ]] ; then   
+	  now=$(date +%s)
+  	elapsed=$((now - start))
+	  inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
+   	return 0
+    fi 
+   done < <(nc -zvw${timeout} $host $port 2>&1)
+  
+  echo "done"
+
+  now=$(date +%s)
+  elapsed=$((now - start))
+  inform "failed to establish connection to ${host}:${port}, timeout after ${elapsed} seconds"
+  return 1
+}
+
+
 ####################################################################################
 # extract wifi network config from wpa_supplicant.conf
 ####################################################################################
 
 function wificfg_from_wpa {
-  local cfgNo=1
+  debug "wificfg_from_wpa" "NEXT_WIFI_IDX=${NEXT_WIFI_IDX} file=${WPA_SUPP_CONF}"
 
-  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
-    cfgNo=2
-  fi
-
-  debug "wificfg_from_wpa" "cfgNo=${cfgNo} file=${WPA_SUPP_CONF}"
-
-  while read line ;
+  while read -r line ;
   do
-    if [[ $line =~ ^\s*network\s*=\s*\{ ]] ; then
+    if [[ $line =~ ^\ *network\ *=\ *\{ ]] ; then
       local network="TRUE"
       local ssid=
       local psk=
     else
       if [ "$network" == "TRUE" ] ; then
-        if [[ $line =~ ^\s*} ]] ; then
+        if [[ $line =~ ^\ *} ]] ; then
           if [ -n "$ssid" ]  ; then
-              debug "wificfg_from_wpa" "create_nmgr_file $cfgNo $ssid $psk"
-              create_nmgr_file $cfgNo "$ssid" "$psk"
-              cfgNo=$((cfgNo + 1))
+              debug "wificfg_from_wpa" "create_nmgr_file $NEXT_WIFI_IDX $ssid $psk"
+              # shellcheck disable=SC2086
+              create_nmgr_file $NEXT_WIFI_IDX "$ssid" "$psk"
+              NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
               ssid=
               psk=
               network=
@@ -441,31 +466,37 @@ function wificfg_from_wpa {
           continue
         fi
 
-        if [[ $line =~ ^\s*ssid\s*= ]] ; then
-
-          local tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*"\([^"]\+\)"')
-
-          if [ -z "$tmpSsid" ] ; then
-            tmpSsid=$(expr match "$line" '\s*ssid\s*=\s*\(\S\+\)')
+        if [[ $line =~ ^\ *ssid\ *= ]] ; then
+          local tmpSsid
+          if [[ $line =~ \ *ssid\ *=\ *\"([^\"]+)\" ]] ; then
+            tmpSsid="${BASH_REMATCH[1]}"
+          else
+            if [[ $line =~ \ *ssid\ *=\ *([^\ ]+)\ *$ ]] ; then
+              tmpSsid="${BASH_REMATCH[1]}"
+            fi
           fi
 
-          if migrate_this_wifi $tmpSsid ; then
-            ssid=${tmpSsid}
+          if [ -n "$tmpSsid" ] ; then
+            if migrate_this_wifi "$tmpSsid" ; then
+              ssid=${tmpSsid}
+            fi
           fi
           continue
         fi
 
-        if [[ $line =~ ^\s*psk\s*= ]] ; then
-          # debug "wificfg_from_wpa" "psk in line : <${line}>"
-          psk=$(expr match "$line" '\s*psk\s*=\s*"\([^"]\+\)"')
-          if [ -z "$psk" ] ; then
-            psk=$(expr match "$line" '\s*psk\s*=\s*\(\S\+\)')
+        if [[ $line =~ ^\ *psk\ *= ]] ; then
+          if [[ $line =~ \ *psk\ *=\ *\"([^\"]+)\" ]] ; then
+            psk="${BASH_REMATCH[1]}"
+          else
+            if [[ $line =~ \ *psk\ *=\ *([^\ ]+)\ *$ ]] ; then
+              psk="${BASH_REMATCH[1]}"
+            fi
           fi
           continue
         fi
       fi
     fi
-  done < $WPA_SUPP_CONF
+  done < "$WPA_SUPP_CONF"
 }
 
 ##########################################
@@ -473,29 +504,30 @@ function wificfg_from_wpa {
 ##########################################
 
 function wificfg_from_nmgr {
-  local cfgNo=1
-  if [ "$HAS_WIFI_CFG" == "TRUE" ] ; then
-    cfgNo=2
-  fi
 
-  debug "wificfg_from_nmgr" "cfgNo=${cfgNo}"
+  debug "wificfg_from_nmgr" "NEXT_WIFI_IDX=${NEXT_WIFI_IDX}"
 
   for file in ${NMGR_DIR}/* ; do
     debug "wificfg_from_nmgr" "processing file: $file"
 
-    local grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
+    local grepRes currSsid fileName
+
+    grepRes=$(grep -E "^\s*type\s*=\s*wifi" "$file")
     if [ -z "$grepRes" ] ; then
       continue
     fi
     grepRes=$(grep -E "^\s*ssid\s*=.*" "$file")
-    local currSsid=$(expr match "$grepRes" 'ssid\s*=\s*\(.*\)')
 
-    if  migrate_this_wifi $currSsid ; then
-      inform "migrating wifi config for $currSsid"
-      # TODO: only extract certain params or copy the whole thing ?
-      local fileName="resin-wifi-`printf %02d $cfgNo`"
-      cp "$file" "$fileName"
-      cfgNo=$((cfgNo + 1))
+    if [[ $grepRes =~ ssid\ *=\ *(.*)\ *$ ]] ; then
+      currSsid="${BASH_REMATCH[1]}"
+
+      if [ -n "$currSsid" ] &&  migrate_this_wifi "$currSsid" ; then
+        inform "migrating wifi config for $currSsid"
+        # TODO: only extract certain params or copy the whole thing ?
+        fileName="resin-wifi-$(printf %02d $NEXT_WIFI_IDX)"
+        cp "$file" "$fileName"
+        NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
+      fi
     fi
   done
 }
@@ -506,14 +538,25 @@ function wificfg_from_nmgr {
 ##########################################
 
 function splitPartName {
-    local partName=$1
-    local pathName=$(dirname "${partName}")
-    local tmpName1=$(lsblk -no kname ${partName})
-    local tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
-    local devName=$(basename "${tmpName2}")
-    local tmp=${tmpName1:${#devName}}
-    local pad=$(expr match "${tmp}" '\([^0-9]*\)[0-9]\+')
-    local no=$(expr match "${tmp}" '[^0-9]*\([0-9]\+\)')
+    local partName pathName tmpName1 tmpName2 devName pad no
+    partName=$1
+    pathName=$(dirname "${partName}")
+    tmpName1=$(lsblk -no kname "${partName}")
+    tmpName2=$(readlink -f "/sys/class/block/${tmpName1}/..")
+    devName=$(basename "${tmpName2}")
+    tmp=${tmpName1:${#devName}}
+    if [[ $tmp =~ ([^0-9]*)[0-9]+ ]] ; then
+      pad="${BASH_REMATCH[1]}"
+    else
+      return 1
+    fi
+
+    if [[ $tmp =~ [^0-9]*([0-9]+) ]] ; then
+      no=${BASH_REMATCH[1]}
+    else
+      return 1
+    fi
+
     echo "${pathName} ${devName} ${no} ${pad}"
 }
 
@@ -548,7 +591,12 @@ function getBootInfo {
 
 function checkArmDevs {
   # local sysName=$(expr match "$(uname -a)" '^Linux \([ ]\+\)')
-  local sysName=$(expr match "$(uname -a)" '^Linux \([^ ]\+\)')
+  local sysName tmp
+  tmp="$(uname -a)"
+  if [[ $tmp =~ ^Linux\ ([^\ ]+) ]] ; then
+    sysName="${BASH_REMATCH[1]}"
+  fi
+
   inform "platform is <${sysName}>"
 
   case "$sysName" in
@@ -556,6 +604,7 @@ function checkArmDevs {
       inform "detected raspberry PI"
       RPI_HW_REV=$(awk '/^Revision/ {sub("^1000", "", $3); print $3}' /proc/cpuinfo)
       inform "RPI_HW_REV=$RPI_HW_REV"
+      # shellcheck disable=SC2086
       if listContains "${RASPI_1_REVS}" ${RPI_HW_REV} ; then
         devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
@@ -563,6 +612,7 @@ function checkArmDevs {
           fail "expected raspberrypi1 image, got $IMAGE_NAME"
         fi
       else
+          # shellcheck disable=SC2086
           if listContains "${RASPI_2_REVS}" ${RPI_HW_REV} ; then
             devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
@@ -570,6 +620,7 @@ function checkArmDevs {
               fail "expected raspberrypi2 image, got $IMAGE_NAME"
             fi
           else
+            # shellcheck disable=SC2086
             if listContains "${RASPI_3_REVS}" ${RPI_HW_REV} ; then
               devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
@@ -584,8 +635,11 @@ function checkArmDevs {
     ;;
     beaglebone)
       # eg.: TI AM335x BeagleBone Green
-      local tmp=$(cat "/proc/device-tree/model")
-      local variant=$(expr match "$tmp" '.* BeagleBone \([^ ]\+\)')
+      local tmp, variant
+      tmp=$(cat "/proc/device-tree/model")
+      if [[ $tmp =~ .*\ BeagleBone\ ([^\ ]+) ]] ; then
+        variant="${BASH_REMATCH[1]}" # $(expr match "$tmp" '')
+      fi
 
       inform "detected Beaglebone $variant device"
 
@@ -628,7 +682,7 @@ function setupBootCfg_rpi {
 
 
   if [ "$NO_SETUP" != "TRUE" ] ; then
-    RESTORE_BOOT="TRUE"
+    # RESTORE_BOOT="TRUE"
 
     CONFIG_TXT_BACKUP="config.txt.$(date +%Y%m%d-%H-%M-%S)"
 
@@ -642,22 +696,22 @@ function setupBootCfg_rpi {
 
     while read -r line
     do
-      if [[ $line =~ ^\s*\# ]] ; then
-        echo $line >> $TMP_FILE
+      if [[ $line =~ ^\ *\# ]] ; then
+        echo "$line" >> "$TMP_FILE"
         continue
       fi
 
-      if [[ $line =~ ^\s*initramfs ]] ; then
+      if [[ $line =~ ^\ *initramfs ]] ; then
         if [ "$line" != "$INITRAM_CMD" ] ; then
-          echo "# $line" >> $TMP_FILE
+          echo "# $line" >> "$TMP_FILE"
         fi
       else
-        echo $line >> $TMP_FILE
+        echo "$line" >> "$TMP_FILE"
       fi
     done < "${CONFIG_TXT}"
-    echo $INITRAM_CMD >> $TMP_FILE
-    cp $TMP_FILE $CONFIG_TXT
-    rm $TMP_FILE
+    echo "$INITRAM_CMD" >> "$TMP_FILE"
+    cp "$TMP_FILE" "$CONFIG_TXT"
+    rm "$TMP_FILE"
 
     ###########################
     ## Modify /boot/cmdline.txt
@@ -668,9 +722,9 @@ function setupBootCfg_rpi {
       if [[ ! $CMD_LINE =~ debug ]] ; then
         CMDLINE_TXT_BACKUP="cmdline.txt.$(date +%Y%m%d-%H-%M-%S)"
         inform "creating backup of ${CMDLINE_TXT} in ${CMDLINE_TXT_BACKUP}"
-        cp ${S1_BOOT_PATH}/cmdline.txt  ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP}
+        cp "${S1_BOOT_PATH}/cmdline.txt"  "${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP}"
       	CMD_LINE="${CMD_LINE} debug"
-      	echo $CMD_LINE > ${S1_BOOT_PATH}/cmdline.txt
+      	echo "$CMD_LINE" > "${S1_BOOT_PATH}/cmdline.txt"
 
         RESTORE_BOOT_CFG_STAGE1="${RESTORE_BOOT_CFG_STAGE1} && mv ${S1_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S1_BOOT_PATH}/cmdline.txt"
         RESTORE_BOOT_CFG_STAGE2="${RESTORE_BOOT_CFG_STAGE2} && cp ${S2_BOOT_PATH}/${CMDLINE_TXT_BACKUP} ${S2_BOOT_PATH}/cmdline.txt"
@@ -717,10 +771,11 @@ function setupBootCfg_bb {
           fi
       else
         debug setupBootCfg_bb "/uEnv.txt exists"
-        local uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
+        local uEnvBckup
+        uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
         cp /uEnv.txt "$uEnvBckup"
         RESTORE_BOOT_CFG_STAGE1="cp $uEnvBckup /uEnv.txt"
-        if [ $ROOT_PART_NO -eq $BOOT_PART_NO ] ; then
+        if [ "$ROOT_PART_NO" -eq "$BOOT_PART_NO" ] ; then
           RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_ROOTMOUNT}${uEnvBckup} ${S2_ROOTMOUNT}/uEnv.txt\""
         else
           RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_BOOTMOUNT}${uEnvBckup} ${S2_BOOTMOUNT}/uEnv.txt\""
@@ -746,53 +801,31 @@ function setupBootCfg_bb {
 ## setup intel device to boot with initramfs
 ####################################################
 
-function setupBootCfg_other {
-  inform "setupBootCfg_other"
+function setupBootCfg_x86 {
+  inform "setupBootCfg_x86"
   # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
   # TODO: assuming we are on debian like OS
 
-  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install busybox"
-
-  # make sure BUSYBOX is used & **most** modules are present
-  inform "checking initramfs-tools config"
-  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   # check if this is an uefi booted system
-  local efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
+  local efiBootMgr
+  efiBootMgr=$(whereis -b efibootmgr | awk '{ print $2}')
   if [ -n "$efiBootMgr" ] &&  efibootmgr &>/dev/null ; then
     GRUB_BOOT_TYPE="UEFI"
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
-  local KERNEL_CMD_LINE_RAW=$(cat /proc/cmdline)
-  if [ -z "$KERNEL_CMD_LINE_RAW" ] ; then
+  KERNEL_CMD_LINE=$(cat /proc/cmdline)
+
+  if [ -z "$KERNEL_CMD_LINE" ] ; then
     fail "no kernel command line found"
   fi
 
-  case "$KERNEL_CMD_LINE_RAW" in
-     BOOT_IMAGE=*)
-        # Ubuntu version
-        local KERNEL_CMD_LINE=$(expr match "$KERNEL_CMD_LINE_RAW" '^BOOT_IMAGE=\(.*\)')
-        # local KERNEL_CMD_LINE="vmlinuz-4.4.0-31-generic root=UUID=1bddfe9b-69cd-499d-bd21-2639700a899e ro"
-        local TMP=($KERNEL_CMD_LINE)
-
-        #KBOOT_DIR=$(dirname ${TMP[0]})
-        #if [ "$KBOOT_DIR" != "/boot" ] ; then
-        #   # boot config does not appear to be on root partition
-        #  if [ "$KBOOT_DIR" == "." ] ; then
-        #    $KBOOT_DIR=
-        #  else
-        #     $KBOOT_DIR="$KBOOT_DIR/"
-        #  fi
-        #else
-        #  KBOOT_DIR="${KBOOT_DIR}/"
-        #fi
-        ;;
-        *)
-          fail "not a known command line format $KERNEL_CMD_LINE_RAW"
-        ;;
-  esac
+  if [[ "$KERNEL_CMD_LINE" =~ ^BOOT_IMAGE=(.*)$ ]] ; then
+    KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
+  else 
+    fail "unexpected command line: $KERNEL_CMD_LINE"
+  fi
 
   if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
     KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
@@ -815,17 +848,34 @@ function setupBootCfg_other {
       fail "grub configuration not found"
   fi
 
-# TODO: make grub HD num from hdDev, just assuming 0 for now
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} busybox"
+  # make sure BUSYBOX is used & **most** modules are present
 
-  GRUB_INSTALL="TRUE"
+  inform "checking initramfs-tools config"
+  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
-  if [ -n "$GRUB_CFG" ] ; then
-    if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
-      fail "grub config not found: ${GRUB_CFG}"
+  # TODO guess based on OS Version
+  if [ "$GRUB_INSTALL" == "TRUE" ] ; then
+    if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
+      # attempt to flash boot images
+      if [ ! -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] || [ ! -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
+        fail "could not locate boot images in ${HOME_DIR}/${GRUB_BOOT_IMG}, ${HOME_DIR}/${GRUB_CORE_IMG}"
+      fi
+      GRUB_INSTALL="FLASH"
+    else
+      # attempt to install grub from initramfs
+      INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} grub-install"
+      GRUB_INSTALL="INSTALL"
     fi
-  else
-    # TODO: use up to date grub config
-    cat << EOI > ${HOME_DIR}/grub.cfg
+
+    if [ -n "$GRUB_CFG" ] ; then
+      if [ ! -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
+        fail "grub config not found: ${GRUB_CFG}"
+      fi
+    else
+      # TODO: use up to date grub config
+      cat << EOI > ${HOME_DIR}/grub.cfg
 serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
 default=boot
 timeout=0
@@ -834,21 +884,21 @@ menuentry 'boot'{
 linux /vmlinuz root=LABEL=resin-rootA rootwait quiet loglevel=0 splash udev.log-priority=3 vt.global_cursor_default=0 intel_idle.max_cstate=1
 }
 EOI
-    GRUB_CFG="grub.cfg"
+      GRUB_CFG="grub.cfg"
+    fi
   fi
 
-
-  if [ ! "$NO_SETUP" == "TRUE" ] ; then
-
-    debug setupBootCfg_other "looking for boot device blkid"
+  if [ "$NO_SETUP" != "TRUE" ] ; then
+    debug setupBootCfg_x86 "looking for boot device blkid"
 
     if [ -d /dev/disk/by-uuid ] ; then
       for fname in /dev/disk/by-uuid/* ; do
-        debug setupBootCfg_other "looking at $fname"
-        linkedFile=$(readlink ${fname})
-        debug setupBootCfg_other "go <${linkedFile}>"
+        debug setupBootCfg_x86 "looking at $fname"
+        linkedFile=$(readlink "${fname}")
+        debug setupBootCfg_x86 "go <${linkedFile}>"
+        # shellcheck disable=SC2086
         if [ "$(basename $ROOT_FS)" == "$(basename $linkedFile)" ] ; then
-          # debug setupBootCfg_other "found ${uuid} for ${ROOT_FS}"
+          # debug setupBootCfg_x86 "found ${uuid} for ${ROOT_FS}"
           partId=$(basename "$fname")
           break
         fi
@@ -860,22 +910,19 @@ EOI
     fi
 
     if [ -n "$partId" ] ; then
-      local setRoot="search --no-floppy --fs-uuid --set=root $partId"
+      local setRootB="search --no-floppy --fs-uuid --set=root $partId"
     fi
 
     if [ "$GPT_TABLE" == "TRUE" ] ; then
       local partMod="part_gpt"
-      if [ -z "$setRoot" ] ; then
-        local setRoot="set root='${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}'"
-      fi
+      local setRootA="set root='${GRUB_BOOT_DEV},gpt${ROOT_PART_NO}'"
     else
       local partMod="part_msdos"
-      if [ -z "$setRoot" ] ; then
-        local setRoot="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
-      fi
+      local setRootA="set root='${GRUB_BOOT_DEV},msdos${ROOT_PART_NO}'"
     fi
 
-    inform "grub config, set root: $setRoot"
+    inform "grub config, root: $setRootA"
+    inform "grub config, root: $setRootB"
 
     cat <<EOI > /etc/grub.d/42_resin
 #!/bin/sh
@@ -885,10 +932,12 @@ exec tail -n +3 \$0
 # the 'exec tail' line above.
 
 menuentry "resin-migration" {
+  insmod gzio
   insmod $partMod
   insmod ext2
 
-  $setRoot
+  $setRootA
+  $setRootB
   linux $KERNEL_CMD_LINE
   initrd  ${BOOT_DIR}/${INITRAMFS_NAME}
 }
@@ -913,14 +962,13 @@ fi
 ####################################################################################
 
 # DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs"
+DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
 
 # script namme for logging
-SCRIPT_NAME="balena-stage1"
+SCRIPT_NAME=$(basename "${0}")
 
 CONFIG_FILE=balena-migrate.conf
 HOME_DIR=./
-UUID=
 
 color ON
 
@@ -940,38 +988,50 @@ if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
 fi
 
-inform "using config file:  $CONFIG_FILE"
-
-# let config file override some of the settings at the top of the file
-if [[ "$CONFIG_FILE" =~ ^/.* ]] ; then
-  # debug main " absolute path"
-  if [ -f "$CONFIG_FILE" ] ; then
-    . "$CONFIG_FILE"
-  else
-    fail "config file not found ${CONFIG_FILE}"
-  fi
-else
-  # debug main " relative path"
-  if [ -f "${HOME_DIR}/${CONFIG_FILE}" ] ; then
-    . "${HOME_DIR}/${CONFIG_FILE}"
-  else
-    if [ -f "${CONFIG_FILE}" ] ; then
-      . "${CONFIG_FILE}"
-    else
-      fail "config file could not be found ${CONFIG_FILE}"
-    fi
-  fi
-fi
-
 if [ -n "$PARAM_HOME_DIR" ] ; then
   # cmd line params take precedence over config file
   HOME_DIR=$PARAM_HOME_DIR
 fi
 inform "using home dir:     $HOME_DIR"
 
-if [ -n "$PARAM_UUID" ] ; then
-  # cmd line params take precedence over config file
-  BALENA_UUID="$PARAM_UUID"
+if [[ $HAS_WIFI_CFG =~ ^[0-9]+$ ]] ; then
+  NEXT_WIFI_IDX=$((HAS_WIFI_CFG + 1))
+else
+  case $HAS_WIFI_CFG in
+    TRUE)
+      NEXT_WIFI_IDX=2
+      ;;
+    *)
+      NEXT_WIFI_IDX=1
+      ;;
+  esac
+fi
+
+# let config file override some of the settings at the top of the file
+if [[ "$CONFIG_FILE" =~ ^/.* ]] ; then
+  # debug main " absolute path"
+  if [ -f "$CONFIG_FILE" ] ; then
+    inform "using config file: $CONFIG_FILE"
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+  else
+    fail "config file not found ${CONFIG_FILE}"
+  fi
+else
+  # debug main " relative path"
+  if [ -f "${HOME_DIR}/${CONFIG_FILE}" ] ; then
+    inform "using config file: ${HOME_DIR}/$CONFIG_FILE"
+    # shellcheck source=/dev/null
+    source "${HOME_DIR}/${CONFIG_FILE}"
+  else
+    if [ -f "${CONFIG_FILE}" ] ; then
+      inform "using config file: $CONFIG_FILE"
+      # shellcheck source=/dev/null
+      source "${CONFIG_FILE}"
+    else
+      fail "config file could not be found ${CONFIG_FILE}"
+    fi
+  fi
 fi
 
 if [ -n "$PARAM_BALENA_CONFIG" ] ; then
@@ -979,11 +1039,17 @@ if [ -n "$PARAM_BALENA_CONFIG" ] ; then
   BALENA_CONFIG="$PARAM_BALENA_CONFIG"
 fi
 
+if [ -n "$PARAM_REBOOT" ] ; then
+  # cmd line params take precedence over config file
+  DO_REBOOT="$PARAM_REBOOT"
+fi
+
+
+# name of backup file to create/transfer to balena-data
+BACKUP_FILE=backup.tgz
+
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
-
-# name of initramfs to be created/used expected in $HOMEDIR
-INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 
 # raspi config.txt to modify
 CONFIG_TXT="/boot/config.txt"
@@ -1000,6 +1066,8 @@ RASPI_2_REVS="a01040 a01041 a21041 a22042"
 RASPI_3_REVS="a02082 a020a0 a22082 a32082 a020d3"
 
 # minimum supported grub version
+# TODO: implement it
+# shellcheck disable=SC2034
 GRUB_MIN_VER=2
 # default boot directory
 BOOT_DIR=/boot
@@ -1014,7 +1082,9 @@ S2_ORIG_BOOT_MNT="/orig-boot"
 S2_BOOT_PATH=
 S2_MOUNT_BOOT=
 
+# shellcheck disable=SC2016
 S2_ROOTMOUNT='${rootmnt}'
+# shellcheck disable=SC2016
 S2_BOOTMOUNT='${ORIG_BOOT_MNT}'
 
 RESTORE_BOOT_CFG_STAGE1=
@@ -1026,20 +1096,34 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe reboot stat sync touch udevadm"
+INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm"
 REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+
+if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then 
+  REQUIRED_PGMS="$REQUIRED_PGMS nc"
+fi 
+
+# shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
-inform "checked required programs"
+inform "found all required programs"
+
+inform "checking disk space"
+rootAvail=$(df / --output=avail | sed -n 2p)
+if [ $rootAvail -lt $MIN_ROOT_AVAIL ] ; then 
+  fail "not enough disk space available for migration, found ${rootAvail}KB, require  ${MIN_ROOT_AVAIL}KB"
+fi
+inform "found ${rootAvail}KB of space on / "
 
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
 inform "checking required files"
 if [[ ! $HOME_DIR =~ ^/.* ]] ; then
-  CURR_DIR=$(pwd)
-  cd $HOME_DIR || fail "invalid/non existant HOME_DIR: $HOME_DIR"
+  CURR_DIR="$(pwd)"
+  cd "$HOME_DIR" || fail "invalid/non existant HOME_DIR: $HOME_DIR"
   HOME_DIR=$(pwd)
-  cd $CURR_DIR
+  # shellcheck disable=SC2164
+  cd "$CURR_DIR"
 fi
 
 if [ ! -d "$HOME_DIR" ] ; then
@@ -1048,13 +1132,41 @@ fi
 
 inform "HOME_DIR=$HOME_DIR"
 
-if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
-  fail "missing image file: $IMAGE_NAME"
+inform "checking connectivity"
+
+
+if [ -n "$BALENA_API_HOST" ] && ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
+  fail "unable to connect to ${BALENA_API_HOST}:${BALENA_API_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
 fi
+
+if [ -n "$BALENA_VPN_HOST" ] && ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
+  fail "unable to connect to ${BALENA_VPN_HOST}:${BALENA_VPN_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+fi
+
+##########################################
+# prepare initramfs-tools dir in $HOME_DIR
+##########################################
+
+if [ -d "/etc/initramfs-tools" ] ; then
+  inform "creating a copy of /etc/initramfs-tools in $HOME_DIR/initramfs-tools and populating it with migrate scripts"
+  cp -r "/etc/initramfs-tools" "$HOME_DIR"
+  cp "${HOME_DIR}/init-scripts/balena-init" "${HOME_DIR}/initramfs-tools/hooks/" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-init to ${HOME_DIR}/initramfs-tools/hooks/"
+  cp "${HOME_DIR}/init-scripts/balena-common" "${HOME_DIR}/initramfs-tools/scripts/" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-common to ${HOME_DIR}/initramfs-tools/scripts"
+  cp "${HOME_DIR}/init-scripts/balena-stage2-default" "${HOME_DIR}/initramfs-tools/scripts/local-bottom" || fail "failed to copy ${HOME_DIR}/init-scripts/balena-stage2-default to ${HOME_DIR}/initramfs-tools/scripts/local-bottom"
+else
+  fail "missing directory /etc/initramfs-tools"
+fi
+
+# name of initramfs to be created/used expected in $HOMEDIR
+INITRAMFS_NAME="balena-migrate-initramfs-$(uname -r)"
 
 ##########################################
 # check / repack image file
 ##########################################
+
+if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
+  fail "missing image file: $IMAGE_NAME"
+fi
 
 TMP_IMG="${HOME_DIR}/${IMAGE_NAME}"
 FTYPE=$(file -b "${TMP_IMG}")
@@ -1072,11 +1184,11 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
     inform "gzipping uncompressed image file $TMP_IMG.."
     gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
-    # TMP_IMG=$(basename "${TMP_IMG}")
-    IMAGE_NAME=$(expr match "${TMP_IMG}" '.*/\([^/]\+/[^/]\+\)$')
-    IMAGE_NAME="${IMAGE_NAME}.gz" 
-    # IMAGE_NAME=${TMP_IMG#"$HOME_DIR/"}.gz
-    # IMAGE_NAME="${TMP_DIR}/${TMP_IMG}.gz"
+    # TMP_IMG=$(basename "${TMP_IMG}")#
+    if [[ ${TMP_IMG} =~ .*/([^/]+/[^/]+)$ ]] ; then
+      IMAGE_NAME="${BASH_REMATCH[1]}.gz"
+    fi
+
     if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
       inform "working with image $IMAGE_NAME"
     else
@@ -1087,7 +1199,7 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   fi
 else
   FTYPE=$(file -bz "${HOME_DIR}/${IMAGE_NAME}")
-  if [[ ! $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
+  if [[ ! $FTYPE =~ ^[^\ ]+\ boot\ sector.* ]]  ; then
     fail "cannot make sense of image file $TMP_IMG - expecting a gzipped image file, got $FTYPE"
   fi
 fi
@@ -1098,7 +1210,7 @@ fi
 
 ARCH=$(uname -m)
 
-if ! listContains "$SUPPORTED_ARCHS" $ARCH ; then
+if ! listContains "$SUPPORTED_ARCHS" "$ARCH" ; then
   fail "not a supported architecture: $ARCH"
 fi
 
@@ -1110,14 +1222,14 @@ case $ARCH in
     inform "ARCH=$ARCH"
     devType="x86_64"
     if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
-        fail "expected genericx86-64 image, got $IMAGE_NAME"
+        warn "expected genericx86-64 image, got $IMAGE_NAME"
     fi
     ;;
   i686)
     devType="i686"
     inform "ARCH=$ARCH"
-    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] ; then
-        fail "expected intel-core2-32 image, got $IMAGE_NAME"
+    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
+        warn "expected intel-core2-32 image, got $IMAGE_NAME"
     fi
     ;;
   *)
@@ -1125,6 +1237,7 @@ case $ARCH in
     ;;
 esac
 
+# shellcheck disable=SC2086
 checkPgms $INITRAM_REQUIRED_PGMS
 
 KERNEL_VER=$(uname -r)
@@ -1133,32 +1246,28 @@ inform "KERNEL_VER=$KERNEL_VER"
 OS_VERSION=$(checkOs)
 inform "OS_VERSION=$OS_VERSION"
 
-if ! listContains "${SUPPORTED_OSSES}" ${OS_VERSION} ; then
+if ! listContains "${SUPPORTED_OSSES}" "${OS_VERSION}" ; then
     fail "not a supported OS ${OS_VERSION}"
-fi
-
-if [ "$MK_INITRAMFS" == "TRUE" ] && [ ! -d "${HOME_DIR}/initramfs-tools" ] ; then
-  fail "missing image directory: ${HOME_DIR}/initramfs-tools"
 fi
 
 getBootInfo
 
 inform "root partition: ${ROOT_FS} boot partition: ${BOOT_FS} EFI partition: ${EFI_FS}"
 
-TMP=($(splitPartName ${BOOT_FS}))
+TMP=($(splitPartName "${BOOT_FS}"))
 
 BOOT_PAD=${TMP[3]}
 BOOT_DEV=${TMP[0]}/${TMP[1]}
 BOOT_PART_NO=${TMP[2]}
 
-TMP=($(splitPartName ${ROOT_FS}))
+TMP=($(splitPartName "${ROOT_FS}"))
 ROOT_PART_NO=${TMP[2]}
 
 if [ "$BOOT_DEV" != "${TMP[0]}/${TMP[1]}" ] ; then
   fail "unsupported boot configuration /boot is on a separate drive from / "
 fi
 
-if [ $BOOT_PART_NO -eq $ROOT_PART_NO ] ; then
+if [ "$BOOT_PART_NO" -eq "$ROOT_PART_NO" ] ; then
   S2_BOOT_PATH="${S2_ROOTMOUNT}/boot"
   S2_MOUNT_BOOT=
   S1_BOOT_PATH="/boot"
@@ -1171,7 +1280,7 @@ fi
 
 debug main "S2_BOOT_PATH=$S2_BOOT_PATH S2_MOUNT_BOOT=$S2_MOUNT_BOOT"
 
-while read line ;
+while read -r line ;
 do
   # inform "parted line: $line"
 
@@ -1195,7 +1304,7 @@ do
     fi
     break
   fi
-done < <(parted -s ${BOOT_DEV} print)
+done < <(parted -s "${BOOT_DEV}" print)
 
 inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
@@ -1212,9 +1321,9 @@ case "$devType" in
       inform "performing boot setup for Beaglebone: $devType"
       setupBootCfg_bb
     ;;
-    *)
+    x86_64|i686)
       inform "performing boot setup for other: $devType"
-      setupBootCfg_other
+      setupBootCfg_x86
     ;;
 esac
 
@@ -1225,22 +1334,24 @@ esac
 NETWORK_CONFIGS=
 
 if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
+  # TODO: use jq instead ?
+  jqPath="$(whereis -b jq | awk '{ print $2}')"
+  if [ -z "$jqPath" ] ; then
+    fail "program jq is required to extract wifi config from balena config, please install the program or set BALENA_WIFI to FALSE"
+  fi
+
   inform "scanning ${HOME_DIR}/${BALENA_CONFIG} for wifi"
-  while read line ;
-  do
-    if [[ $line =~ ,*[\ ]*\"wifiSsid\"[\ ]*\: ]] ; then
-      wifiSsid=$(expr match "$line" '.*"wifiSsid"[ ]*:[ ]*"\([^"]\+\)".*')
-    fi
+  wifiSsid=$(< "${HOME_DIR}/${BALENA_CONFIG}" jq .wifiSsid)
+  debug main "wifiSsid=${wifiSsid}"
 
-    if [[ $line =~ ,*[\ ]*\"wifiKey\"[\ ]*\: ]] ; then
-      wifiKey=$(expr match "$line" '.*"wifiKey"[ ]*:[ ]*"\([^"]\+\)".*')
+  if [ -n "$wifiSsid" ] && [[ $wifiSsid =~ ^\"(.+)\"$ ]] ; then
+    wifiKey=$(< "${HOME_DIR}/${BALENA_CONFIG}" jq .wifiKey)
+    debug main "wifiKey=${wifiKey}"
+    if [ -n "$wifiKey" ] && [[ $wifiKey =~ ^\"(.+)\"$ ]] ; then
+      inform "creating config for wifi $wifiSsid"
+      create_nmgr_file $NEXT_WIFI_IDX "$wifiSsid" "$wifiKey"
+      NEXT_WIFI_IDX=$((NEXT_WIFI_IDX + 1))
     fi
-  done < "${HOME_DIR}/${BALENA_CONFIG}"
-
-  if [ -n "$wifiSsid" ] ; then
-    inform "creating config for wifi $wifiSsid"
-    create_nmgr_file 1 $wifiSsid $wifiKey
-    HAS_WIFI_CFG="TRUE"
   fi
 fi
 
@@ -1254,42 +1365,21 @@ if [ "$MIGRATE_ALL_WIFIS" == "TRUE" ] || [ -n "$MIGRATE_WIFI_CFG" ] ; then
       warn "no supported wifi config found"
     fi
   fi
-
-  if [ -n "$NETWORK_CONFIGS" ] ; then
-    echo "NETWORK_CONFIGS=\"$NETWORK_CONFIGS\"" >> ${MIGRATE_CONF}
-    echo "" >> ${MIGRATE_CONF}
-  fi
 fi
 
-######################################################
-## inject UUID into balena config
-######################################################
-
-if [ -n "$BALENA_CONFIG" ] ; then
-
-  if [ -f "${HOME_DIR}/$BALENA_CONFIG" ]  && [ -n "$BALENA_UUID" ] ; then
-    if [ "$BALENA_UUID" == "create" ] ||  [ "$BALENA_UUID" == "CREATE" ] ; then
-      BALENA_UUID=$(openssl rand -hex 16) || fail "failed to create UUID"
-    fi
-
-    inform "using UUID: $BALENA_UUID"
-
-    BALENA_TMP_FILE=$(mktemp -p ${HOME_DIR})
-    BALENA_TMP_FILE=$(basename ${BALENA_TMP_FILE})
-
-    # cp "$BALENA_CONFIG" "$BALENA_TMP_FILE" || fail "failed to copy $BALENA_CONFIG to $BALENA_TMP_FILE"
-    uuidConf='"uuid":"'$BALENA_UUID'"'
-    debug main "uuidConf=$uuidConf"
-    if grep "\"uuid\":" "$BALENA_CONFIG" >/dev/null 2>&1  ; then
-      debug main "replace UUID with $BALENA_UUID"
-      sed 's/\("uuid":"[^"]\+"\)/'$uuidConf'/g' "$BALENA_CONFIG" > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to replace uuid "
-    else
-      debug main "add UUID $BALENA_UUID"
-      sed 's/\(}\)\s*$/,'$uuidConf'}/g' "$BALENA_CONFIG"  > "${HOME_DIR}/$BALENA_TMP_FILE" || fail "failed to add uuid"
-    fi
-    BALENA_CONFIG="$BALENA_TMP_FILE"
-  fi
+if [ -n "$COPY_NMGR_FILES" ] ; then
+  for file in $COPY_NMGR_FILES ; do 
+    copy_nmgr_file "$file"
+  done
 fi
+
+if [ -z "$NETWORK_CONFIGS" ] ; then
+  if [ "$REQUIRE_NMGR_FILE" == "TRUE" ] ; then 
+    fail "no network manager configurations found"
+  else 
+    warn "no network manager configurations found, device might not be able to come online"
+  fi  
+fi 
 
 ###########################
 ## write /etc/migrate.conf
@@ -1340,10 +1430,11 @@ GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_CFG="$GRUB_CFG"
 GRUB_BOOT_TYPE=${GRUB_BOOT_TYPE}
 GRUB_PART_GPT=${GPT_TABLE}
+GRUB_BOOT_IMG=${GRUB_BOOT_IMG}
+GRUB_CORE_IMG=${GRUB_CORE_IMG}
 
 BALENA_CONFIG="${BALENA_CONFIG}"
 MEM_MIN_FREE=${MEM_MIN_FREE_S2}
-# BALENA_UUID=${BALENA_UUID}
 
 NETWORK_CONFIGS="$NETWORK_CONFIGS"
 
@@ -1353,25 +1444,24 @@ EOI
 ## create initramfs
 ###########################
 
-if [ "${MK_INITRAMFS}" == TRUE ] ; then
-    # set gzip compression
-    sed -i 's/^\(COMPRESS\s*=\s*\).*$/\1gzip/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+# set gzip compression
+sed -i 's/^\(COMPRESS\s*=\s*\).*$/\1gzip/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
-    OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
-    if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
-      OPTS="-v $OPTS"
-    fi
-
-    if [ "$MK_INITRAM_RETAIN" == "TRUE" ] ; then
-      OPTS="-k $OPTS"
-    fi
-
-    inform "creating initramfs: mkinitramfs $OPTS"
-    mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
-
-    inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
-    cp ${HOME_DIR}/${INITRAMFS_NAME} "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+OPTS="-d ${HOME_DIR}/initramfs-tools -o ${HOME_DIR}/${INITRAMFS_NAME}"
+if [ "$MK_INITRAM_VERBOSE" == "TRUE" ] ; then
+  OPTS="-v $OPTS"
 fi
+
+if [ "$MK_INITRAM_RETAIN" == "TRUE" ] ; then
+  OPTS="-k $OPTS"
+fi
+
+inform "creating initramfs: mkinitramfs $OPTS"
+# shellcheck disable=SC2086
+mkinitramfs $OPTS || fail "failed to create initramfs in ${HOME_DIR}/${INITRAMFS_NAME}"
+
+inform "copying ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
+cp "${HOME_DIR}/${INITRAMFS_NAME}" "${BOOT_DIR}/" || fail "failed to copy ${HOME_DIR}/${INITRAMFS_NAME} to ${BOOT_DIR}/"
 
 if [ -n "$BALENA_TMP_FILE" ] && [ -f "$BALENA_TMP_FILE" ] ; then
   rm "$BALENA_TMP_FILE"
@@ -1382,22 +1472,25 @@ fi
 ###########################
 
 if [ -n "$BACKUP_FILE" ] ; then
-  if [ -n "$BACKUP_SCRIPT" ] && [ -f "${HOME_DIR}/${BACKUP_SCRIPT}" ] ; then
-    inform "invoking backup script using: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
-    ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE} || fail "backup script ${HOME_DIR}/${BACKUP_SCRIPT} returned error code"
-    inform "...done"
-  else
-    if [ -n "$BACKUP_DIRECTORIES" ] ; then
-      if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
-        rm ${HOME_DIR}/$BACKUP_FILE || true
-      fi
-      inform "creating backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
-      tar -czf "${HOME_DIR}/$BACKUP_FILE" $BACKUP_DIRECTORIES > /dev/null || fail "failed to create backup using tar -czf ${HOME_DIR}/$BACKUP_FILE $BACKUP_DIRECTORIES"
+  if [ -n "$BACKUP_SCRIPT" ] ; then
+    if [ -f "${HOME_DIR}/${BACKUP_SCRIPT}" ] ; then
+      inform "invoking backup script using: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
+      "${HOME_DIR}/${BACKUP_SCRIPT}" "${HOME_DIR}/${BACKUP_FILE}" || fail "backup script ${HOME_DIR}/${BACKUP_SCRIPT} returned error code"
       inform "...done"
+    else
+      fail "cannot find backup script: ${HOME_DIR}/${BACKUP_SCRIPT}"
+    fi
+  else
+    if [ -n "$BACKUP_DEFINITION" ] && [ -f "$BACKUP_DEFINITION" ] ; then
+      if [ -f "${HOME_DIR}/$BACKUP_FILE" ] ; then
+        rm "${HOME_DIR}/$BACKUP_FILE" || true
+      fi
+      "${HOME_DIR}/std-backup" "${HOME_DIR}/$BACKUP_FILE" "${HOME_DIR}/${BACKUP_DEFINITION}" || fail "failed to create backup using definition file ${HOME_DIR}/${BACKUP_DEFINITION}"
+      inform "...done creating backup"
     fi
   fi
 
-  if [ ! -f ${HOME_DIR}/${BACKUP_FILE} ] ; then
+  if [ ! -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
     warn "no backup file created in: ${HOME_DIR}/${BACKUP_SCRIPT} ${HOME_DIR}/${BACKUP_FILE}"
   fi
 fi
@@ -1406,48 +1499,53 @@ fi
 ## check memory
 ###########################
 
-totMem=`cat /proc/meminfo | grep "MemTotal:"`
-totMem=`expr match "$totMem" '[^:]\+:[^0-9]\+\([0-9]\+\)[^0-9]*kB'` || true
-inform "total memory:  ${totMem} kB"
+totMem=$(< /proc/meminfo grep "MemTotal:")
+if [[ $totMem =~ ^[^:]+:\ +([0-9]+)\ .* ]] ; then
+  totMem=${BASH_REMATCH[1]}
+  inform "total memory:  ${totMem} kB"
+  leftMem=$totMem
 
-leftMem=$totMem
+  if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
+    tmp=$(stat -c %s "${HOME_DIR}/${IMAGE_NAME}")
+    tmp=$((tmp / 1024))
+    inform "image file size: ${tmp} kB "
+    leftMem=$((leftMem - tmp))
+  fi
 
-if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${IMAGE_NAME}"`
-  tmp=`expr $tmp / 1024` || true
-  inform "image file size: ${tmp} kB "
-  leftMem=`expr ${leftMem} - ${tmp}`
-fi
-
-if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${BACKUP_FILE}"`
-  tmp=`expr $tmp / 1024` || true
-  inform "backup file size: ${tmp} kB "
-  leftMem=`expr ${leftMem} - ${tmp}`
+  if [ -f "${HOME_DIR}/${BACKUP_FILE}" ] ; then
+    tmp=$(stat -c %s "${HOME_DIR}/${BACKUP_FILE}")
+    tmp=$((tmp / 1024))
+    inform "backup file size: ${tmp} kB "
+    leftMem=$((leftMem - tmp))
+  fi
+else
+  warn "could not retrieve MemTotal value from <${totMem}>"
 fi
 
 
 fType=$(file "${HOME_DIR}/${INITRAMFS_NAME}")
 if [[ "$fType" =~ ^[^:]+:.*cpio\ archive.* ]] ; then
-  tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+  tmp=$(stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}")
 else
   if [[ $fType =~ ^[^:]+:[\ ]*gzip.* ]] ; then
-    while read line ;
+    while read -r line ;
     do
       if echo "$line" | grep "${INITRAMFS_NAME}" > /dev/null ; then
-        tmp=$(expr match "$line" '[0-9]\+[ ]\+\([0-9]\+\) .*')
+        if [[ $line =~ [0-9]+\ +([0-9]+)\ .* ]]  ; then
+          tmp="${BASH_REMATCH[1]}"
+        fi
         break;
       fi
     done < <(gzip -l "${HOME_DIR}/${INITRAMFS_NAME}")
   else
     warn "unexpected initramfs format"
-    tmp=`stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}"`
+    tmp=$(stat -c %s "${HOME_DIR}/${INITRAMFS_NAME}")
   fi
 fi
 
-tmp=`expr $tmp / 1024` || true
+tmp=$((tmp / 1024))
 inform "initramfs est. size: ${tmp} kB "
-leftMem=`expr ${leftMem} - ${tmp}`
+leftMem=$((leftMem - tmp))
 
 inform "Est. memory left: ${leftMem} kB "
 if [ ${leftMem} -lt ${MEM_MIN_FREE_S1} ] ; then
@@ -1458,12 +1556,34 @@ fi
 ## reboot
 ###########################
 
-if [ "$DO_REBOOT" == "TRUE" ] ; then
-  inform "rebooting system in 5 seconds"
-  sleep 5
-  inform "migration successful, rebooting system in 1 second"
-  sleep 1
-  reboot
+
+debug main "DO_REBOOT=$DO_REBOOT"
+
+if [ -z "$DO_REBOOT" ] ; then
+  DO_REBOOT=FALSE
+fi
+
+if [[ ! $DO_REBOOT =~ ^[0-9]+$ ]] ; then
+    case $DO_REBOOT in
+      TRUE)
+        debug main "DO_REBOOT is TRUE: $DO_REBOOT"
+        DO_REBOOT=1
+        ;;
+      *)
+        debug main "DO_REBOOT is OTHER: $DO_REBOOT"
+        DO_REBOOT=FALSE
+        ;;
+    esac
+fi
+
+debug main "using DO_REBOOT: $DO_REBOOT"
+
+if [[ $DO_REBOOT =~ ^[0-9]+$ ]] ; then
+  delay=${BASH_REMATCH[0]}
+  debug main "attempting \"nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &\""  
+  nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &
+  inform "migration successful, rebooting system in ${delay} minutes"  
 else
   inform "migration successful, please reboot system"
 fi
+exit 0

@@ -1,10 +1,14 @@
 /resin-init
-/.idea
+.idea
 /flasher_img
 /flasher-scripts
 /scripts/test
+/work
 /test
 /img
+Cargo.lock
+target
+README.pdf
 *.img
 *.iso
 *.vmdk

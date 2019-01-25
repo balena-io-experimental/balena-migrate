@@ -1,0 +1,121 @@
+#!/bin/bash
+
+MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
+
+COLOR=ON
+
+DEBUG_FUNCTS="main"
+LOG_DEBUG=TRUE
+
+SCRIPT_NAME=$(basename "${0}")
+SCRIPT_PATH=$(dirname "${0}")
+SLEEP_DURATION=2
+
+if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  #shellcheck source=./migdb-common
+  source "${SCRIPT_PATH}/migdb-common"
+else
+  echo "could not find ${SCRIPT_PATH}/migdb-common"
+  exit 1
+fi
+
+function printHelp {
+  cat << EOI
+
+  USAGE: migdb-stop [options]
+  Stop all Migrate Worker Process for Balena Migration
+  options are:
+    --base <db base dir>             - Base directory of db, defaults to ./
+    --color <ON/OFF>                 - Anything other than ON switches colored output off
+    --log-to <log file>              - Write output to log file
+
+EOI
+return 0
+}
+
+
+function getCmdArgs {
+  while [[ $# -gt 0 ]]; do
+    local arg="$1"
+    case $arg in
+      -h|--help)
+          printHelp
+          exit 0
+          ;;
+      --log-to)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_LOG_TO="$2"
+        inform "set MIG_LOG_TO=$MIG_LOG_TO"
+        shift
+        ;;
+      --base)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        MIG_DB_DIR="$2"
+        inform  "set MIG_DB_DIR=$MIG_DB_DIR"
+        shift
+        ;;
+      --color)
+        if [ -z "$2" ]; then
+          fail "\"$1\" argument needs a value."
+        fi
+        COLOR="$2"
+        inform  "set COLOR=$COLOR"
+        shift
+        ;;
+      *)
+        inform "unrecognized argument $1"
+        printHelp
+        exit 1
+        ;;
+    esac
+    shift
+  done
+}
+
+################################################################################
+# main
+################################################################################
+
+getCmdArgs "$@"
+
+if [ -n "$COLOR" ] ; then
+  color "$COLOR"
+else
+  color OFF
+fi
+
+if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
+  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+else
+  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
+fi 
+
+if [ ! -f "$MIG_LOG_FILE" ] ; then
+   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
+fi
+
+if ! pgrep "migdb-(migrate|check)" > /dev/null ; then 
+    inform "no processes found, terminating"
+    exit 0
+fi
+
+checkInit
+
+inform "creating stop file in ${TMP_DIR}/migdb-stop"
+touch "${TMP_DIR}/migdb-stop" || fail "could not create stop file ${TMP_DIR}/migdb-stop"
+
+sleep $SLEEP_DURATION
+while true ; do 
+  if ! pgrep "migdb-(migrate|check)" > /dev/null ; then 
+      inform "no more processes found, terminating"
+      rm "${TMP_DIR}/migdb-stop"
+      exit 0
+  fi
+  sleep $SLEEP_DURATION
+done
+
+

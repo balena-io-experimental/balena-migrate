@@ -1,0 +1,132 @@
+#!/bin/sh
+
+PREREQ=""
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+# Begin real processing below this line
+
+copyPgm() {
+		pgm="$1"
+
+		# shellcheck disable=SC2086
+    pgmPath="$(whereis -b $pgm | awk '{ print $2}')"
+
+    if [ -z "${pgmPath}" ] ; then
+        echo "could not find ${pgmPath}"
+    fi
+
+    log "copy ${pgmPath}"
+
+    copy_exec "${pgmPath}"
+}
+
+log() {
+	echo "[$(date +%T) balena-init] $1"
+}
+
+fail() {
+	echo "[$(date +%T) balena-init] $1"
+	echo "[$(date +%T) balena-init] terminating"
+	exit 1
+}
+
+##############################
+# main                       #
+##############################
+
+# REQUIRED_PGMS="mkdir dd gzip grep awk cp fuser df echo rm reboot sleep partprobe"
+
+if [ -f /etc/balena-migrate-stage2.conf ] ; then
+    # TODO: move ?
+    . /etc/balena-migrate-stage2.conf
+else
+    echo "could not find /etc/balena-migrate-stage2.conf"
+    exit 1
+fi
+
+for pgmName in ${REQUIRED_PGMS}
+do
+    copyPgm "${pgmName}"
+done
+
+log "dest dir ${DESTDIR}"
+
+log "copy /etc/balena-migrate-stage2.conf"
+cp /etc/balena-migrate-stage2.conf "${DESTDIR}/etc/"
+
+MIGRATE_DIR="${DESTDIR}${MIGRATE_TMP}"
+log "creating migrate dir ${MIGRATE_DIR}"
+mkdir -p "$MIGRATE_DIR" || fail "failed to create directory ${MIGRATE_DIR}"
+log "...done"
+
+if [ -n "${BALENA_CONFIG}" ] ; then
+	if [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] ; then
+		log "copying balena config from ${HOME_DIR}/${BALENA_CONFIG} to ${MIGRATE_DIR}/"
+		cp "${HOME_DIR}/${BALENA_CONFIG}" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/${BALENA_CONFIG}  to ${MIGRATE_DIR}/"
+		log "..done"
+	else
+		fail "could not copy ${HOME_DIR}/${BALENA_CONFIG} - file not found"
+	fi
+fi
+
+log "copying network config files to initramfs"
+for file in $NETWORK_CONFIGS; do
+	if [ -f "${HOME_DIR}/$file" ] ; then
+		log "copying ${HOME_DIR}/$file"
+		cp "${HOME_DIR}/$file" "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/$file to ${MIGRATE_DIR}/"
+	else
+		fail "could not find  ${HOME_DIR}/$file"
+	fi
+done
+
+if [ -n "$GRUB_INSTALL" ] ; then
+	if [ -n "$GRUB_CFG" ] && [ -f "${HOME_DIR}/${GRUB_CFG}" ] ; then
+		log "copying ${HOME_DIR}/${GRUB_CFG}"
+		cp "${HOME_DIR}/${GRUB_CFG}" "${MIGRATE_DIR}/grub.cfg" || fail "failed to copy ${HOME_DIR}/${GRUB_CFG}"
+	else
+		fail "grub config not found in ${HOME_DIR}/${GRUB_CFG}"
+	fi
+
+	if [ "$GRUB_INSTALL" = "FLASH" ] ; then
+		if [ -n "$GRUB_BOOT_IMG" ] && [ -f "${HOME_DIR}/${GRUB_BOOT_IMG}" ] ; then
+			cp "${HOME_DIR}/${GRUB_BOOT_IMG}" "${MIGRATE_DIR}/boot.img" || fail "failed to copy ${HOME_DIR}/${GRUB_BOOT_IMG} to ${MIGRATE_DIR}/boot.img"
+		else
+			fail "grub boot image not set or not found in ${HOME_DIR}/${GRUB_BOOT_IMG}"
+		fi
+
+		if [ -n "$GRUB_CORE_IMG" ] && [ -f "${HOME_DIR}/${GRUB_CORE_IMG}" ] ; then
+			cp "${HOME_DIR}/${GRUB_CORE_IMG}" "${MIGRATE_DIR}/core.img" || fail "failed to copy ${HOME_DIR}/${GRUB_CORE_IMG} to ${MIGRATE_DIR}/core.img"
+		else
+			fail "grub core image not set or not found in ${HOME_DIR}/${GRUB_CORE_IMG}"
+		fi
+	fi
+
+	if [ "$GRUB_INSTALL" = "INSTALL" ] ; then
+		if [ -d /usr/lib/grub ] ; then
+			log "copy grub env from /usr/lib/grub"
+			mkdir -p "${DESTDIR}/usr/lib/grub"
+			cp -r /usr/lib/grub/* "${DESTDIR}/usr/lib/grub" || fail "failed to copy /usr/lib/grub"
+		else
+			log "/usr/lib/grub does not exist"
+			exit 1
+		fi
+
+		if [ -f ${HOME_DIR}/device.map ] ; then
+			log "copying ${HOME_DIR}/device.map"
+			cp ${HOME_DIR}/device.map "${MIGRATE_DIR}/" || fail "failed to copy ${HOME_DIR}/device.map"
+		fi
+	fi
+fi
+
+exit 0

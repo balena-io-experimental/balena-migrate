@@ -1,0 +1,426 @@
+#!/bin/bash
+
+function color {
+  if [ "$1" == "ON" ] ; then
+    YELLOW='\033[1;33m'
+    BROWN='\033[0;33m'
+    GREEN='\033[0;32m'
+    RED='\033[0;31m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+  else
+    YELLOW=
+    BROWN=
+    GREEN=
+    RED=
+    BLUE=
+    NC=
+  fi
+}
+
+##########################################
+# check if list contains string
+##########################################
+# careful how you call it, should be
+# eg.: listContains "$SUPPORTED_OSTYPES" $OSTYPE
+function listContains {
+    for curr in $1
+    do
+        if [ "$2" == "$curr" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+
+##########################################
+# success: log info message
+##########################################
+
+function success {  
+  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+}
+
+
+##########################################
+# inform: log info message
+##########################################
+
+function inform {  
+  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+}
+
+
+##########################################
+# warn: log warning message
+##########################################
+
+function warn {
+  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+}
+
+##########################################
+# error : print error message
+##########################################
+
+function error {
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+}
+
+##########################################
+# fail : print failurwe message and exit
+##########################################
+
+function fail {
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE" 
+  exit -1
+}
+
+##########################################
+# debug output
+##########################################
+
+function debug {
+  local tag=$1
+  local msg=$2
+
+  if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
+    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg" >> "$MIG_LOG_FILE"
+  fi
+}
+
+function makeUUID {
+  openssl rand -hex 16
+}
+
+################################################################################
+# initialize directories
+################################################################################
+
+function checkInit {
+  debug "MIG_DB_DIR=$MIG_DB_DIR"
+  if [ -z "$MIG_DB_DIR" ] || [ ! -d "$MIG_DB_DIR" ] ; then
+    fail "MIG_DB_DIR must be defined and exist: MIG_DB_DIR=$MIG_DB_DIR"
+  fi
+
+  UNIT_DIR="${MIG_DB_DIR}/db/units"
+  PROCESS_DIR="${MIG_DB_DIR}/db/process"
+  FAIL_DIR="${MIG_DB_DIR}/db/fail"
+  DONE_DIR="${MIG_DB_DIR}/db/done"
+  TMP_DIR="${MIG_DB_DIR}/db/tmp"
+  LOG_DIR="${MIG_DB_DIR}/db/log"
+
+  if [ ! -d "$MIG_DB_DIR" ] || [ ! -d "$UNIT_DIR" ] || [ ! -d "$FAIL_DIR" ] || [ ! -d "$DONE_DIR" ] || [ ! -d "$TMP_DIR" ] ; then
+      inform "initializing directory structure in $MIG_DB_DIR"
+      mkdir -p "$UNIT_DIR" || fail "failed to create unit directory in $UNIT_DIR"
+      mkdir -p "$PROCESS_DIR" || fail "failed to create process directory in $PROCESS_DIR"
+      mkdir -p "$DONE_DIR" || fail "failed to create done directory in $DONE_DIR"
+      mkdir -p "$FAIL_DIR" || fail "failed to create fail directory in $FAIL_DIR"
+      mkdir -p "$TMP_DIR" || fail "failed to create tmp directory in $TMP_DIR"
+      mkdir -p "$LOG_DIR" || fail "failed to create tmp directory in $LOG_DIR"
+  fi
+
+  inform "Database is in ${MIG_DB_DIR}/db"
+}
+
+
+################################################################################
+# Set var in file
+################################################################################
+
+function setVar {
+  local varName=$1
+  local value=$2
+  local file=$3
+
+  if [ ! -f "$file" ] ; then 
+    return 1
+  fi
+  
+  if grep "${varName}" "${file}" > /dev/null ; then 
+    sed -i 's/^\('${varName}'=\).*$/\1'${value}'/' "${file}"
+  else 
+    echo "${varName}=${value}" >> "${file}"
+  fi
+}
+
+################################################################################
+# move source file target failing if it exists
+################################################################################
+
+function moveFile {
+  local src=$1
+  local dir=$2
+  local id=$3  
+  local target
+
+  logRedirect ""
+  debug moveFile "src=${src} dir=${dir} id=${id}"
+
+  target=$(mktemp -p "${dir}" "unit-${id}-XXX") 
+
+  if mv -f "${src}" "${target}" ; then
+    return 0
+  else 
+    return 1
+  fi
+}
+
+#################################################################################
+# get a randoom number in the range $1 to $2
+################################################################################
+
+function random {
+  shuf -i "${1}-${2}" -n 1
+}
+
+################################################################################
+# get a random file from directory in $1, move it to path in $2
+################################################################################
+
+function getRandFile {
+  local dir=$1
+  local file=$2
+  debug getRandFile "called on dir=$dir file=$file"
+  local tmp files count upper pick selFile
+  tmp=$(ls "$dir")
+  files=($tmp)
+  count=${#files[@]}
+  debug getRandFile "files: <${tmp}>, count: ${count}"
+  # shellcheck disable=SC2086
+  if [ $count -eq 0 ] ; then
+    debug getRandFile "fail, no files in $dir"
+    return 1
+  fi
+
+  upper=$((count - 1))
+  pick=$(random 0 ${upper})
+  debug getRandFile "pick: ${pick} ${files[$pick]}"
+  selFile="${dir}/${files[$pick]}"
+  if mv -f "$selFile" "$file" 2>/dev/null ; then
+      return 0
+  else
+      return 1
+  fi
+}
+
+
+################################################################################
+# copy / append failed unit file to fail dir
+################################################################################
+
+function unitFailed {
+  local unitId=$1
+  local unitFile=$2
+  local msg=$3
+  local now failFile
+  logRedirect ""
+  error "unit id ${unitId}: $msg"
+  now=$(date +%s)
+  failFile=$(mktemp -p "${FAIL_DIR}" "fail-${unitId}-XXX")
+  mv "$unitFile" "$failFile"
+  setVar  "FAIL_TS" "${now}" "${failFile}"
+  setVar  "FAIL_MSG" "$msg" "${failFile}" 
+}
+
+
+################################################################################
+# make ssh command
+# host: $1
+# user: $2
+# port: $3
+################################################################################
+
+function mkSshCmd {
+    local host=$1
+    local user=$2
+    local port=$3
+    # local passwd=$4
+
+    # debug mkSshCmd "host=${host} user=${user} port=${port}"
+    # TODO: use
+    #  ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no host
+    #  to suppress host key errors
+
+    if [ -n "$MIG_SSH_PASSWD" ] ; then
+      local cmd="sshpass -p \"$MIG_SSH_PASSWD\" ssh"
+    else
+      local cmd="ssh"
+    fi
+
+    if [ -z "$host" ] ; then
+      fail "no ssh host defined , please set MIG_SSH_HOST or use parameters"
+    fi
+
+    if [ -n "$MIG_SSH_OPTS" ] ; then
+      local sshOpts="$MIG_SSH_OPTS"
+    fi
+
+    # shellcheck disable=SC2086
+    if [ -n "$port" ] && [ $port -ne 22 ] ; then
+      local sshOpts="${sshOpts} -p ${port}"
+    fi
+
+    if [ -n "$user" ] ; then
+      cmd="${cmd} ${sshOpts} ${user}@${host}"
+    else
+      cmd="${cmd} ${sshOpts} ${host}"
+    fi
+
+    echo "$cmd"
+}
+
+################################################################################
+# send single file to host and unpack it to specified directory
+# host: $MIG_SSH_HOST
+# user: $USER
+# port: $PORT
+# config file in $1
+# remote target file in $2
+################################################################################
+
+function sendFile {
+  local srcFile="$1"
+  local tgtFile="$2"
+
+  inform "sendFile: to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, srcFile=${srcFile}, tgtFile=${tgtFile}"
+  
+  echo "---- sendFile $srcFile $tgtFile" 
+
+  sshCmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT")
+  local preCmd="gzip -c '$srcFile'"
+  local remoteCmd="gzip -d -c > '$tgtFile'"
+
+  local cmd="$preCmd | $sshCmd \"$remoteCmd\""
+
+  debug senFile "attempting /bin/bash -c $cmd"
+  if /bin/bash -c "$cmd" ; then
+    return 0
+  else
+    return $?
+  fi
+}
+
+##########################################
+# redirect or unredirect output to file
+##########################################
+
+function logRedirect {
+  local logFile=$1
+  debug logRedirect "REDIRECTED=$REDIRECTED logFile=$logFile"
+  if [ "$REDIRECTED" != "TRUE" ] ; then 
+    if [ -n "$logFile" ] ; then  
+      debug logRedirect "redirecting"
+      exec 6>&1
+      exec 7>&2
+      exec 1>>"$1" 2>&1
+      REDIRECTED="TRUE"
+    fi  
+  else    
+    debug logRedirect "removing redirection"
+    exec 2>&7 7>&-
+    exec 1>&6 6>&-    
+    REDIRECTED="FALSE"
+  fi
+  return 0
+}
+
+################################################################################
+# send gzipped tarfile to host and unpack it to specified directory
+# host: $MIG_SSH_HOST
+# MIG_SSH_USER: $MIG_SSH_USER
+# port: $PORT
+# config file in $1
+# target directory in $2
+################################################################################
+
+function sendTarCfg {
+  local cfgFile="$1"
+  local tgtDir="$2"
+
+  inform "sendTarCfg to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgFile=${cfgFile}, tgtDir=${tgtDir}"
+  cmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT")
+
+  echo "---- sendTarCfg $cfgFile $tgtDir" 
+  local remoteCmd=
+  if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
+    remoteCmd="mkdir -p '${tgtDir}' && tar -C '${tgtDir}' -xzf -"
+  else
+    remoteCmd="tar -xzf -"
+  fi
+
+  cmd="$cmd \"$remoteCmd\" < \"${cfgFile}\""
+
+  local start end dur
+  
+  start=$(date +%s)
+
+  debug sendTarCfg "attempting /bin/bash -c $cmd"
+  
+  if /bin/bash -c "$cmd" ; then
+    end=$(date +%s)
+    dur=$((end - start))
+    inform "sucessfully transfered migratecfg in ${dur} seconds" 
+    return 0
+  else
+    local retCode=$?
+    end=$(date +%s)
+    dur=$((end - start))
+    warn "unsuccessful transfer of migratecfg ended after ${dur} seconds" 
+    return $retCode
+  fi
+}
+
+################################################################################
+# send gzipped tarfile to host and unpack it to specified directory
+# host: $SSH_HOST
+# user: $USER
+# port: $PORT
+# config file in $1
+# target directory in $2
+################################################################################
+
+function sendCfgDir {
+  cfgDir="$1"
+  tgtDir=$2
+
+  inform "sendCfgDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgDir=${cfgDir}, tgtDir=${tgtDir}"
+  local cmd remoteCmd
+
+  cmd=$(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "$MIG_GET_OPTS")
+
+  echo "---- sendCfgDir $cfgDir $tgtDir" 
+
+  if [ -n "$cfgDir" ] && [ "$cfgDir" != "./" ] &&  [ "$cfgDir" != "." ] ; then
+    local precmd="tar -C \"${cfgDir}\" -czf - ./"
+  else
+    local precmd="tar -czf - ./"
+  fi
+
+  remoteCmd=
+  if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
+    remoteCmd="mkdir -p '${tgtDir}' && tar -C '${tgtDir}' -xzf -"
+  else
+    remoteCmd="tar -xzf -"
+  fi
+
+  cmd="$precmd | $cmd \"$remoteCmd\""
+
+  debug sendCfgDir "attempting /bin/bash -c $cmd"
+  local start end dur
+  start=$(date +%s)
+
+  if /bin/bash -c "$cmd" ; then
+    end=$(date +%s)
+    dur=$((end - start))
+    inform "sucessfully transfered migratecfg in ${dur} seconds" 
+    return 0
+  else
+    local retCode=$?
+    end=$(date +%s)
+    dur=$((end - start))
+    warn "unsuccessful transfer of migratecfg ended after ${dur} seconds" 
+    return $retCode
+  fi
+}
