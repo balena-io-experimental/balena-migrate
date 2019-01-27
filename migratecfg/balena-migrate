@@ -422,10 +422,10 @@ function canConnect {
   do
     debug canConnect "ouput: $line" 
     if [[ $line =~ .*succeeded\!.*$ ]] ; then   
-	  now=$(date +%s)
-  	elapsed=$((now - start))
-	  inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
-   	return 0
+      now=$(date +%s)
+      elapsed=$((now - start))
+      inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
+      return 0
     fi 
    done < <(nc -zvw${timeout} $host $port 2>&1)
   
@@ -1132,15 +1132,22 @@ fi
 
 inform "HOME_DIR=$HOME_DIR"
 
-inform "checking connectivity"
-
-
-if [ -n "$BALENA_API_HOST" ] && ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
-  fail "unable to connect to ${BALENA_API_HOST}:${BALENA_API_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+if [ -n "$BALENA_API_HOST" ] ; then 
+  inform "checking connectivity for ${BALENA_API_HOST}:${BALENA_API_PORT}"
+  if ! canConnect $BALENA_API_HOST $BALENA_API_PORT $BALENA_CONNECT_TIMEOUT ; then 
+    fail "unable to connect to ${BALENA_API_HOST}:${BALENA_API_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+  fi  
+else 
+  warn "connectivity check disabled for API host"
 fi
 
-if [ -n "$BALENA_VPN_HOST" ] && ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
-  fail "unable to connect to ${BALENA_VPN_HOST}:${BALENA_VPN_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+if [ -n "$BALENA_VPN_HOST" ] ; then 
+  inform "checking connectivity for ${BALENA_VPN_HOST}:${BALENA_VPN_PORT}"
+  if ! canConnect $BALENA_VPN_HOST $BALENA_VPN_PORT $BALENA_CONNECT_TIMEOUT ; then 
+    fail "unable to connect to ${BALENA_VPN_HOST}:${BALENA_VPN_PORT} with timeout: ${BALENA_CONNECT_TIMEOUT}"
+  fi  
+else 
+  warn "connectivity check disabled for VPN host"
 fi
 
 ##########################################
