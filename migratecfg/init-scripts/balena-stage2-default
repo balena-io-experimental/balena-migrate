@@ -163,6 +163,57 @@ FAIL_EXIT="reboot -f"
 log "..done"
 
 ######################################################################
+# unmount root and set exit strategy to reboot
+######################################################################
+
+if [ "$SCAN_BADBLOCKS" = "TRUE" ] ; then
+	badblocks -v -n $BOOT_DEV 1>/dev/null 2>${MIGRATE_TMP}/bbsummarry.txt || true
+	if [ -z "$LOG_TO" ] ; then
+		cat ${MIGRATE_TMP}/bbsummarry.txt
+	else
+		cat ${MIGRATE_TMP}/bbsummarry.txt >> "$LOG_TO"
+	fi	
+
+#	Checking for bad blocks in non-destructive read-write mode
+#	From block 0 to 8388603
+#	Testing with random pattern: Pass completed, 0 bad blocks found. (0/0/0 errors)
+
+	log "grep1"
+	tmp=$(grep -E "^From block [0-9]+ to ([0-9]+)$" ${MIGRATE_TMP}/bbsummarry.txt)
+	log "grep1.1 $tmp"
+	if [ -n "$tmp" ] ; then 
+		# shellcheck disable=SC2003
+		blockCount=$(expr match "$line" '^.* \([0-9]\+\)$') 
+	fi 
+	
+	log "grep2"
+	tmp=$(grep -E "^.*Pass completed, \([0-9]\+\) bad blocks.*$" ${MIGRATE_TMP}/bbsummarry.txt)
+	if [ -n "$tmp" ] ; then 
+		# shellcheck disable=SC2003
+		blockCount=$(expr match "$line" '.*Pass completed, \([0-9]\+\) bad blocks.*')
+	fi 
+
+	log "check blockCount: $blockCount badCount: $badCount"
+	if [ -n "$blockCount" ] && [ -n "$badCount" ] ; then
+		if $(expr "$badCount" ">" "0") ; then
+			# shellcheck disable=SC2003
+			badCount=$(expr "$badCount" "*" "100")
+			# shellcheck disable=SC2003
+			badPercent=$(expr "$badCount" "/" "$blockCount")
+			log "found ${badPercent}% bad blocks on ${BOOT_DEV}"
+			if $(expr "$badPercent" ">" "10") ; then
+				fail "not writing image, too many bad blocks"
+			fi
+		else
+			log "found 0% bad blocks on ${BOOT_DEV}"
+		fi
+	else 
+		log "failed to parse badblocks output"
+	fi
+fi
+
+
+######################################################################
 # flash the balenaOS image
 ######################################################################
 
