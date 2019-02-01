@@ -81,7 +81,8 @@ log_to() {
 #################################################################################
 
 log() {
-	logMsg "LOG: $1"
+	ts=$(date)
+	logMsg "[LOG ${ts}]: $1"
 }
 
 #################################################################################
@@ -90,7 +91,8 @@ log() {
 
 debug() {
 	if [ -n "$DEBUG_STAGE2" ] ; then
-		logMsg "DEBUG: $1"
+		ts=$(date)
+		logMsg "[DEBUG ${ts}]: $1"
   fi
 }
 
@@ -99,9 +101,10 @@ debug() {
 #################################################################################
 
 term() {
-	logMsg "TERM: $1"
+	ts=$(date)
+	logMsg "[TERM ${ts}]: $1"
 
-	if [ -n "$LOG_TO" ] && [ -f "$LOG_TO" ] ; then
+	if [ -n "$LOG_TO" ] && [ -f "$LOG_TO" ] && [ "$LOG_TO" != "/dev/null" ] ; then
 		cat "$LOG_TO"
   fi
 
@@ -126,9 +129,10 @@ term() {
 #################################################################################
 
 fail() {
-	logMsg "ERROR: $1"
-	logMsg "ERROR: terminating with $FAIL_EXIT"
-	if [ -n "$LOG_TO" ] && [ -f "$LOG_TO" ] ; then
+	ts=$(date)
+	logMsg "[ERROR ${ts}]: $1"
+	logMsg "[ERROR ${ts}]: terminating with $FAIL_EXIT"
+	if [ -n "$LOG_TO" ] && [ -f "$LOG_TO" ] && [ "$LOG_TO" != "/dev/null" ] ; then
 		cat "$LOG_TO"
   fi
 

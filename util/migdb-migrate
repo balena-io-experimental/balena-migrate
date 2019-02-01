@@ -383,7 +383,7 @@ function process {
     remoteCmd="cd '$TGT_DIR' && "
   fi
 
-  remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 1 --balena-cfg balena-migrate-config.json"
+  remoteCmd="${remoteCmd} sudo ./balena-migrate --reboot 10 --balena-cfg balena-migrate-config.json"
   cmd="$sshCmd \"$remoteCmd\""
 
   debug process "unit id ${UNIT_ID}, attempting </bin/bash -c ${cmd}>"
@@ -401,7 +401,7 @@ function process {
 
     if [[ $successMsg =~ .*please\ reboot\ system.* ]] ; then
       inform "unit id ${UNIT_ID}, rebooting device"
-      if ! "$sshCmd \"sudo nohub shutdown -r +1 >/dev/null 2>&1 </dev/null\"" ; then
+      if ! "$sshCmd \"sudo nohup /bin/bash -c nohub reboot -f >/dev/null 2>&1 </dev/null\"" ; then
         unitFailed "$UNIT_ID" "$UNIT_FILE" "failed reboot on ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
         return 0
       fi

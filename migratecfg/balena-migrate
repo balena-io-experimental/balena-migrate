@@ -316,6 +316,65 @@ checkOs() {
 }
 
 ##########################################
+# check Disk
+##########################################
+
+function checkDisk {
+   local pout diskSize imgSize devName devPath hdArr device=$1 
+
+   if [[ $device =~ ^/dev/(.*)$ ]] ; then 
+	  devPath="${device}"
+    devName="${BASH_REMATCH[1]}"	
+   else
+	  devName="${device}"
+    devPath="/dev/${device}"	
+   fi	   
+
+   # echo "dev name: $devName"
+   # echo "dev path: $devPath"
+
+  pout=$(parted "$devPath" -s unit b print)
+  diskSize=$(echo "$pout" | grep -E "Disk.*: [0-9]+B")
+  if [ -n "$diskSize" ] && [[ $diskSize =~ ^Disk.*:\ ([0-9]+)B ]]; then 
+    diskSize="${BASH_REMATCH[1]}"
+  else
+    diskSize="0"
+  fi  
+
+   #sectorSize=$(echo "$pout" | grep -E "Sector size.*: [0-9]+B/.*")
+   #if [ -n "$sectorSize" ] && [[ $sectorSize =~ ^Sector\ size.*:\ ([0-9]+)B/.* ]]; then 
+   #  sectorSize="${BASH_REMATCH[1]}"
+   #else
+   #  sectorSize="512"
+   #fi  
+
+  imgSize=$(gzip -l "${HOME_DIR}/${IMAGE_NAME}" | sed -n '2p')
+  if [ -n "$imgSize" ] && [[ $imgSize =~ [0-9]+[[:space:]]+([0-9]+)[[:space:]]+ ]] ; then 
+    imgSize=${BASH_REMATCH[1]}
+  else
+    imgSize=0
+  fi
+
+  inform "disk size:  $((diskSize/1024))KB"
+  inform "image size: $((imgSize/1024))KB"
+
+  if [ $imgSize -gt $diskSize ] ; then 
+    fail "disksize appears to be less than image size, aborting"
+  fi
+
+  hdArr=($(grep "$devName " /proc/diskstats))
+  
+  # echo "HD_LINE=${hdArr[@]}"
+  inform "analysing /proc/diskstats for $devPath"   
+  inform "writes completed:           ${hdArr[7]}"
+  inform "sectors written:            ${hdArr[9]}"
+  inform "time spent writing (ms):    ${hdArr[10]}"
+  inform "time per write (ms):        $((hdArr[10]/hdArr[7]))"
+  inform "time per 1000/sectors (ms): $((hdArr[10]*1000/hdArr[9]))"
+  inform "write speed KB/sec:         $((hdArr[9]*500/hdArr[10]))"
+}
+
+##########################################
 # copy a network manager wifi file
 ##########################################
 
@@ -427,9 +486,9 @@ function canConnect {
       inform "successfully established connection to ${host}:${port} in ${elapsed} seconds"
       return 0
     fi 
-   done < <(nc -zvw${timeout} $host $port 2>&1)
+  done < <(nc -zvw${timeout} "$host" "$port" 2>&1)
   
-  echo "done"
+  # echo "done"
 
   now=$(date +%s)
   elapsed=$((now - start))
@@ -1096,7 +1155,7 @@ inform "establishing required programs"
 # TODO: Check / install tools needed for initramfs too
 #       possible candidates: parted (on debian, beaglebone) blkid
 
-INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm"
+INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm date"
 REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
 
 if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then 
@@ -1107,7 +1166,6 @@ if [ "$SCAN_BADBLOCKS" == "TRUE" ] ;  then
   INITRAM_REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS badblocks"
 fi 
 
-
 # shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
@@ -1115,7 +1173,7 @@ inform "found all required programs"
 
 inform "checking disk space"
 rootAvail=$(df / --output=avail | sed -n 2p)
-if [ $rootAvail -lt $MIN_ROOT_AVAIL ] ; then 
+if [ "$rootAvail" -lt "$MIN_ROOT_AVAIL" ] ; then 
   fail "not enough disk space available for migration, found ${rootAvail}KB, require  ${MIN_ROOT_AVAIL}KB"
 fi
 inform "found ${rootAvail}KB of space on / "
@@ -1291,6 +1349,8 @@ else
 fi
 
 debug main "S2_BOOT_PATH=$S2_BOOT_PATH S2_MOUNT_BOOT=$S2_MOUNT_BOOT"
+
+checkDisk "$BOOT_DEV"
 
 while read -r line ;
 do
@@ -1594,9 +1654,10 @@ debug main "using DO_REBOOT: $DO_REBOOT"
 
 if [[ $DO_REBOOT =~ ^[0-9]+$ ]] ; then
   delay=${BASH_REMATCH[0]}
-  debug main "attempting \"nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &\""  
-  nohup shutdown -r +${delay} 1>/dev/null 2>&1 </dev/null &
-  inform "migration successful, rebooting system in ${delay} minutes"  
+  debug main "attempting nohup /bin/bash -c \"sleep ${delay} ; reboot -f \" > /dev/null 2>&1 &"  
+  # nohup /bin/bash -c "sleep ${delay} && reboot -f" 1>/dev/null 2>&1 </dev/null &
+  nohup /bin/bash -c "sleep ${delay} ; reboot -f " > /dev/null 2>&1 &
+  inform "migration successful, rebooting system in ${delay} seconds"  
 else
   inform "migration successful, please reboot system"
 fi

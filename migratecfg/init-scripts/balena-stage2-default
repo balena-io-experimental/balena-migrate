@@ -167,6 +167,7 @@ log "..done"
 ######################################################################
 
 if [ "$SCAN_BADBLOCKS" = "TRUE" ] ; then
+	# log "attempting badblocks -v $BOOT_DEV 1>/dev/null 2>${MIGRATE_TMP}/bbsummarry.txt || true"
 	badblocks -v -n $BOOT_DEV 1>/dev/null 2>${MIGRATE_TMP}/bbsummarry.txt || true
 	if [ -z "$LOG_TO" ] ; then
 		cat ${MIGRATE_TMP}/bbsummarry.txt
@@ -177,31 +178,27 @@ if [ "$SCAN_BADBLOCKS" = "TRUE" ] ; then
 #	Checking for bad blocks in non-destructive read-write mode
 #	From block 0 to 8388603
 #	Testing with random pattern: Pass completed, 0 bad blocks found. (0/0/0 errors)
-
-	log "grep1"
-	tmp=$(grep -E "^From block [0-9]+ to ([0-9]+)$" ${MIGRATE_TMP}/bbsummarry.txt)
-	log "grep1.1 $tmp"
+	
+	tmp=$(grep -E "From block [0-9]+ to [0-9]+" ${MIGRATE_TMP}/bbsummarry.txt) || log "grep blocks no match"
 	if [ -n "$tmp" ] ; then 
 		# shellcheck disable=SC2003
-		blockCount=$(expr match "$line" '^.* \([0-9]\+\)$') 
+		blockCount=$(expr match "$tmp" '^.* \([0-9]\+\)$') || true
 	fi 
 	
-	log "grep2"
-	tmp=$(grep -E "^.*Pass completed, \([0-9]\+\) bad blocks.*$" ${MIGRATE_TMP}/bbsummarry.txt)
+	tmp=$(grep -E "Pass completed, [0-9]+ bad blocks" ${MIGRATE_TMP}/bbsummarry.txt) || log "grep 2 no match"
 	if [ -n "$tmp" ] ; then 
 		# shellcheck disable=SC2003
-		blockCount=$(expr match "$line" '.*Pass completed, \([0-9]\+\) bad blocks.*')
+		badCount=$(expr match "$tmp" '.*Pass completed, \([0-9]\+\) bad blocks.*') || true
 	fi 
-
 	log "check blockCount: $blockCount badCount: $badCount"
 	if [ -n "$blockCount" ] && [ -n "$badCount" ] ; then
-		if $(expr "$badCount" ">" "0") ; then
+		if  [ "$badCount" != "0" ]  ; then
 			# shellcheck disable=SC2003
 			badCount=$(expr "$badCount" "*" "100")
 			# shellcheck disable=SC2003
-			badPercent=$(expr "$badCount" "/" "$blockCount")
-			log "found ${badPercent}% bad blocks on ${BOOT_DEV}"
-			if $(expr "$badPercent" ">" "10") ; then
+			badPercent=$(expr "$badCount" "/" "$blockCount") 			
+			bad=$(expr "$badPercent" '>' '10') || true 
+			if  [ -n "$bad" ] && [ "$bad" = "1" ] ; then
 				fail "not writing image, too many bad blocks"
 			fi
 		else
@@ -211,7 +208,6 @@ if [ "$SCAN_BADBLOCKS" = "TRUE" ] ; then
 		log "failed to parse badblocks output"
 	fi
 fi
-
 
 ######################################################################
 # flash the balenaOS image
@@ -385,6 +381,10 @@ fi
 ######################################################################
 
 sleep 1
+
+if [ -z "$UMOUNT_LOG" ] ; then
+	LOG_TO=/dev/null
+fi
 
 if [ -n "$UMOUNT_RESIN_BOOT" ] ; then
 	umount $UMOUNT_RESIN_BOOT >>"$LOG_TO" 2>&1 || log "failed to umount $UMOUNT_RESIN_BOOT"

@@ -271,6 +271,142 @@ function mkSshCmd {
     echo "$cmd"
 }
 
+function mkSshCmd1 {
+    local host=$1
+    local user=$2
+    local port=$3    
+    local opts=$4
+    local command=$5    
+
+    local cmd args
+
+    if [ -z "$host" ] ; then
+      return 1      
+    fi
+
+    if [ -n "$MIG_SSH_PASSWD" ] ; then
+      cmd="sshpass"
+      args=(-p "$MIG_SSH_PASSWD" ssh -t)
+    else
+      cmd="ssh"
+      args=()
+    fi
+
+    if [ -n "$opts" ] ; then 
+      args+=($opts)    
+    fi 
+
+    if [ -n "$MIG_SSH_OPTS" ] ; then
+      args+=($MIG_SSH_OPTS)
+    fi
+
+    if [ -n "$port" ] && [ $port -ne 22 ] ; then
+      args+=(-p ${port})
+    fi
+
+    if [ -n "$user" ] ; then
+      args+=("${user}@${host}")
+    else
+      args+=(${host})
+    fi
+
+    cmdStr=${args[@]}
+    echo "$cmd ${args[@]}"
+    return 0
+
+}
+
+################################################################################
+# make ssh command
+# host: $1
+# user: $2
+# port: $3
+# command: $4
+# timeout: $5
+################################################################################
+
+function execSshCmd {
+    local host=$1
+    local user=$2
+    local port=$3
+    local command=$4
+    local cmdLog=$5
+    local timeout=$6    
+
+    local cmd args
+    
+    if [ -n "$MIG_SSH_PASSWD" ] ; then
+      cmd="sshpass"
+      args=(-p "$MIG_SSH_PASSWD" ssh -t)
+    else
+      cmd="ssh"
+      args=(-t)
+    fi
+
+    if [ -z "$host" ] ; then
+      fail "no ssh host defined , please set MIG_SSH_HOST or use parameters"
+    fi
+
+    if [ -n "$MIG_SSH_OPTS" ] ; then
+      args+=($MIG_SSH_OPTS)
+    fi
+
+    if [ -n "$port" ] && [ $port -ne 22 ] ; then
+      args+=(-p ${port})
+    fi
+
+    if [ -n "$user" ] ; then
+      args+=("${user}@${host}")
+    else
+      args+=(${host})
+    fi
+
+    local cmdStr="$cmd ${args[@]}"
+    debug execSshCmd  "cmdStr=<${cmdStr}>"
+
+    local start now elapsed=0
+    start=$(date +%s)
+    if [ -z "$timeout" ] ; then       
+      local exitCode
+      if [ -z "$cmdLog" ] ; then 
+        echo "$command" | eval "$cmdStr"
+      else 
+        echo "$command" | eval "$cmdStr" 2>&1 | tee -a "$cmdLog"
+      fi
+      exitCode=$?
+      now=$(date +%s)
+      elapsed=$((now-start))
+      
+      inform "ssh process terminated after $elapsed seconds with exit code ${exitCode}" 
+    else    
+      if [ -z "$cmdLog" ] ; then 
+        echo "$command" | eval "$cmdStr" &
+      else 
+        echo "$command" | eval "$cmdStr" 2>&1 | tee -a "$cmdLog" &  
+      fi
+      local cmdPid=$!
+
+      sleep 1
+      while kill -0 $cmdPid >/dev/null 2>&1 ; 
+      do 
+        now=$(date +%s)
+        elapsed=$((now-start))
+        if [ $elapsed -ge $timeout ] ; then
+          break
+        fi
+        sleep 1	
+      done
+
+      if kill -0 $cmdPid >/dev/null 2>&1 ; then
+        kill -9 $cmdPid || true
+        inform "ssh processs timed out after $elapsed seconds"
+      else
+        inform "ssh process terminated after $elapsed seconds" 
+      fi 
+    fi	    
+}
+
+
 ################################################################################
 # send single file to host and unpack it to specified directory
 # host: $MIG_SSH_HOST
@@ -294,7 +430,7 @@ function sendFile {
 
   local cmd="$preCmd | $sshCmd \"$remoteCmd\""
 
-  debug senFile "attempting /bin/bash -c $cmd"
+  debug sendFile "attempting /bin/bash -c $cmd"
   if /bin/bash -c "$cmd" ; then
     return 0
   else
@@ -423,4 +559,44 @@ function sendCfgDir {
     warn "unsuccessful transfer of migratecfg ended after ${dur} seconds" 
     return $retCode
   fi
+}
+
+function diskWriteSpeed {
+   local ds devName devPath hdArr device=$1 
+
+   if [[ $device =~ ^/dev/(.*)$ ]] ; then 
+	  devPath="${device}"
+    devName="${BASH_REMATCH[1]}"	
+   else
+	  devName="${device}"
+    devPath="/dev/${device}"	
+   fi	   
+
+   # echo "dev name: $devName"
+   # echo "dev path: $devPath"
+
+
+   ds=$(parted $devPath -s unit s print | grep -E "Disk.*: [0-9]+s")
+   echo "ds1: $ds"
+   if [ -n "$ds" ] && [[ $ds =~ ^Disk.*:\ ([0-9]+)s ]]; then 
+     ds="${BASH_REMATCH[1]}"
+   else
+     ds="0"
+   fi  
+
+   inform "disk size: ${ds} sectors"
+
+   hdArr=($(grep "$devName " /proc/diskstats))
+   
+
+
+   # echo "HD_LINE=${hdArr[@]}"
+   inform "analysing /proc/diskstats for $devPath"   
+   inform "writes completed:           ${hdArr[7]}"
+   inform  "sectors written:           ${hdArr[9]}"
+   inform "time spent writing (ms):    ${hdArr[10]}"
+   inform "time per write (ms):        $((${hdArr[10]}/${hdArr[7]}))"
+   inform "time per 1000/sectors (ms): $((${hdArr[10]}*1000/${hdArr[9]}))"
+   inform "write speed KB/sec:         $((${hdArr[9]}*500/${hdArr[10]}))"
+   # inform "approx secs to write disk:  $(($ds*${hdArr[10]}/${hdArr[9]}/1000))"
 }
