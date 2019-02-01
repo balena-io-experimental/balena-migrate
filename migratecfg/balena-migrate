@@ -667,25 +667,16 @@ function checkArmDevs {
       if listContains "${RASPI_1_REVS}" ${RPI_HW_REV} ; then
         devType="armv7_rpi1"
         inform "device is a Raspberry PI 1"
-        if [[ ! $IMAGE_NAME =~ raspberrypi1 ]] ; then
-          fail "expected raspberrypi1 image, got $IMAGE_NAME"
-        fi
       else
           # shellcheck disable=SC2086
           if listContains "${RASPI_2_REVS}" ${RPI_HW_REV} ; then
             devType="armv7_rpi2"
             inform "device is a Raspberry PI 2"
-            if [[ ! $IMAGE_NAME =~ raspberry-pi2 ]] ; then
-              fail "expected raspberrypi2 image, got $IMAGE_NAME"
-            fi
           else
             # shellcheck disable=SC2086
             if listContains "${RASPI_3_REVS}" ${RPI_HW_REV} ; then
               devType="armv7_rpi1"
               inform "device is a Raspberry PI 3"
-              if [[ ! $IMAGE_NAME =~ raspberrypi3 ]] ; then
-                fail "expected raspberrypi3 image, got $IMAGE_NAME"
-              fi
             else
               fail "no known PI revision found: $RPI_HW_REV"
             fi
@@ -704,9 +695,6 @@ function checkArmDevs {
 
       case "$variant" in
         Green)
-          if [[ ! $IMAGE_NAME =~ beaglebone-green ]] ; then
-            fail "expected beaglebone-green image, got $IMAGE_NAME"
-          fi
           devType="armv7_bb_green"
         ;;
         *)
@@ -1291,16 +1279,10 @@ case $ARCH in
   x86_64)
     inform "ARCH=$ARCH"
     devType="x86_64"
-    if [[ ! $IMAGE_NAME =~ genericx86-64 ]] ; then
-        warn "expected genericx86-64 image, got $IMAGE_NAME"
-    fi
     ;;
   i686)
     devType="i686"
     inform "ARCH=$ARCH"
-    if [[ ! $IMAGE_NAME =~ intel-core2-32 ]] && [[ ! $IMAGE_NAME =~ genericx86\..* ]] ; then
-        warn "expected intel-core2-32 image, got $IMAGE_NAME"
-    fi
     ;;
   *)
     fail "unknown / unsupported architecture: $ARCH"
