@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o errexit -o pipefail
+
 MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
 
 MIG_TX_TIMEOUT=${MIG_TX_TIMEOUT=1200}
@@ -12,7 +14,7 @@ TGT_DIR="migrate"
 COLOR=ON
 
 DEBUG_FUNCTS="process sendDir sendFile sendTgzFile execSshCmd"
-LOG_DEBUG=TRUE
+LOG_DEBUG=FALSE
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 SLEEP_DURATION=5
@@ -380,9 +382,9 @@ function process {
   fi
 
   if [ -n "$TGT_DIR" ] && [ "$TGT_DIR" != "./" ] && [ "$TGT_DIR" != "." ] ; then
-    cmd=("cd" "\"$TGT_DIR\"" ";" "sudo" "./balena-migrate" "--reboot" "10" "--balena-cfg" "balena-migrate-config.json")
+    cmd=("cd" "\"$TGT_DIR\"" ";" "sudo" "./balena-migrate" "--reboot" "10" "--balena-cfg" 'balena-migrate-config.json ; exit $?')
   else
-    cmd=("sudo" "./balena-migrate" "--reboot" "1" "--balena-cfg" "balena-migrate-config.json") 
+    cmd=('sudo" "./balena-migrate" "--reboot" "1" "--balena-cfg" "balena-migrate-config.json ; exit $?') 
   fi
   
   inform "unit id ${UNIT_ID}, invoking migrate script on device"

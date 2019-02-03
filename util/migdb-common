@@ -272,7 +272,7 @@ function mkSshCmd {
     fi
 
     if [ -n "$MIG_SSH_PASSWD" ] ; then
-      args=("sshpass" -p "$MIG_SSH_PASSWD" ssh -t)
+      args=("sshpass" "-p" "\"${MIG_SSH_PASSWD}\"" "ssh" "-t")
     else
       args=("ssh")
     fi
@@ -360,12 +360,18 @@ function execSshCmd {
       local pid=$!
 
       sleep 1
+
+      local found=$(ps -a | grep -E "^$pid ")
+      debug execSshCmd "monitoring pid: ${found}"
+
       now=$(date +%s)
       elapsed=$((now-start))
 
       while kill -0 "$pid" >/dev/null 2>&1 ; 
       do 
         # debug execSshCmd "check timeout=${timeout} elapsed=${elapsed}"
+        #found=$(ps -a | grep -E "^$pid ")
+        #debug execSshCmd "waiting for process: ${found}"
         if [ $elapsed -ge "$timeout" ] ; then
           debug execSshCmd "terminating due to timeout"
           break

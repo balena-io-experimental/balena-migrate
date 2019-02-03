@@ -711,10 +711,10 @@ function checkArmDevs {
 
 
 ####################################################
-## setup raspbery pi to boot using initramfs
+## setup initramfs params
 ####################################################
 
-function setupBootCfg_rpi {
+function setupInitramfs_rpi {
   inform "setupBootCfg_rpi"
   ##########################
   ## Modify /boot/config.txt
@@ -726,8 +726,14 @@ function setupBootCfg_rpi {
   inform "checking initramfs-tools config"
   sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1n/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
   sed -i 's/^\(MODULES\s*=\s*\).*$/\1list/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+}
 
 
+####################################################
+## setup raspbery pi to boot using initramfs
+####################################################
+
+function setupBootCfg_rpi {
   if [ "$NO_SETUP" != "TRUE" ] ; then
     # RESTORE_BOOT="TRUE"
 
@@ -790,6 +796,15 @@ function setupBootCfg_rpi {
   fi
 }
 
+
+####################################################
+## setup beaglebone initramfs
+####################################################
+
+function setupInitramfs_bb {
+  return 0
+}
+
 ####################################################
 ## setup beaglebone device to boot with initramfs
 ####################################################
@@ -839,20 +854,20 @@ function setupBootCfg_bb {
       fail "setupBootCfg_bb not implemented for devType=${devType}"
     ;;
   esac
-
-
-
 }
 
 ####################################################
 ## setup intel device to boot with initramfs
 ####################################################
 
-function setupBootCfg_x86 {
-  inform "setupBootCfg_x86"
-  # TODO: grub boot device is set in $GRUB_BOOT_DEV - try to determine it from setup (eg. grub.conf)
-  # TODO: assuming we are on debian like OS
-
+function setupInitramfs_x86 {
+  inform "setupInitramfs_x86"
+    
+  # make sure BUSYBOX is used & **most** modules are present
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} busybox"
+  inform "checking initramfs-tools config"
+  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
+  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   # check if this is an uefi booted system
   local efiBootMgr
@@ -862,31 +877,6 @@ function setupBootCfg_x86 {
     INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} efibootmgr" # TODO: might or might not be using it
   fi
 
-  KERNEL_CMD_LINE=$(cat /proc/cmdline)
-
-  if [ -z "$KERNEL_CMD_LINE" ] ; then
-    fail "no kernel command line found"
-  fi
-
-  if [[ "$KERNEL_CMD_LINE" =~ ^BOOT_IMAGE=(.*)$ ]] ; then
-    KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
-  else 
-    fail "unexpected command line: $KERNEL_CMD_LINE"
-  fi
-
-  if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
-    KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
-  fi
-
-  if [ "$DEBUG" == "TRUE" ] ; then
-    if [[ ! "$KERNEL_CMD_LINE" =~ debug ]] ; then
-      KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
-    fi
-  fi
-
-  inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
-  # inform "BOOT_DIR=$BOOT_DIR"
-
   if [ -z "$(whereis -b update-grub)" ] || [ -z "$(whereis -b grub-reboot)" ] ; then
       fail "failed to ensure required programs update-grub, grub-reboot"
   fi
@@ -894,13 +884,6 @@ function setupBootCfg_x86 {
   if [ ! -d /etc/grub.d ] ; then
       fail "grub configuration not found"
   fi
-
-  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} busybox"
-  # make sure BUSYBOX is used & **most** modules are present
-
-  inform "checking initramfs-tools config"
-  sed -i 's/^\(BUSYBOX\s*=\s*\).*$/\1y/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
-  sed -i 's/^\(MODULES\s*=\s*\).*$/\1most/' "${HOME_DIR}/initramfs-tools/initramfs.conf" || fail "failed to modify ${HOME_DIR}/initramfs-tools/initramfs.conf"
 
   # TODO guess based on OS Version
   if [ "$GRUB_INSTALL" == "TRUE" ] ; then
@@ -935,7 +918,43 @@ EOI
     fi
   fi
 
+}
+
+####################################################
+## setup intel device to boot with initramfs
+####################################################
+
+function setupBootCfg_x86 {
+  inform "setupBootCfg_x86"
+
+
+
   if [ "$NO_SETUP" != "TRUE" ] ; then
+    KERNEL_CMD_LINE=$(cat /proc/cmdline)
+
+    if [ -z "$KERNEL_CMD_LINE" ] ; then
+      fail "no kernel command line found"
+    fi
+
+    if [[ "$KERNEL_CMD_LINE" =~ ^BOOT_IMAGE=(.*)$ ]] ; then
+      KERNEL_CMD_LINE="${BASH_REMATCH[1]}"
+    else 
+      fail "unexpected command line: $KERNEL_CMD_LINE"
+    fi
+
+    if [[ ! "$KERNEL_CMD_LINE" =~ boot= ]] ; then
+      KERNEL_CMD_LINE="$KERNEL_CMD_LINE boot=local"
+    fi
+
+    if [ "$DEBUG" == "TRUE" ] ; then
+      if [[ ! "$KERNEL_CMD_LINE" =~ debug ]] ; then
+        KERNEL_CMD_LINE="$KERNEL_CMD_LINE debug"
+      fi
+    fi
+
+    inform "KERNEL_CMD_LINE=$KERNEL_CMD_LINE"
+    # inform "BOOT_DIR=$BOOT_DIR"
+
     debug setupBootCfg_x86 "looking for boot device blkid"
 
     if [ -d /dev/disk/by-uuid ] ; then
@@ -1362,22 +1381,22 @@ done < <(parted -s "${BOOT_DEV}" print)
 
 inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
-###########################
-## create boot configuration
-###########################
+##################################
+## create Initramfs configuration
+##################################
 
 case "$devType" in
     armv7_rpi*)
-      inform "performing boot setup for RPI: $devType"
-      setupBootCfg_rpi
+      inform "performing initramfs setup for RPI: $devType"
+      setupInitramfs_rpi
     ;;
     armv7_bb*)
-      inform "performing boot setup for Beaglebone: $devType"
-      setupBootCfg_bb
+      inform "performing initramfs setup for Beaglebone: $devType"
+      setupInitramfs_bb
     ;;
     x86_64|i686)
-      inform "performing boot setup for other: $devType"
-      setupBootCfg_x86
+      inform "performing initramfs setup for other: $devType"
+      setupInitramfs_x86
     ;;
 esac
 
@@ -1455,7 +1474,7 @@ DEV_TYPE=$devType
 BOOT_DEV=${BOOT_DEV}
 
 ORIG_BOOT_MNT=${S2_ORIG_BOOT_MNT}
-RESTORE_BOOT=${RESTORE_BOOT_CFG_STAGE2}
+# RESTORE_BOOT=${RESTORE_BOOT_CFG_STAGE2}
 MOUNT_BOOT=${S2_MOUNT_BOOT}
 
 ORIG_BOOT_PART=${BOOT_FS}
@@ -1607,6 +1626,27 @@ inform "Est. memory left: ${leftMem} kB "
 if [ ${leftMem} -lt ${MEM_MIN_FREE_S1} ] ; then
   fail "Est. memory left is less than set threshold (${MEM_MIN_FREE_S1} kB), reduce backup size or threshold in MEM_MIN_FREE_S1"
 fi
+
+##################################
+## create Boot configuration
+##################################
+
+case "$devType" in
+    armv7_rpi*)
+      inform "performing initramfs setup for RPI: $devType"
+      setupBootCfg_rpi
+    ;;
+    armv7_bb*)
+      inform "performing initramfs setup for Beaglebone: $devType"
+      setupBootCfg_bb
+    ;;
+    x86_64|i686)
+      inform "performing initramfs setup for other: $devType"
+      setupBootCfg_x86
+    ;;
+esac
+
+echo "RESTORE_BOOT=${RESTORE_BOOT_CFG_STAGE2}" >> "${MIGRATE_CONF}"
 
 ###########################
 ## reboot
