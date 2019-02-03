@@ -126,7 +126,7 @@ function process {
 
 
   if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
-    UNIT_OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "log-${UNIT_ID}-XXX")
+    UNIT_OUTPUT_LOG=$(mktemp -p "${LOG_DIR}" "log-${UNIT_ID}-XXX")
     setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
   fi
   

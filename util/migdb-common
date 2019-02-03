@@ -354,15 +354,15 @@ function execSshCmd {
         eval "${sshCmd[*]}"
       else 
         sshCmd+=("2>&1" "|" "tee" "-a" "\"$cmdLog\"" "&")
-        debug execSshCmd  "sshCmd=<${sshCmd[*]}>"
+        debug execSshCmd  "sshCmd=<${sshCmd[*]}>"        
         eval "${sshCmd[*]}"
       fi
       local pid=$!
 
       sleep 1
 
-      local found=$(ps -a | grep -E "^$pid ")
-      debug execSshCmd "monitoring pid: ${found}"
+      # local found=$(ps -a | grep -E "^$pid ")
+      # debug execSshCmd "monitoring pid: ${found}"
 
       now=$(date +%s)
       elapsed=$((now-start))
@@ -447,7 +447,7 @@ function sendFile {
     elapsed=$((now-start))
 
     while kill -0 "$pid" >/dev/null 2>&1 ; do
-      if [ $elapsed -ge $timeout ] ; then 
+      if [ $elapsed -ge "$timeout" ] ; then 
         break
       fi 
       sleep 1
@@ -527,7 +527,7 @@ function sendTgzFile {
     while kill -0 "$pid" >/dev/null 2>&1 ; do
       now=$(date +%s)
       elapsed=$((now-start))
-      if [ $elapsed -ge $timeout ] ; then 
+      if [ $elapsed -ge "$timeout" ] ; then 
         break
       fi 
       sleep 1
@@ -612,7 +612,7 @@ function sendDir {
     elapsed=$((now-start))
     while kill -0 "$pid" >/dev/null 2>&1 ; do
       # debug sendDir "check timeout=${timeout} elapsed=${elapsed}"
-      if [ $elapsed -ge $timeout ] ; then 
+      if [ $elapsed -ge "$timeout" ] ; then 
         debug sendDir "terminating due to timeout"
         break
       fi 

@@ -259,7 +259,7 @@ function process {
   fi
 
   if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
-    UNIT_OUTPUT_LOG=$(mktemp -p ${LOG_DIR} "log-${UNIT_ID}-XXX")
+    UNIT_OUTPUT_LOG=$(mktemp -p "${LOG_DIR}" "log-${UNIT_ID}-XXX")
     setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
   fi
 
@@ -299,8 +299,8 @@ function process {
   fi
 
   if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
-    if ! sendTgzFile "$MIG_CFG_ARCHIVE" "$TGT_DIR" $MIG_TX_TIMEOUT ; then
-      if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+    if ! sendTgzFile "$MIG_CFG_ARCHIVE" "$TGT_DIR" "$MIG_TX_TIMEOUT" ; then
+      if [ $connRetryCount -lt "$MIG_CONN_ATTEMPTS" ] ; then 
         warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
         setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
         setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
@@ -314,8 +314,8 @@ function process {
   else
     if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
       # TODO: same as above
-      if ! sendDir "$MIG_CFG_DIR" "$TGT_DIR" $MIG_TX_TIMEOUT ; then        
-        if [ $connRetryCount -lt $MIG_CONN_ATTEMPTS ] ; then 
+      if ! sendDir "$MIG_CFG_DIR" "$TGT_DIR" "$MIG_TX_TIMEOUT" ; then        
+        if [ $connRetryCount -lt "$MIG_CONN_ATTEMPTS" ] ; then 
           warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
           setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"          
           setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
@@ -398,10 +398,11 @@ function process {
     return 0
   fi
 
-  successMsg=$(cat "$cmdLog" | grep -E "\[[^\]+\]*.INFO:.*migration successful,")
+  successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," < "$cmdLog")
+  local grepRes=$?
   rm "$cmdLog" || true
 
-  if [ $? -eq 0 ] && [ -n "$successMsg" ] ; then        
+  if [ $grepRes -eq 0 ] && [ -n "$successMsg" ] ; then
     if [[ $successMsg =~ .*please\ reboot\ system.* ]] ; then
       inform "unit id ${UNIT_ID}, rebooting device"
 
@@ -478,7 +479,7 @@ if ! balena apps 1>/dev/null 2>&1 ; then
     inform "balena logging with token"
     balena login -t "$MIG_BALENA_TOKEN" 1>/dev/null || fail "failed to log in to balena"
   else
-    fail "balena cli does not appear to be logged in\n please login usin balena login or supply an API token in MIG_BALENA_TOKEN or using the --balena-token option"
+    fail "balena cli does not appear to be logged in\n please login using balena login or supply an API token in MIG_BALENA_TOKEN or using the --balena-token option"
   fi
 fi
 
