@@ -126,6 +126,15 @@ MIN_ROOT_AVAIL=10240
 # DEBUG enable DEBUG messages if set to TRUE
 LOG_DEBUG="FALSE"
 
+################################################################################
+# Max acceptable bad blocks - a scan is only performed if value is set
+MAX_BADBLOCKS=
+
+################################################################################
+# Min acceptable device write speed
+MIN_WRITE_SPEED=
+
+
 ##########################################
 # log functions
 ##########################################
@@ -198,11 +207,12 @@ function printHelp {
     USAGE balena-stage1 [OPTIONS]
     please run as root
     OPTIONS:
-      -c | --config <config file>  - Use given config file instead of /etc/balena-migrate.log
-      --home <HOME_DIR>            - Use given path as home directory
-      -h | --help                  - Print this help and exit
-      -r | --reboot <DELAY>        - Reboot when done after a delay of DELAY seconds
-
+      -c | --config <config file>   - Use given config file instead of /etc/balena-migrate.log
+      --home <HOME_DIR>             - Use given path as home directory
+      -h | --help                   - Print this help and exit
+      -r | --reboot <DELAY>         - Reboot when done after a delay of DELAY seconds
+      --write-speed <minimum speed> - Abort migration if the devices write speed is less than the specified rate in KB/sec
+      --bad-blocks <max bad blocks> - Perform badblock scan and abort migration more bad blocks are found than specified
 EOI
   exit 0
 }
@@ -251,6 +261,22 @@ function getCmdArgs {
           fi
           PARAM_REBOOT="$2"
           debug getCmdArgs "set PARAM_REBOOT=$PARAM_REBOOT"
+          shift
+          ;;
+        --bad-blocks)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_MAX_BADBLOCKS="$2"
+          debug getCmdArgs "set PARAM_MAX_BADBLOCKS=$PARAM_MAX_BADBLOCKS"
+          shift
+          ;;
+        --write-speed)
+          if [ -z "$2" ]; then
+            fail "\"$1\" argument needs a value."
+          fi
+          PARAM_MIN_WRITE_SPEED="$2"
+          debug getCmdArgs "set PARAM_MIN_WRITE_SPEED=$PARAM_MIN_WRITE_SPEED"
           shift
           ;;
         *)
@@ -371,7 +397,12 @@ function checkDisk {
   inform "time spent writing (ms):    ${hdArr[10]}"
   inform "time per write (ms):        $((hdArr[10]/hdArr[7]))"
   inform "time per 1000/sectors (ms): $((hdArr[10]*1000/hdArr[9]))"
-  inform "write speed KB/sec:         $((hdArr[9]*500/hdArr[10]))"
+  local writeSpeed=$((hdArr[9]*500/hdArr[10]))
+  inform "write speed KB/sec:         ${writeSpeed}"
+
+  if [ -z "$MIN_WRITE_SPEED" ] && [ "$MIN_WRITE_SPEED" -gt "$writeSpeed" ] ; then 
+    fail "device write speed is less than threshold value ${writeSpeed} < ${MIN_WRITE_SPEED}"
+  fi 
 }
 
 ##########################################
@@ -1054,6 +1085,14 @@ if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
 fi
 
+if [ -n "$PARAM_MAX_BADBLOCKS" ] ; then
+  MAX_BADBLOCKS=$PARAM_MAX_BADBLOCKS
+fi
+
+if [ -n "$PARAM_MIN_WRITE_SPEED" ] ; then
+  MIN_WRITE_SPEED=$PARAM_MIN_WRITE_SPEED
+fi
+
 if [ -n "$PARAM_HOME_DIR" ] ; then
   # cmd line params take precedence over config file
   HOME_DIR=$PARAM_HOME_DIR
@@ -1169,8 +1208,8 @@ if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then
   REQUIRED_PGMS="$REQUIRED_PGMS nc"
 fi 
 
-if [ "$SCAN_BADBLOCKS" == "TRUE" ] ;  then 
-  INITRAM_REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS badblocks"
+if [ -z "$MAX_BADBLOCKS" ] ;  then 
+  INITRAM_REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS badblocks blockdev"
 fi 
 
 # shellcheck disable=SC2086
@@ -1499,7 +1538,7 @@ NO_FLASH=${NO_FLASH}
 
 TERM_EXIT="${TERM_EXIT}"
 
-SCAN_BADBLOCKS=${SCAN_BADBLOCKS}
+MAX_BADBLOCKS=${MAX_BADBLOCKS}
 
 GRUB_INSTALL=${GRUB_INSTALL}
 GRUB_CFG="$GRUB_CFG"

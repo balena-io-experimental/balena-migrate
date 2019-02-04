@@ -249,6 +249,13 @@ Command Line Option in migdb-migrate: ```--dur <duration>```
 
 Wait time in seconds before looking for migrated devices in balena, defaults to 180 sec.
 
+
+#### MIG_EXEC_TIMEOUT
+
+Used by: **migdb-migrate**
+
+Set a timeout in seconds for the execution of the migrate script on the target device. Defaults to 600 = 10 minutes.
+
 #### MIG_LOG_TO
 
 Used by: **migdb-add-unit**, **migdb-check-done**, **migdb-migrate**
@@ -340,6 +347,11 @@ The ssh user name used to connected to the device.
 
 If this parameter is present in **migdb-add-unit**, it will be written to the unit file and override the same option given elsewhere.
 
+#### MIG_TX_TIMEOUT
+
+Used by: **migdb-migrate**
+
+Set a timeout in seconds for the transfer of files to the target device. Defaults to 1200 = 20 minutes.
 
 ## Strategy
 
@@ -664,15 +676,15 @@ found in */run/initramfs/initramfs.debug*.
 **Default:** ```DO_REBOOT=```
 
 When this variable is set to a numeric value the *balena-migrate* script will reboot the computer after finishing successfully.
-It will display a warning and reboot after the number of minutes specified in *DO\_REBOOT*. By default this option is
+It will display a warning and reboot after the number of seconds specified in ```DO_REBOOT```. By default this option is
 disabled and the device has to be rebooted manually after stage 1 has terminated.
 
 The variable can be set on the command line by using the -r or --reboot parameters:
 
 ``` bash
-balena-migrate -r 1
+balena-migrate -r 10
 
-balena-migrate --reboot=1
+balena-migrate --reboot=10
 ```
 
 #### GRUB\_INSTALL
@@ -777,6 +789,22 @@ LOG_DRIVE=/dev/sdb1
 LOG_FS_TYPE=ext4
 ```
 
+#### MAX\_BADBLOCKS
+
+**Default:** ```MAX_BADBLOCKS=```
+
+This is currently work in progress. If set the stage 2 script will perform a non distructive write test on the installation device. This operation is performed using ```badblocks -v -n <device>``` and can take anything from several minutes to several hours depending on type and state of the device.
+
+* If ```MAX_BADBLOCKS``` is set to a numerical value, migration will fail if more bad blocks are detected that specified in ```MAX_BADBLOCKS```.
+* If ```MAX_BADBLOCKS``` is set to a numerical value terminated with a '%', migration will fail the percentage of bad blocks exceeds the value specified in ```MAX_BADBLOCKS```.
+
+**Example:**
+
+``` bash 
+# fail on an bad block detected
+MAX_BADBLOCKS=0
+```
+
 #### NO\_FLASH
 
 **Default:** ```NO_FLASH=TRUE```
@@ -791,6 +819,7 @@ Default: ```NO_SETUP=```
 
 When this variable is set to *TRUE* the *balena-migrate* script does not attempt to modify the boot configuration.
 It will check the prerequisites create an initramfs but not create any disruptive configuration changes.
+
 
 #### TERM\_EXIT
 

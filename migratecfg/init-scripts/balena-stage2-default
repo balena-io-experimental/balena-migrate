@@ -166,47 +166,40 @@ log "..done"
 # unmount root and set exit strategy to reboot
 ######################################################################
 
-if [ "$SCAN_BADBLOCKS" = "TRUE" ] ; then
-	# log "attempting badblocks -v $BOOT_DEV 1>/dev/null 2>${MIGRATE_TMP}/bbsummarry.txt || true"
-	badblocks -v -n $BOOT_DEV 1>/dev/null 2>${MIGRATE_TMP}/bbsummarry.txt || true
-	if [ -z "$LOG_TO" ] ; then
-		cat ${MIGRATE_TMP}/bbsummarry.txt
-	else
-		cat ${MIGRATE_TMP}/bbsummarry.txt >> "$LOG_TO"
-	fi	
-
-#	Checking for bad blocks in non-destructive read-write mode
-#	From block 0 to 8388603
-#	Testing with random pattern: Pass completed, 0 bad blocks found. (0/0/0 errors)
-	
-	tmp=$(grep -E "From block [0-9]+ to [0-9]+" ${MIGRATE_TMP}/bbsummarry.txt) || log "grep blocks no match"
-	if [ -n "$tmp" ] ; then 
+if [ -n "$MAX_BADBLOCKS" ] ; then
+	count=0
+	# shellcheck disable=SC2003
+	max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)%$')	
+	if [ -n "$max" ]  ; then 
+		totBlocks=$(blockdev --getsize "$BOOT_DEV")
 		# shellcheck disable=SC2003
-		blockCount=$(expr match "$tmp" '^.* \([0-9]\+\)$') || true
-	fi 
-	
-	tmp=$(grep -E "Pass completed, [0-9]+ bad blocks" ${MIGRATE_TMP}/bbsummarry.txt) || log "grep 2 no match"
-	if [ -n "$tmp" ] ; then 
+		max=$(expr "$max" '*' "$totBlocks")
 		# shellcheck disable=SC2003
-		badCount=$(expr match "$tmp" '.*Pass completed, \([0-9]\+\) bad blocks.*') || true
-	fi 
-	log "check blockCount: $blockCount badCount: $badCount"
-	if [ -n "$blockCount" ] && [ -n "$badCount" ] ; then
-		if  [ "$badCount" != "0" ]  ; then
-			# shellcheck disable=SC2003
-			badCount=$(expr "$badCount" "*" "100")
-			# shellcheck disable=SC2003
-			badPercent=$(expr "$badCount" "/" "$blockCount") 			
-			bad=$(expr "$badPercent" '>' '10') || true 
-			if  [ -n "$bad" ] && [ "$bad" = "1" ] ; then
-				fail "not writing image, too many bad blocks"
-			fi
-		else
-			log "found 0% bad blocks on ${BOOT_DEV}"
-		fi
+		max=$(expr "$max" '/' 100)
 	else 
-		log "failed to parse badblocks output"
-	fi
+		# shellcheck disable=SC2003
+		max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)$')
+	fi 
+
+	if [ -n "$max" ] ; then  
+		fifo="${MIGRATE_TMP}/cmdFifo"
+		mkfifo "$fifo"
+		badblocks -n $BOOT_DEV > "$fifo" &
+		pid=$!
+		while read -r line ; 
+		do 
+			# shellcheck disable=SC2003
+			count=$(expr "$count" '+' 1)
+			if [ "$count" -gt "$max" ] ; then 
+				kill -9 "$pid" 2>/dev/null || true
+				fail "not writing image, too many bad blocks: $count , max: $max"
+			fi 		
+		done < "$fifo"
+		rm "$fifo"
+		inform "found ${count} bad blocks, max ${max}"
+	else
+		warn "failed to parse $MAX_BADBLOCKS - no check performed"
+	fi	
 fi
 
 ######################################################################
