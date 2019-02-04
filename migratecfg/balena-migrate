@@ -400,7 +400,7 @@ function checkDisk {
   local writeSpeed=$((hdArr[9]*500/hdArr[10]))
   inform "write speed KB/sec:         ${writeSpeed}"
 
-  if [ -z "$MIN_WRITE_SPEED" ] && [ "$MIN_WRITE_SPEED" -gt "$writeSpeed" ] ; then 
+  if [ -n "$MIN_WRITE_SPEED" ] && [ $MIN_WRITE_SPEED -gt $writeSpeed ] ; then 
     fail "device write speed is less than threshold value ${writeSpeed} < ${MIN_WRITE_SPEED}"
   fi 
 }
