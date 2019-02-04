@@ -398,7 +398,7 @@ function process {
     return 0
   fi
 
-  successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," < "$cmdLog")
+  successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," < "$cmdLog") || true  
   local grepRes=$?
   rm "$cmdLog" || true
 
