@@ -1208,7 +1208,7 @@ if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then
   REQUIRED_PGMS="$REQUIRED_PGMS nc"
 fi 
 
-if [ -z "$MAX_BADBLOCKS" ] ;  then 
+if [ -n "$MAX_BADBLOCKS" ] ;  then   
   INITRAM_REQUIRED_PGMS="$INITRAM_REQUIRED_PGMS badblocks blockdev"
 fi 
 

@@ -166,11 +166,12 @@ log "..done"
 # unmount root and set exit strategy to reboot
 ######################################################################
 
-if [ -n "$MAX_BADBLOCKS" ] ; then
-	count=0
+if [ -n "$MAX_BADBLOCKS" ] ; then	
+	log "MAX_BADBLOCKS=$MAX_BADBLOCKS"
 	# shellcheck disable=SC2003
-	max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)%$')	
+	max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)%$')	|| true
 	if [ -n "$max" ]  ; then 
+		log "max=$max %"
 		totBlocks=$(blockdev --getsize "$BOOT_DEV")
 		# shellcheck disable=SC2003
 		max=$(expr "$max" '*' "$totBlocks")
@@ -178,27 +179,39 @@ if [ -n "$MAX_BADBLOCKS" ] ; then
 		max=$(expr "$max" '/' 100)
 	else 
 		# shellcheck disable=SC2003
-		max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)$')
+		max=$(expr match "$MAX_BADBLOCKS" '^\([0-9]\+\)$')	|| true	
 	fi 
+	
+	log "max bad blocks=$max"
 
-	if [ -n "$max" ] ; then  
+	count=0
+	if [ -n "$max" ] ; then
 		fifo="${MIGRATE_TMP}/cmdFifo"
 		mkfifo "$fifo"
-		badblocks -n $BOOT_DEV > "$fifo" &
+
+		if [ -z "$LOG_TO" ] ; then 
+			badblocks -n -v $BOOT_DEV > "$fifo" &	
+		else
+			badblocks -n -v $BOOT_DEV > "$fifo" 2>>$LOG_TO &
+		fi 
+		
 		pid=$!
-		while read -r line ; 
-		do 
+		log "badblocks started"
+		while read -r line ;
+		do
 			# shellcheck disable=SC2003
+			log "line=$line"
 			count=$(expr "$count" '+' 1)
-			if [ "$count" -gt "$max" ] ; then 
+			term=$(expr "$count" '>' "$max") || true 
+			if [ -n "$term" ] && [ "$term" = "1" ] ; then 
 				kill -9 "$pid" 2>/dev/null || true
 				fail "not writing image, too many bad blocks: $count , max: $max"
 			fi 		
 		done < "$fifo"
 		rm "$fifo"
-		inform "found ${count} bad blocks, max ${max}"
+		log "found ${count} bad blocks, max ${max}"
 	else
-		warn "failed to parse $MAX_BADBLOCKS - no check performed"
+		log "failed to parse $MAX_BADBLOCKS - no check performed"
 	fi	
 fi
 
