@@ -124,7 +124,8 @@ MIN_ROOT_AVAIL=10240
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG="FALSE"
+LOG_DEBUG="TRUE"
+DEBUG_FUNCTS="main setupBootCfg_bb clean bbg_setup"
 
 ################################################################################
 # Max acceptable bad blocks - a scan is only performed if value is set
@@ -133,7 +134,6 @@ MAX_BADBLOCKS=
 ################################################################################
 # Min acceptable device write speed
 MIN_WRITE_SPEED=
-
 
 ##########################################
 # log functions
@@ -346,7 +346,7 @@ checkOs() {
 ##########################################
 
 function checkDisk {
-   local pout diskSize imgSize devName devPath hdArr device=$1 
+   local diskSize imgSize devName devPath hdArr device=$1 
 
    if [[ $device =~ ^/dev/(.*)$ ]] ; then 
 	  devPath="${device}"
@@ -356,23 +356,12 @@ function checkDisk {
     devPath="/dev/${device}"	
    fi	   
 
-   # echo "dev name: $devName"
-   # echo "dev path: $devPath"
+  sectorSize=$(blockdev --getpbsz $devPath)
+  if [ -z "$sectorSize" ] || [ $sectorSize -eq 0 ] ; then 
+    sectorSize=1
+  fi
 
-  pout=$(parted "$devPath" -s unit b print)
-  diskSize=$(echo "$pout" | grep -E "Disk.*: [0-9]+B")
-  if [ -n "$diskSize" ] && [[ $diskSize =~ ^Disk.*:\ ([0-9]+)B ]]; then 
-    diskSize="${BASH_REMATCH[1]}"
-  else
-    diskSize="0"
-  fi  
-
-   #sectorSize=$(echo "$pout" | grep -E "Sector size.*: [0-9]+B/.*")
-   #if [ -n "$sectorSize" ] && [[ $sectorSize =~ ^Sector\ size.*:\ ([0-9]+)B/.* ]]; then 
-   #  sectorSize="${BASH_REMATCH[1]}"
-   #else
-   #  sectorSize="512"
-   #fi  
+  diskSize=$(blockdev --getsize64 $devPath)
 
   imgSize=$(gzip -l "${HOME_DIR}/${IMAGE_NAME}" | sed -n '2p')
   if [ -n "$imgSize" ] && [[ $imgSize =~ [0-9]+[[:space:]]+([0-9]+)[[:space:]]+ ]] ; then 
@@ -381,23 +370,38 @@ function checkDisk {
     imgSize=0
   fi
 
-  inform "disk size:  $((diskSize/1024))KB"
-  inform "image size: $((imgSize/1024))KB"
+  inform "disk size:   $((diskSize/1048576))MB"
+  inform "image size:  $((imgSize/1024))KB"
+  inform "sector size: ${sectorSize}B"
 
   if [ $imgSize -gt $diskSize ] ; then 
     fail "disksize appears to be less than image size, aborting"
   fi
 
   hdArr=($(grep "$devName " /proc/diskstats))
+
+  local writesCompleted sectorsWritten timeWriting
+  inform "analysing /proc/diskstats for $devPath"  
+  if [ -f "/sys/block/${devName}/stat" ] ; then
+    hdArr=($(cat "/sys/block/${devName}/stat"))
+    inform "/sys/block/${devName}/stat=${hdArr[*]}"	  
+    writesCompleted=${hdArr[4]}
+    sectorsWritten=${hdArr[6]}
+    timeWriting=${hdArr[7]}    
+  else 
+    hdArr=($(grep "${devName} " "/proc/partitions"))	  
+    inform "/proc/partitions for ${devName}=${hdArr[*]}"
+    writesCompleted=${hdArr[8]}
+    sectorsWritten=${hdArr[10]}
+    timeWriting=${hdArr[11]}
+  fi	  
   
-  # echo "HD_LINE=${hdArr[@]}"
-  inform "analysing /proc/diskstats for $devPath"   
-  inform "writes completed:           ${hdArr[7]}"
-  inform "sectors written:            ${hdArr[9]}"
-  inform "time spent writing (ms):    ${hdArr[10]}"
-  inform "time per write (ms):        $((hdArr[10]/hdArr[7]))"
-  inform "time per 1000/sectors (ms): $((hdArr[10]*1000/hdArr[9]))"
-  local writeSpeed=$((hdArr[9]*500/hdArr[10]))
+  inform "writes completed:           ${writesCompleted}"
+  inform "sectors written:            ${sectorsWritten}"
+  inform "time spent writing (ms):    ${timeWriting}"
+  inform "time per write (ms):        $((timeWriting/writesCompleted))"
+  inform "time per 1000/sectors (ms): $((timeWriting*1000/sectorsWritten))"
+  local writeSpeed=$((sectorsWritten*sectorSize*1000/timeWriting/1024))
   inform "write speed KB/sec:         ${writeSpeed}"
 
   if [ -n "$MIN_WRITE_SPEED" ] && [ $MIN_WRITE_SPEED -gt $writeSpeed ] ; then 
@@ -716,8 +720,9 @@ function checkArmDevs {
     ;;
     beaglebone)
       # eg.: TI AM335x BeagleBone Green
-      local tmp, variant
-      tmp=$(cat "/proc/device-tree/model")
+      local tmp variant
+      tmp="$(cat /proc/device-tree/model | tr '\0' '\n')"
+      
       if [[ $tmp =~ .*\ BeagleBone\ ([^\ ]+) ]] ; then
         variant="${BASH_REMATCH[1]}" # $(expr match "$tmp" '')
       fi
@@ -750,6 +755,11 @@ function setupInitramfs_rpi {
   ##########################
   ## Modify /boot/config.txt
   ##########################
+  # raspi config.txt to modify
+  CONFIG_TXT="/boot/config.txt"
+  # raspi cmdline.txt to modify
+  CMDLINE_TXT="/boot/cmdline.txt"
+
 
   INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} cp cat rm sleep"
 
@@ -828,6 +838,78 @@ function setupBootCfg_rpi {
 }
 
 
+function bbg_setup() {
+  debug bbg_setup "entered"
+
+  UBOOT_ENV="/uEnv.txt"
+  debug bbg_setup "for $devType"
+
+  KERNEL_NAME=
+  for file in /boot/* ; do     
+    if [[ $file =~ ^/boot/vmlinuz-(.*)$ ]] ; then
+      local kUName sUName
+      kUName=${BASH_REMATCH[1]}
+      sUName=$(uname -r)
+      if [ -n "$kUName" ] && [ "$kUName" == "$sUName" ] ; then 
+        debug bbg_setup "found: ${file}"
+        KERNEL_NAME="$file"
+        break;
+      fi
+    fi
+  done
+
+  if [ -z "${KERNEL_NAME}" ] ; then 
+    fail "unable to determine kernel image file name"
+  else
+    inform "using kernel: $KERNEL_NAME"
+  fi
+
+  if [ -f "${UBOOT_ENV}" ] ; then
+    UENV_TXT_BACKUP="${UBOOT_ENV}.$(date +%Y%m%d-%H-%M-%S)"
+    cp "${UBOOT_ENV}" "/${UENV_TXT_BACKUP}" || fail "failed to backup boot config"
+    inform "created backup of ${UBOOT_ENV} in /${UENV_TXT_BACKUP}"
+    RESTORE_BOOT_CFG_STAGE1="mv /${UENV_TXT_BACKUP} ${UBOOT_ENV}"
+    RESTORE_BOOT_CFG_STAGE2="cp ${S2_BOOT_PATH}/${UENV_TXT_BACKUP} ${S2_BOOT_PATH}${UBOOT_ENV}"
+  else
+    RESTORE_BOOT_CFG_STAGE1="rm ${UBOOT_ENV}"
+    RESTORE_BOOT_CFG_STAGE2="rm ${S2_BOOT_PATH}${UBOOT_ENV}"
+  fi
+      
+  cat <<"EOI" > "${UBOOT_ENV}"
+##Rename as: uEnv.txt to override old bootloader in eMMC
+##These are needed to be compliant with Angstrom's 2013.06.20 u-boot.
+
+loadaddr=0x82000000
+fdtaddr=0x88000000
+rdaddr=0x88080000
+
+initrd_high=0xffffffff
+fdt_high=0xffffffff
+
+##These are needed to be compliant with Debian 2014-05-14 u-boot.
+
+loadximage=echo debug: [__KERNEL_NAME__] ... ; load mmc 0:1 ${loadaddr} __KERNEL_NAME__
+loadxfdt=echo debug: [/boot/dtbs/${uname_r}/${fdtfile}] ... ;load mmc 0:1 ${fdtaddr} /boot/dtbs/${uname_r}/${fdtfile}
+loadxrd=echo debug: [__INIIRAMFS_NAME__] ... ; load mmc 0:1 ${rdaddr} __INIIRAMFS_NAME__; setenv rdsize ${filesize}
+check_dtb=if test -n ${dtb}; then setenv fdtfile ${dtb};fi;
+check_uboot_overlays=if test -n ${enable_uboot_overlays}; then setenv enable_uboot_overlays ;fi;
+loadall=run check_dtb; run check_uboot_overlays; run loadximage; run loadxrd; run loadxfdt;
+mmcargs=setenv bootargs console=tty0 console=${console} ${optargs} ${cape_disable} ${cape_enable} root=/dev/mmcblk0p1 rootfstype=${mmcrootfstype} ${cmdline} __INITRAMFS_DEBUG__
+
+uenvcmd=run loadall; run mmcargs; echo debug: [${bootargs}] ... ; echo debug: [bootz ${loadaddr} ${rdaddr}:${rdsize} ${fdtaddr}] ... ; bootz ${loadaddr} ${rdaddr}:${rdsize} ${fdtaddr};
+EOI
+
+sed -i 's#__INIIRAMFS_NAME__#'${INITRAMFS_NAME}'#g' "${UBOOT_ENV}"
+sed -i 's#__KERNEL_NAME__#'${KERNEL_NAME}'#g' "${UBOOT_ENV}"
+local iDebug=
+if [ "$DEBUG" == "TRUE" ] ; then 
+  iDebug="debug"
+fi
+sed -i 's#__INITRAMFS_DEBUG__#'${iDebug}'#g' "${UBOOT_ENV}"
+}
+
+
+
 ####################################################
 ## setup beaglebone initramfs
 ####################################################
@@ -844,42 +926,7 @@ function setupBootCfg_bb {
   debug setupBootCfg_bb "invoked"
   case $devType in
     armv7_bb_green)
-      debug setupBootCfg_bb "for $devType"
-    # modify bbb_uEnv.txt ?
-    # TODO:
-    #   target boot device mmcblk1 == eMMC ?
-    #   determine current boot device mmcblk0 == SD , mmcblk1 == eMMC ?
-    #   replace initramfs file or rename /bbb_uEnv.txt to /uEnv.txt and use alt initramfs
-    #
-      ##########################################################################
-      # copy /bbb-uEnv.txt to /uEnv.txt if necessary, create restore cmd
-      # TODO: make sure it is original/unmodified or create it fromm scratch
-      ##########################################################################
-      if [ ! -f "/uEnv.txt" ] ; then
-          if [ -f "/bbb-uEnv.txt" ] ; then
-            debug setupBootCfg_bb "found /bbb-uEnv.txt"
-            cp /bbb-uEnv.txt /uEnv.txt || fail "failed to copy /bbb-uEnv.txt to /uEnv.txt"
-            RESTORE_BOOT_CFG_STAGE1="rm /uEnv.txt"
-            RESTORE_BOOT_CFG_STAGE2="\"rm ${S2_ROOTMOUNT}/uEnv.txt\""
-          fi
-      else
-        debug setupBootCfg_bb "/uEnv.txt exists"
-        local uEnvBckup
-        uEnvBckup="/uEnv.txt.$(date +%Y%m%d-%H-%M-%S)"
-        cp /uEnv.txt "$uEnvBckup"
-        RESTORE_BOOT_CFG_STAGE1="cp $uEnvBckup /uEnv.txt"
-        if [ "$ROOT_PART_NO" -eq "$BOOT_PART_NO" ] ; then
-          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_ROOTMOUNT}${uEnvBckup} ${S2_ROOTMOUNT}/uEnv.txt\""
-        else
-          RESTORE_BOOT_CFG_STAGE2="\"cp ${S2_BOOTMOUNT}${uEnvBckup} ${S2_BOOTMOUNT}/uEnv.txt\""
-        fi
-      fi
-
-      if [ ! -f "/uEnv.txt" ] ; then
-        fail "setupBootCfg_bb, devType=${devType} could not find /uEnv.txt or /bbb-uEnv.txt"
-      fi
-
-      # fail "setupBootCfg_bb not implemented for devType=${devType}"
+      bbg_setup
       ;;
     *)
       fail "setupBootCfg_bb not implemented for devType=${devType}"
@@ -1058,8 +1105,8 @@ fi
 ####################################################################################
 ####################################################################################
 
-# DEBUG_FUNCTS="migrate_this_wifi wificfg_from_wpa"
-DEBUG_FUNCTS="main setupBootCfg_bb setupBootCfg_rpi getCmdArgs clean"
+
+
 
 # script namme for logging
 SCRIPT_NAME=$(basename "${0}")
@@ -1080,6 +1127,7 @@ fi
 if [ -n "$PARAM_HOME_DIR" ] ; then
   HOME_DIR=$PARAM_HOME_DIR
 fi
+inform "using home dir:     $HOME_DIR"
 
 if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
@@ -1156,10 +1204,6 @@ BACKUP_FILE=backup.tgz
 # default grub config type
 GRUB_BOOT_TYPE="legacy"
 
-# raspi config.txt to modify
-CONFIG_TXT="/boot/config.txt"
-# raspi cmdline.txt to modify
-CMDLINE_TXT="/boot/cmdline.txt"
 # supported / tested OSSE's so far
 SUPPORTED_OSSES="ubuntu-18.04 ubuntu-14.04 raspbian-9 debian-9"
 # supported / tested platforms so far
@@ -1330,6 +1374,8 @@ if ! listContains "$SUPPORTED_ARCHS" "$ARCH" ; then
   fail "not a supported architecture: $ARCH"
 fi
 
+# TODO: this does not make a lot of sense. Either do it properly by scanning the image 
+#       or just accept the image as is
 case $ARCH in
   armv*)
     checkArmDevs
@@ -1418,7 +1464,7 @@ do
   fi
 done < <(parted -s "${BOOT_DEV}" print)
 
-inform "ROOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
+inform "BOOT_DEV=${BOOT_DEV}, FS type: $BOOT_FS_TYPE"
 
 ##################################
 ## create Initramfs configuration
@@ -1436,6 +1482,9 @@ case "$devType" in
     x86_64|i686)
       inform "performing initramfs setup for other: $devType"
       setupInitramfs_x86
+    ;;
+    *) 
+      fail "Not a supported device type: $devType"
     ;;
 esac
 

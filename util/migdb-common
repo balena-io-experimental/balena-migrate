@@ -35,11 +35,61 @@ function listContains {
 
 
 ##########################################
+# mkLogName
+##########################################
+
+function setLogFile {
+  local logFile
+  
+  if [ -n "$MIG_LOG_TO" ] ; then 
+    if [ -f "$MIG_LOG_TO" ] ; then 
+      touch "$MIG_LOG_TO" || fail "unable to write to log file $MIG_LOG_TO"
+      logTo "$MIG_LOG_TO"
+      return;
+    else
+      if [ -d "$MIG_LOG_TO" ] ; then 
+        logFile="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
+        touch "$logFile" || fail "unable to write to log file $logFile"
+        logTo "$logFile"
+      fi
+    fi
+  fi  
+}
+
+
+##########################################
+# set log fd 
+##########################################
+
+function logTo {
+  local logFile
+  exec 3>&-
+    
+  if [ -n "$1" ] ; then     
+    logFile=$1
+  else 
+    logFile=stdout
+  fi
+  
+  case "$logFile" in 
+    stdout)
+      exec 3>&1
+      ;;
+    stderr)
+      exec 3>&2
+      ;;
+    *)
+      exec 3<>"$logFile"
+      ;;
+  esac
+}
+
+##########################################
 # success: log info message
 ##########################################
 
 function success {  
-  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3 
 }
 
 
@@ -47,8 +97,8 @@ function success {
 # inform: log info message
 ##########################################
 
-function inform {  
-  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+function inform {    
+  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 
@@ -57,7 +107,7 @@ function inform {
 ##########################################
 
 function warn {
-  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 ##########################################
@@ -65,7 +115,7 @@ function warn {
 ##########################################
 
 function error {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE"
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 ##########################################
@@ -73,7 +123,7 @@ function error {
 ##########################################
 
 function fail {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$1" >> "$MIG_LOG_FILE" 
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
   exit -1
 }
 
@@ -86,7 +136,7 @@ function debug {
   local msg=$2
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
-    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$(date +%T)" "${SCRIPT_NAME}" "$$" "$tag" "$msg" >> "$MIG_LOG_FILE"
+    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$tag" "$msg" >&3
   fi
 }
 
@@ -222,7 +272,7 @@ function unitFailed {
   failFile=$(mktemp -p "${FAIL_DIR}" "fail-${unitId}-XXX")
   mv "$unitFile" "$failFile"
   setVar  "FAIL_TS" "${now}" "${failFile}"
-  setVar  "FAIL_MSG" "$msg" "${failFile}" 
+  setVar  "FAIL_MSG" "\"$msg\"" "${failFile}" 
 }
 
 ##########################################
@@ -237,7 +287,7 @@ function logRedirect {
       debug logRedirect "redirecting"
       exec 6>&1
       exec 7>&2
-      exec 1>>"$1" 2>&1
+      exec 1>>"$logFile" 2>&1
       REDIRECTED="TRUE"
     fi  
   else    
@@ -412,10 +462,12 @@ function sendFile {
   local srcFile="$1"
   local tgtFile="$2"
   local timeout="$3"
+  local isoTs
 
   inform "sendFile: to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, srcFile=${srcFile}, tgtFile=${tgtFile}"
 
-  echo "---- sendFile $srcFile $tgtFile" 
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- sendFile $srcFile $tgtFile" 
 
   cmd=("gzip" "-c" "\"${srcFile}\"" "|")
   cmd+=($(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "" "gzip -d -c > \"${tgtFile}\""))  
@@ -487,10 +539,12 @@ function sendTgzFile {
   local file="$1"
   local tgtDir="$2"
   local timeout="$3"
+  local isoTs
 
   inform "sendTgzFile to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, file=${file}, tgtDir=${tgtDir}"
 
-  echo "---- sendTgzFile $file $tgtDir" 
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- sendTgzFile $file $tgtDir" 
   local remoteCmd=
   if [ -n "$tgtDir" ] && [ "$tgtDir" != "./" ] && [ "$tgtDir" != "." ] ; then
     remoteCmd="mkdir -p \"${tgtDir}\" && tar -C \"${tgtDir}\" -xzf -"
@@ -565,9 +619,10 @@ function sendDir {
   local timeout=$3
 
   inform "sendDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, cfgDir=${cfgDir}, tgtDir=${tgtDir} with timeout=${timeout}"
-  local cmd remoteCmd
+  local cmd remoteCmd isoTs
 
-  echo "---- sendDir $cfgDir $tgtDir" 
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- sendDir $cfgDir $tgtDir" 
 
   if [ -n "$cfgDir" ] && [ "$cfgDir" != "./" ] &&  [ "$cfgDir" != "." ] ; then
     cmd=("tar" "-C" "\"${cfgDir}\"" "-czf" "-" "./")

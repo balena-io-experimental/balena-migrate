@@ -18,6 +18,9 @@ else
   fail "could not find ${SCRIPT_PATH}/migdb-common"  
 fi
 
+MIG_LOG_FILE=stdout
+logTo "$MIG_LOG_FILE"
+
 function printHelp {
   cat << EOI
 
@@ -102,7 +105,7 @@ function process {
   # shellcheck disable=SC1090
   source "$UNIT_FILE"
 
-  local now age dueIn statusAge
+  local now age dueIn statusAge isoTs
   now=$(date +%s)
   age=$((now-CREATE_TS))
   statusAge=$((now - STATUS_TS))
@@ -124,7 +127,6 @@ function process {
     return 0
   fi
 
-
   if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
     UNIT_OUTPUT_LOG=$(mktemp -p "${LOG_DIR}" "log-${UNIT_ID}-XXX")
     setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
@@ -133,7 +135,8 @@ function process {
   logRedirect "$UNIT_OUTPUT_LOG" || error "failed to redirect output to $UNIT_OUTPUT_LOG"
 
   DEVICE_ONLINE=
-  echo "---- balena device query"
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- balena device query"
   if BALENA_RES=$(balena device "$DEVICE_ID") ; then    
     echo "$BALENA_RES"
     IFS_BAK=$IFS
@@ -146,7 +149,7 @@ function process {
 
         setVar "STATUS_TS" "${now}" "${UNIT_FILE}"        
         setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-
+        setVar "DONE_ISOTS" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${UNIT_FILE}"
         
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
         success "unit id ${UNIT_ID}, uuid=${DEVICE_ID}, success: device was found online in balena-cloud"
@@ -196,15 +199,7 @@ if [ -z "$MIG_MAX_STATUS_AGE" ] ; then
   MIG_MAX_STATUS_AGE=900
 fi
 
-if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
-  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
-else
-  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
-fi 
-
-if [ ! -f "$MIG_LOG_FILE" ] ; then
-   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
-fi
+setLogFile
 
 inform "started"
 

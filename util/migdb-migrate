@@ -3,7 +3,7 @@
 set -o errexit -o pipefail
 
 MIG_DB_DIR=${MIG_DB_DIR=${PWD}}
-
+MIG_LOG_FILE=stdout
 MIG_TX_TIMEOUT=${MIG_TX_TIMEOUT=1200}
 MIG_EXEC_TIMEOUT=${MIG_EXEC_TIMEOUT=600}
 
@@ -19,7 +19,6 @@ SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 SLEEP_DURATION=5
 
-
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
   #shellcheck source=./migdb-common
   source "${SCRIPT_PATH}/migdb-common"
@@ -27,6 +26,8 @@ else
   echo "could not find ${SCRIPT_PATH}/migdb-common"
   exit 1
 fi
+
+logTo "$MIG_LOG_FILE"
 
 function printHelp {
   cat << EOI
@@ -237,7 +238,7 @@ function process {
   # shellcheck disable=SC1090
   source "$UNIT_FILE" || fail "unable to read unit file $UNIT_FILE"
 
-  local now dueIn
+  local now dueIn isoTs
   now=$(date +%s)
 
   if [ -z "$DUE_TS" ] ; then 
@@ -260,7 +261,7 @@ function process {
 
   if [ -z "$UNIT_OUTPUT_LOG" ] ; then 
     UNIT_OUTPUT_LOG=$(mktemp -p "${LOG_DIR}" "log-${UNIT_ID}-XXX")
-    setVar "UNIT_OUTPUT_LOG" "$UNIT_OUTPUT_LOG" "$UNIT_FILE"
+    setVar "UNIT_OUTPUT_LOG" "\"$UNIT_OUTPUT_LOG\"" "$UNIT_FILE"
   fi
 
   logRedirect "$UNIT_OUTPUT_LOG" || error "failed to redirect output to $UNIT_OUTPUT_LOG"
@@ -332,7 +333,8 @@ function process {
   inform "unit id ${UNIT_ID}, registering device with MIG_APP=$MIG_APP"
   local tmpStr
 
-  echo "---- registering device"
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- registering device"
   # shellcheck disable=SC2181
   if ! tmpStr=$(balena device register "$MIG_APP") ; then
     echo "$tmpStr" 
@@ -359,7 +361,10 @@ function process {
   local cfgFile
   cfgFile=$(mktemp -p "${TMP_DIR}" "s1-config-XXX")
   inform "unit id ${UNIT_ID}, generating device config file in $cfgFile"
-  echo "---- creating device config"
+
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- creating device config"
+
   if ! balena config generate --device "$UUID" --version "$MIG_BALENA_VER" --output "$cfgFile" --network ethernet --appUpdatePollInterval 10 ; then
     unitFailed "$UNIT_ID" "$UNIT_FILE" "failed to create config using <balena config generate --device $UUID --version $MIG_BALENA_VER --output $cfgFile --network ethernet --appUpdatePollInterval 10>"
     return 0
@@ -388,7 +393,9 @@ function process {
   fi
   
   inform "unit id ${UNIT_ID}, invoking migrate script on device"
-  echo "---- calling migrate"
+  
+  isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "[${isoTs}] ---- calling migrate"
 
   debug process "unit id ${UNIT_ID}, attempting <${cmd[*]}>"
   cmdLog=$(mktemp -p "$LOG_DIR" "log-${UNIT_ID}-migrate-XXX.log")  
@@ -415,9 +422,10 @@ function process {
     fi
 
     now=$(date +%s)
-    setVar "STATUS_TS" "$now" "$UNIT_FILE"
+    setVar "STATUS_TS" "$now" "$UNIT_FILE"    
     setVar "DUE_TS" "$((now + MIG_DURATION))" "$UNIT_FILE"
     setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
+    setVar "MIGRATED_ISOTS" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "$UNIT_FILE"
 
     moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     success "unit id ${UNIT_ID}, uuid=${UUID}, successfully finished stage 1 of migration"
@@ -452,15 +460,7 @@ if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   source "$MIG_CFG"
 fi
 
-if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
-  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
-else
-  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
-fi 
-
-if [ ! -f "$MIG_LOG_FILE" ] ; then
-   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
-fi
+setLogFile
 
 checkInit
 

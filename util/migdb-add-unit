@@ -2,8 +2,17 @@
 
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
-# shellcheck source=migdb-common
-source "${SCRIPT_PATH}/migdb-common"
+
+if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
+  #shellcheck source=./migdb-common
+  source "${SCRIPT_PATH}/migdb-common"
+else
+  echo "could not find ${SCRIPT_PATH}/migdb-common"
+  exit 1
+fi
+
+MIG_LOG_FILE=stdout
+logTo "$MIG_LOG_FILE"
 
 color ON
 
@@ -170,13 +179,11 @@ fi
 
 if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
   MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
-else
-  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
-fi 
-
-if [ ! -f "$MIG_LOG_FILE" ] ; then
+  if [ ! -f "$MIG_LOG_FILE" ] ; then
    touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
-fi
+  fi  
+fi 
+logTo "$MIG_LOG_FILE"
 
 checkInit
 
@@ -199,6 +206,7 @@ cat <<EOI > "${TMP_FILE}"  || fail "failed to create unit file for unitid $UNIT_
 UNIT_ID=${UNIT_ID}
 STATUS=INIT
 CREATE_TS=$(date +%s)
+CREATE_ISOTS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EOI
 
 {

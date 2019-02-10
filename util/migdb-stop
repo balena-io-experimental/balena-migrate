@@ -10,6 +10,7 @@ LOG_DEBUG=TRUE
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 SLEEP_DURATION=2
+MIG_LOG_FILE=stdout
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
   #shellcheck source=./migdb-common
@@ -18,6 +19,8 @@ else
   echo "could not find ${SCRIPT_PATH}/migdb-common"
   exit 1
 fi
+
+logTo "$MIG_LOG_FILE"
 
 function printHelp {
   cat << EOI
@@ -88,15 +91,7 @@ else
   color OFF
 fi
 
-if [ -n "$MIG_LOG_TO" ] && [ -d "$MIG_LOG_TO" ] ; then 
-  MIG_LOG_FILE="${MIG_LOG_TO}/${SCRIPT_NAME}-${$}.log"
-else
-  MIG_LOG_FILE="${PWD}/${SCRIPT_NAME}-${$}.log"
-fi 
-
-if [ ! -f "$MIG_LOG_FILE" ] ; then
-   touch "$MIG_LOG_FILE" || fail "unable to write ot log file $MIG_LOG_FILE"
-fi
+setLogFile
 
 if ! pgrep "migdb-(migrate|check)" > /dev/null ; then 
     inform "no processes found, terminating"
