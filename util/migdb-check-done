@@ -146,10 +146,10 @@ function process {
       if [[ $line =~ ^IS\ ONLINE:\ *true$ ]] ; then
         DEVICE_ONLINE=TRUE
         now=$(date +%s)
-
+        isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         setVar "STATUS_TS" "${now}" "${UNIT_FILE}"        
         setVar "STATUS" "DONE" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-        setVar "DONE_ISOTS" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${UNIT_FILE}"
+        setVar "DONE_ISOTS" "$isoTs" "${UNIT_FILE}"
         
         moveFile "${UNIT_FILE}" "${DONE_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${DONE_DIR}, ${UNIT_ID}"
         success "unit id ${UNIT_ID}, uuid=${DEVICE_ID}, success: device was found online in balena-cloud"

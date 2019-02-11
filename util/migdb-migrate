@@ -422,10 +422,11 @@ function process {
     fi
 
     now=$(date +%s)
+    isoTs=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     setVar "STATUS_TS" "$now" "$UNIT_FILE"    
     setVar "DUE_TS" "$((now + MIG_DURATION))" "$UNIT_FILE"
     setVar "STATUS" "MIGRATED" "${UNIT_FILE}" || fail "failed to update status on ${UNIT_FILE}"
-    setVar "MIGRATED_ISOTS" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "$UNIT_FILE"
+    setVar "MIGRATED_ISOTS" "$isoTs" "$UNIT_FILE"
 
     moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     success "unit id ${UNIT_ID}, uuid=${UUID}, successfully finished stage 1 of migration"

@@ -88,8 +88,10 @@ function logTo {
 # success: log info message
 ##########################################
 
-function success {  
-  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3 
+function success {
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+  printf "${BLUE}[%s %s %s DONE ]:${NC} %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$1" >&3 
 }
 
 
@@ -98,7 +100,9 @@ function success {
 ##########################################
 
 function inform {    
-  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+  printf "${GREEN}[%s %s %s INFO ]:${NC} %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 
@@ -107,7 +111,9 @@ function inform {
 ##########################################
 
 function warn {
-  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+  printf "${YELLOW}[%s %s %s WARN ]:${NC} %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 ##########################################
@@ -115,7 +121,9 @@ function warn {
 ##########################################
 
 function error {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$1" >&3
 }
 
 ##########################################
@@ -123,7 +131,9 @@ function error {
 ##########################################
 
 function fail {
-  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$1" >&3
+  local ts
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+  printf "${RED}[%s %s %s ERROR]:${NC} %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$1" >&3
   exit -1
 }
 
@@ -136,7 +146,9 @@ function debug {
   local msg=$2
 
   if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "$1" ; then
-    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" $(date -u +"%Y-%m-%dT%H:%M:%SZ") "${SCRIPT_NAME}" "$$" "$tag" "$msg" >&3
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+    printf "${BROWN}[%s %s %s DEBUG]:${NC} %s: %s \n" "$ts" "${SCRIPT_NAME}" "$$" "$tag" "$msg" >&3
   fi
 }
 
