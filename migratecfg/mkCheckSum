@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# create md5 checksums of all files in the migratecfg directory
+# if the file is found by balena-migrate it will check the checksums of all files contained 
+# and fail if the checksums do not match
+
+function checkSumDir {
+    local dir=$1
+    local outfile=$2
+    
+    if [ -n "$dir" ] && [[ ! $dir =~ .*/$ ]] ; then 
+        dir="${dir}/"
+    fi
+
+    for file in "$dir"* ; do 
+        if [ "$file" == "$outfile" ] ; then 
+            continue
+        fi 
+
+        if [ -f "$file" ] ; then 
+            md5sum "$file" >> $outfile
+        else 
+            if [ -d "$file" ] ; then 
+                checkSumDir "${dir}${file}" "$outfile"
+            fi 
+        fi    
+    done
+}
+
+rm "checksums.md5"
+checkSumDir "" "checksums.md5"

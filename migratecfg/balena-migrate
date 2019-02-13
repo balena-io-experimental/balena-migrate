@@ -1106,8 +1106,6 @@ fi
 ####################################################################################
 
 
-
-
 # script namme for logging
 SCRIPT_NAME=$(basename "${0}")
 
@@ -1246,7 +1244,7 @@ inform "establishing required programs"
 #       possible candidates: parted (on debian, beaglebone) blkid
 
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm date"
-REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl md5sum"
 
 if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then 
   REQUIRED_PGMS="$REQUIRED_PGMS nc"
@@ -1258,6 +1256,12 @@ fi
 
 # shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
+
+if [ -f "./checksums.md5" ] && ! md5sum -c "./checksums.md5" >/dev/null ; then 
+  inform "The checksum test failed. Please make sure to compute checksums using the mkCheckSum script on the migrate config after every change."
+  inform "If the checksums were up to date this failure indicates a write error on the device."
+  fail "Terminating due to failed checksum test"
+fi
 
 inform "found all required programs"
 
