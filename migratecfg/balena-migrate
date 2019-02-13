@@ -134,6 +134,7 @@ MAX_BADBLOCKS=
 ################################################################################
 # Min acceptable device write speed
 MIN_WRITE_SPEED=
+WARN_WRITE_SPEED=200
 
 ##########################################
 # log functions
@@ -156,21 +157,29 @@ function color {
 }
 
 function inform {
-    printf "${GREEN}[%s %s] INFO:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+    printf "${GREEN}[%s %s] INFO:${NC} %s\n" "$ts" "${SCRIPT_NAME}" "${1}"
 }
 
 function warn {
-    printf "${YELLOW}[%s %s] WARN:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+    printf "${YELLOW}[%s %s] WARN:${NC} %s\n" "$ts" "${SCRIPT_NAME}" "${1}"
 }
 
 function debug {
     if [ "$LOG_DEBUG" == "TRUE" ] && listContains "$DEBUG_FUNCTS" "${1}" ; then
-      printf "${BROWN}[%s %s] DEBUG:${NC} %s: %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}" "${2}"
+      local ts
+      ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+      printf "${BROWN}[%s %s] DEBUG:${NC} %s: %s\n" "$ts" "${SCRIPT_NAME}" "${1}" "${2}"
     fi
 }
 
 function simulate {
-    printf "${GREEN}[%s %s] INFO:${NC}  %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+    printf "${GREEN}[%s %s] INFO:${NC}  %s\n" "$ts" "${SCRIPT_NAME}" "${1}"
 }
 
 function clean {
@@ -190,7 +199,9 @@ function clean {
 ##########################################
 
 function fail {
-    printf "${RED}[%s %s] ERROR:${NC} %s\n" "$(date +%T)" "${SCRIPT_NAME}" "${1}"
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  
+    printf "${RED}[%s %s] ERROR:${NC} %s\n" "$ts" "${SCRIPT_NAME}" "${1}"
     clean
     exit -1
 }
@@ -403,6 +414,10 @@ function checkDisk {
   inform "time per 1000/sectors (ms): $((timeWriting*1000/sectorsWritten))"
   local writeSpeed=$((sectorsWritten*sectorSize*1000/timeWriting/1024))
   inform "write speed KB/sec:         ${writeSpeed}"
+
+  if [ -n "$WARN_WRITE_SPEED" ] && [ $WARN_WRITE_SPEED -gt $writeSpeed ] ; then 
+    warn "device write speed appears low: $WARN_WRITE_SPEED > $writeSpeed"
+  fi
 
   if [ -n "$MIN_WRITE_SPEED" ] && [ $MIN_WRITE_SPEED -gt $writeSpeed ] ; then 
     fail "device write speed is less than threshold value ${writeSpeed} < ${MIN_WRITE_SPEED}"
@@ -1257,10 +1272,15 @@ fi
 # shellcheck disable=SC2086
 checkPgms $REQUIRED_PGMS
 
-if [ -f "./checksums.md5" ] && ! md5sum -c "./checksums.md5" >/dev/null ; then 
-  inform "The checksum test failed. Please make sure to compute checksums using the mkCheckSum script on the migrate config after every change."
-  inform "If the checksums were up to date this failure indicates a write error on the device."
-  fail "Terminating due to failed checksum test"
+if [ -f "./checksums.md5" ] ; then 
+  inform "checking md5 checksums of migration environment"
+  if ! md5sum -c "./checksums.md5" ; then 
+    warn "The checksum test failed. Please make sure to compute checksums using the mkCheckSum script on the migrate config after every change."
+    warn "If the checksums were up to date this failure indicates a write error on the device."
+    fail "Terminating due to failed checksum test"
+  fi
+else 
+  warn "checksums.md5 not found, not checking md5 checksums of migration environment"
 fi
 
 inform "found all required programs"

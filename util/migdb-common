@@ -280,6 +280,7 @@ function unitFailed {
   local now failFile
   logRedirect ""
   error "unit id ${unitId}: $msg"
+  inform "unit id ${unitId}: log is in $UNIT_OUTPUT_LOG"
   now=$(date +%s)
   failFile=$(mktemp -p "${FAIL_DIR}" "fail-${unitId}-XXX")
   mv "$unitFile" "$failFile"
@@ -459,7 +460,6 @@ function execSshCmd {
       fi 
     fi	    
 }
-
 
 ################################################################################
 # send single file to host and unpack it to specified directory
@@ -661,9 +661,11 @@ function sendDir {
     debug sendDir "exitCode: ${exitCode}"
     now=$(date +%s)
     elapsed=$((now-start))
+
     if [ $exitCode -eq 0 ] ; then     
       inform "sendDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, dir=${cfgDir}, tgtDir=${tgtDir} succeeded after $elapsed seconds" 
     else 
+
       warn "sendDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, dir=${cfgDir}, tgtDir=${tgtDir} terminated after $elapsed seconds with exit code ${exitCode}" 
     fi
     return $exitCode

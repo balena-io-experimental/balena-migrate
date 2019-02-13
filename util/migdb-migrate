@@ -405,10 +405,17 @@ function process {
     return 0
   fi
 
+  errMsg=$(grep -E "\[.*balena-migrate\] +(WARN|ERROR):.*$" < "$cmdLog") || true  
+  if [ -n "$errMsg" ] ; then 
+    warn "unit id ${UNIT_ID}, warnings or error messages found in process log:"
+    echo "${errMsg}" >&3
+  fi
+
   successMsg=$(grep -E "\[[^\]+\]*.INFO:.*migration successful," < "$cmdLog") || true  
   local grepRes=$?
-  rm "$cmdLog" || true
 
+  rm "$cmdLog" || true
+  
   if [ $grepRes -eq 0 ] && [ -n "$successMsg" ] ; then
     if [[ $successMsg =~ .*please\ reboot\ system.* ]] ; then
       inform "unit id ${UNIT_ID}, rebooting device"
@@ -430,6 +437,7 @@ function process {
 
     moveFile "${UNIT_FILE}" "${PROCESS_DIR}" "${UNIT_ID}" || fail "failed to move ${UNIT_FILE} to ${PROCESS_DIR}, ${UNIT_ID}"
     success "unit id ${UNIT_ID}, uuid=${UUID}, successfully finished stage 1 of migration"
+    inform "unit id ${unitId}: log is in $UNIT_OUTPUT_LOG"
   else
     unitFailed "$UNIT_ID" "$UNIT_FILE" "cannot find success message in migrate log from ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}"
     return 0

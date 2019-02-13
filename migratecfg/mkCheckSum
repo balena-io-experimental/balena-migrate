@@ -27,5 +27,5 @@ function checkSumDir {
     done
 }
 
-rm "checksums.md5"
+rm "checksums.md5" >/dev/null 2>&1
 checkSumDir "" "checksums.md5"
