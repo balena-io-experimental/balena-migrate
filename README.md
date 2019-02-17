@@ -101,7 +101,7 @@ directory of this repository.
 
 Please note that for the migdb scripts to work, the following conditions need to apply:
 
-* migdb-migrate will use the balena-cli to pre-register devices. The balena-cli needs to be installed on the host running migdb-migrate. The balena-cli either needs to be logged in with an appropriate user or a valid api token for login needs to be provided using the ```MIG_BALENA_TOKEN``` option.
+* migdb-migrate will use the balena-cli to pre-register devices. The balena-cli needs to be installed on the host running migdb-migrate. The balena-cli either needs to be logged in with an appropriate user or a valid api token or login credentials need to be provided using the ```MIG_BALENA_TOKEN``` option.
 * migdb-migrate needs to be able to establish a ssh connection to the target devices.
 * Using a password to establish the ssh connection is not encouraged. Your password might be stored unencrypted in config or log files. Please use public key authentification instead. 
 * If you do use password authentification,  **migdb-migrate** will attempt to use the **sshpass** utility that needs to be installed prior to using **migdb-migrate** with the --passwd option.
@@ -112,6 +112,7 @@ The following migdb scripts are available in the util directory:
 * **migdb-add-unit** will submit a device for migration.
 * **migdb-migrate** is the worker script that copies the migrate configuration to devices and executes the migrate script on the device. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.
 * **migdb-check-done** is the worker script that checks migrated devices to see if they come online in the balena backend. This script is meant to run continuously while migrating devices. It can be started in multiple instances to migrate devices in parallel.  
+* **migdb-stats** Scans all files in the **done** and **fail** folder of the migdb database and creates a report in CSV format.
 * **migdb-stop** will gracefully stop all running migdb-migrate or migdb-check-done scripts.
 
 The scripts use a migrate config that you provide and apply it to an number of devices. A directory structure is used to submit devices for migration and track the state of the migration process. The scripts will pre register a device in the balena dashboard for every unit file submitted and then attempt to migrate the unit.
@@ -125,7 +126,7 @@ Options and parameters given in **migdb-add-unit** are mostly unit specific. The
 
 Example:
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-add-unit --host=192.168.1.15 --user=pi --passwd=secret my-unit-id```
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;```migdb-add-unit --host 192.168.1.15 --user pi --passwd secret my-unit-id```
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Will create a unit file with the given ssh credentials and will attempt to migrate that host.
 

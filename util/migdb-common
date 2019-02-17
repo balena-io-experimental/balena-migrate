@@ -195,17 +195,28 @@ function setVar {
   local varName=$1
   local value=$2
   local file=$3
+  local tmpFile
+
+  #debug setVar "varName=$varName"
+  #debug setVar "value=$value"
+  #debug setVar "file=$file"
 
   if [ ! -f "$file" ] ; then 
     return 1
   fi
-  
-  if grep "${varName}" "${file}" > /dev/null ; then 
-    # shellcheck disable=SC2086
-    sed -i 's/^\('${varName}'=\).*$/\1'${value}'/' "${file}"
-  else 
+
+  tmpFile=$(mktemp -p "${TMP_DIR}")
+  cat "$file" | grep -v -E "^${varName}=.*" >"$tmpFile" 
+  mv -f "$tmpFile" "$file"
+
+  #debug setVar "attempting echo ${varName}=${value} >> ${file}"
+
+  if [[ $value =~ ^\".*\"$ ]] || [[ $value =~ ^\'.*\'$ ]] ; then 
     echo "${varName}=${value}" >> "${file}"
-  fi
+  else
+    echo "${varName}=\"${value}\"" >> "${file}"
+  fi 
+  debug setVar "OK"
 }
 
 ################################################################################
@@ -652,6 +663,7 @@ function sendDir {
   cmd+=("|" $(mkSshCmd "$MIG_SSH_HOST" "$MIG_SSH_USER" "$MIG_SSH_PORT" "" "${remoteCmd[*]}" ))
 
   local start now elapsed
+
   start=$(date +%s)
 
   if [ -z "$timeout" ] ; then 
@@ -662,10 +674,9 @@ function sendDir {
     now=$(date +%s)
     elapsed=$((now-start))
 
-    if [ $exitCode -eq 0 ] ; then     
+    if [ $exitCode -eq 0 ] ; then
       inform "sendDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, dir=${cfgDir}, tgtDir=${tgtDir} succeeded after $elapsed seconds" 
     else 
-
       warn "sendDir to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT}, dir=${cfgDir}, tgtDir=${tgtDir} terminated after $elapsed seconds with exit code ${exitCode}" 
     fi
     return $exitCode

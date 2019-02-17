@@ -171,6 +171,10 @@ function getCmdArgs {
 
 getCmdArgs "$@"
 
+if [ -z "$UNIT_ID" ] ; then 
+  fail "no unit id found in command arguments"
+fi
+
 if [ -n "$MIG_CFG" ] && [ -f "$MIG_CFG" ] ; then
   inform "loading config from $MIG_CFG"
   # shellcheck disable=SC1090

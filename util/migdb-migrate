@@ -13,7 +13,7 @@ MIG_RECONN_TIME=${MIG_RECONN_TIME=600}
 TGT_DIR="migrate"
 COLOR=ON
 
-DEBUG_FUNCTS="process sendDir sendFile sendTgzFile execSshCmd"
+DEBUG_FUNCTS="process setStrVar"
 LOG_DEBUG=FALSE
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
@@ -228,6 +228,7 @@ function getCmdArgs {
 function process {
   debug process "with $UNIT_FILE"
 
+  MIG_SSH_PORT=
   MIG_SSH_OPTS=
   MIG_CONN_RETRIES=0
   DUE_TS=
@@ -299,36 +300,69 @@ function process {
     timeTillNext=86400
   fi
 
+  local connFailed wcOut lineCount
+  
+  wcOut=($(wc -l "${UNIT_OUTPUT_LOG}"))
+  debug process "lineCount: ${wcOut[0]}"
+  # shellcheck disable=SC2178
+  lineCount=$((wcOut[0]+2))
+
   if [ -n "$MIG_CFG_ARCHIVE" ] && [ -f "$MIG_CFG_ARCHIVE" ] ; then
     if ! sendTgzFile "$MIG_CFG_ARCHIVE" "$TGT_DIR" "$MIG_TX_TIMEOUT" ; then
+      connFailed=TRUE
+    fi
+  else
+    if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then      
+      if ! sendDir "$MIG_CFG_DIR" "$TGT_DIR" "$MIG_TX_TIMEOUT" ; then        
+        connFailed=TRUE
+      fi
+    fi
+  fi
+
+  if [ -n "$connFailed" ] ; then       
+      local messages failMsg
+      messages=$(tail -n +${lineCount} "${UNIT_OUTPUT_LOG}") || true
+      
+      # debug process "connect failed with messages:"
+      # echo "$messages" >&3
+
+      while true ; do
+        if echo "$messages" | grep -E '^ssh: Could not resolve hostname' ; then
+          failMsg="ssh: Could not resolve hostname"
+          break
+        fi
+        if echo "$messages" | grep -E '^ssh:.*Connection refused' ; then
+          failMsg="ssh: Connection refused"
+          break
+        fi
+        if echo "$messages" | grep -E '^tar:' ; then
+          failMsg="tar error"
+          break
+        fi
+        if echo "$messages" | grep -E '^mkdir:' ; then
+          failMsg="mkdir error"
+          break
+        fi
+
+        failMsg="unknown"
+        break
+      done
+  
+      warn "unit id ${UNIT_ID}, got $failMsg"
+      setVar "TRANSFER_FAIL_MSG" "$failMsg" "$UNIT_FILE"    
+
       if [ $connRetryCount -lt "$MIG_CONN_ATTEMPTS" ] ; then 
         warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
         setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"
         setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
         inform "unit id ${UNIT_ID}, will retry in ${timeTillNext} seconds"
         moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
-      else      
+      else
         unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${CFG_ARCHIVE} to  ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
       fi                  
       return 0
-    fi
-  else
-    if [ -n "$MIG_CFG_DIR" ] && [ -d "$MIG_CFG_DIR" ] ; then
-      # TODO: same as above
-      if ! sendDir "$MIG_CFG_DIR" "$TGT_DIR" "$MIG_TX_TIMEOUT" ; then        
-        if [ $connRetryCount -lt "$MIG_CONN_ATTEMPTS" ] ; then 
-          warn "unit id ${UNIT_ID}, connect attempt ${connRetryCount} failed to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"        
-          setVar "MIG_CONN_RETRIES" "$connRetryCount" "$UNIT_FILE"          
-          setVar "DUE_TS" "$((now + timeTillNext))" "$UNIT_FILE"
-          inform "unit id ${UNIT_ID}, will retry in ${timeTillNext} seconds"
-          moveFile "$UNIT_FILE" "${UNIT_DIR}" "${UNIT_ID}" || fail "failed to restore unit file"      
-        else      
-          unitFailed "$UNIT_ID" "$UNIT_FILE" "failed ${connRetryCount} attempts to transmit configuration in ${MIG_CFG_DIR} to ${MIG_SSH_USER}@${MIG_SSH_HOST}:${MIG_SSH_PORT},passwd=${PASSWD_PRESENT} status:${STATUS}"
-        fi                  
-        return 0
-      fi
-    fi
   fi
+
 
   inform "unit id ${UNIT_ID}, registering device with MIG_APP=$MIG_APP"
   local tmpStr

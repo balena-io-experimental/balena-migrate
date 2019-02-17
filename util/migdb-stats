@@ -3,6 +3,10 @@
 
 set -o errexit -o pipefail
 
+DEBUG_FUNCTS="process"
+LOG_DEBUG=FALSE
+
+
 MIG_DB_DIR=${MIG_DB_DIR="."}
 
 MIG_OUTPUT=${MIG_OUTPUT=stdout}
@@ -21,8 +25,8 @@ else
   exit 1
 fi
 
-MIG_LOG_FILE=stderr
-logTo "$MIG_LOG_FILE"
+MIG_LOG_TO="stderr"
+logTo "$MIG_LOG_TO"
 
 function printHelp {
   cat << EOI >&2
@@ -90,6 +94,88 @@ function getCmdArgs {
   done
 }
 
+function process {
+  local file fail ok modified id duplicate
+  file=$1
+
+  debug process "processing file ${file}"
+  if [[ ! $file =~ .*/db/(done/unit|fail/fail)-(.+)-.{3}$ ]] ; then
+    debug process "file rejected ${file}"
+    return 1
+  fi
+
+  id="${BASH_REMATCH[2]}"
+
+  modified=$(stat --format=%y "${file}")
+  STATUS=
+	DEVICE_ID=
+	FAIL_MSG=
+  
+	tmpFile=$(mktemp)
+  sed 's/\([^=]\+=\)\([^"].*[^"]\)$/\1\"\2\"/g' "${file}" > "${tmpFile}"
+
+  # shellcheck disable=SC1090		 
+  source "${tmpFile}" || fail "failed to source $file"
+
+  debug process "<${UNIT_ID}> == <${id}>"
+
+	if [ "${UNIT_ID}" != "${id}" ] ; then 
+	  warn "invalid file ${entry} skipping "
+    return 1
+	fi
+
+  if [[ ${UNIT_IDS[@]} =~ ${id} ]] ; then 
+    duplicate=1
+  else
+    duplicate=0
+    UNIT_IDS+=(${id})
+  fi
+
+  if [ "${BASH_REMATCH[1]}" == "fail" ] ; then 
+    fail=1
+    ok=0    
+  else   
+    fail=0
+    ok=1
+  fi
+
+  # cat "$tmpFile" >&2
+  rm "${tmpFile}"
+
+  local migDur=0
+  if [ -n "$CREATE_TS" ] && [ -n "$STATUS_TS" ] ; then 
+    migDur=$((STATUS_TS-CREATE_TS))    
+  fi
+  
+	notReached=0
+	migrateErr=0
+	migrateExec=0
+	noShow=0
+	other=0
+
+  if [ "$fail" == "1" ] ; then 
+    if [[ $FAIL_MSG =~ failed\ [0-9]+\ attempts\ to\ transmit\ configuration.* ]] ; then 
+      notReached=1
+          else  
+      if [[ $FAIL_MSG =~ cannot\ find\ success\ message.* ]] ; then
+        migrateErr=1
+      else 
+        if [[ $FAIL_MSG =~ .*Device\ has\ not\ shown\ up\ in\ balena-cloud.* ]] ; then 
+          noShow=1
+        else
+          if [[ $FAIL_MSG =~ failed\ to\ execute\ migrate\ script.* ]] ; then
+            migrateExec=1
+          else     	
+            other=1
+          fi	
+        fi	    
+      fi		  
+    fi
+  fi
+
+  echo "\"${UNIT_ID}\";$migDur;${CREATE_ISOTS};${MIGRATED_ISOTS};${DONE_ISOTS};${modified};$ok;$fail;${notReached};${migrateErr};${migrateExec};${noShow};${other};\"${STATUS}\";\"${DEVICE_ID}\";\"${FAIL_MSG}\";${MIG_CONN_RETRIES};\"${TRANSFER_FAIL_MSG}\";${duplicate}" >&5
+}
+
 
 #############################################
 # main 
@@ -98,6 +184,8 @@ function getCmdArgs {
 getCmdArgs "$@"
 
 setLogFile
+
+UNIT_IDS=()
 
 case "$MIG_OUTPUT" in 
 	stdout|"")
@@ -114,84 +202,19 @@ case "$MIG_OUTPUT" in
 		;;
 esac
 
-inform "scanning ${failDir}" 
+echo "id;dur;created;migrated;done;modified;ok;fail;not reached;no success;migrate err;no show;other;last-status;dev-id;failmsg;retries;txFailMsg;duplicate" >&5
 
-echo "id;created;migrated;done;modified;ok;fail;not reached;no success;migrate err;no show;other;status;last-status;dev-id;failmsg" >&5
+inform "scanning ${failDir}" 
 
 for  entry in "${failDir}/"*
 do 
-  if [[ $entry =~ .*/db/fail/fail-(.+)-.{3}$ ]] ; then
-	id="${BASH_REMATCH[1]}"
-	modified=$(stat --format=%y "${entry}")
-	STATUS=
-	DEVICE_ID=
-	FAIL_MSG=
-	if ! grep -E 'FAIL_MSG=\".*\"' "${entry}" > /dev/null ; then 
-	  tmpFile=$(mktemp)
-     	  sed 's/^FAIL_MSG=\(.*\)$/FAIL_MSG="\1"/g' "${entry}" > "${tmpFile}"
-
-		# shellcheck disable=SC1090		 
-			source "${tmpFile}"
-			rm "${tmpFile}"
-  	else
-			# shellcheck disable=SC1090		 
-			source "${entry}"
-  	fi	
-	if [ "${UNIT_ID}" != "${id}" ] ; then 
-	  warn "invalid file ${entry} skipping "
-	fi
-	
-	notReached=0
-	migrateErr=0
-	migrateExec=0
-	noShow=0
-	other=0
-	
-	if [[ $FAIL_MSG =~ failed\ [0-9]+\ attempts\ to\ transmit\ configuration.* ]] ; then 
-	  notReached=1
-        else  
-	  if [[ $FAIL_MSG =~ cannot\ find\ success\ message.* ]] ; then
-	     migrateErr=1
-	  else 
-	    if [[ $FAIL_MSG =~ .*Device\ has\ not\ shown\ up\ in\ balena-cloud.* ]] ; then 
-		noShow=1
-	    else
-		if [[ $FAIL_MSG =~ failed\ to\ execute\ migrate\ script.* ]] ; then
-   		  migrateExec=1
-		else     	
-		  other=1
-	        fi	
-	    fi	    
-          fi		  
-  	fi
-
-  
-	echo "\"${id}\";${CREATE_ISOTS};${MIGRATED_ISOTS};${DONE_ISOTS};${modified};0;1;${notReached};${migrateErr};${migrateExec};${noShow};${other};\"FAILED\";\"${STATUS}\";${DEVICE_ID};\"${FAIL_MSG}\"" >&5
-  fi 
+  process "$entry" || true
 done
 
+inform "scanning ${doneDir}" 
 
 for  entry in "${doneDir}/"*
 do
-  if [[ $entry =~ .*/db/done/unit-(.+)-.{3}$ ]] ; then
-        id="${BASH_REMATCH[1]}"
-        modified=$(stat --format=%y "${entry}")
-        STATUS=
-        DEVICE_ID=
-        FAIL_MSG=
-        if ! grep -E 'FAIL_MSG=\".*\"' "${entry}" > /dev/null ; then
-          tmpFile=$(mktemp)
-          sed 's/^FAIL_MSG=\(.*\)$/FAIL_MSG="\1"/g' "${entry}" > "${tmpFile}"
-          source "${tmpFile}"
-          rm "${tmpFile}"
-        else
-          source "${entry}"
-        fi
-        if [ "${UNIT_ID}" != "${id}" ] ; then
-          warn "invalid file ${entry} skipping " >2
-        fi
-        echo "\"${id}\";${CREATE_ISOTS};${MIGRATED_ISOTS};${DONE_ISOTS};${modified};1;0;0;0;0;0;0;\"${STATUS}\";\"MIGRATED\";${DEVICE_ID};\"${FAIL_MSG}\"" >&5
-  fi
+  process "$entry" || true
 done
-
 
