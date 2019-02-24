@@ -66,8 +66,11 @@ function epoch2IsoTs {
 
 
 function cleanse {
-    local cleansed=
+    local cleansed=    
     cleansed=$(echo "$1" | tr "$DEL" "$RPL")
+    if [[ $cleansed =~ ^\"(.*)\"$ ]] ; then 
+      cleansed="${BASH_REMATCH[1]}"
+    fi
     echo "$cleansed"
 }
 
@@ -276,9 +279,6 @@ case "$MIG_OUTPUT" in
 		;;
 esac
 
-
-echo "id;stat dur;fail dur;created;migrated;done;modified;ok;fail;not reached;no success;migrate err;no show;other;last-status;dev-id;failmsg;retries;txFailMsg;duplicate" >&5
-
 inform "scanning ${doneDir}" 
 
 for  entry in "${doneDir}/"*
@@ -301,10 +301,11 @@ roCount=0
 connCount=0
 otherCount=0
 
-echo "\"id\"${DEL}\"state\"${DEL}\"mig.att.\"${DEL}\"conn.att.\"${DEL}\"created\"${DEL}\"last\"${DEL}\"duration\"${DEL}\"balena id\"${DEL}\"fail Msg\"${DEL}\"comment\"" > "state.csv" 
+echo "\"id\"${DEL}\"state\"${DEL}\"mig.att.\"${DEL}\"conn.att.\"${DEL}\"created\"${DEL}\"last\"${DEL}\"duration\"${DEL}\"balena id\"${DEL}\"fail Msg\"${DEL}\"comment\"" >&5
 for id in "${!UNITS[@]}" 
 do 
-  IFS=$DEL read -r  uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg <<< "${UNITS[${id}]}" 
+  IFS=$DEL read -r  uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg uComment <<< "${UNITS[${id}]}" 
+
   case "${uState}" in 
     "$ST_DONE")
       doneCount=$((doneCount+1))
@@ -343,15 +344,22 @@ do
   
   outStr="${outStr}${tsCreate}${DEL}${tsStatus}${DEL}${dur}${DEL}\"${uDeviceId}\"${DEL}\"${uFailMsg}\"${DEL}\"${uComment}\""
 
-  echo "$outStr" >> state.csv 
+  echo "$outStr" >&5
 done
 
 inform "counts: "
+echo "\"counts:\"" >&5
 inform "done:               ${doneCount}"
+echo "\"done:\"${DEL}${doneCount}" >&5
 inform "lost:               ${lostCount}"
+echo "\"lost:\"${DEL}${lostCount}" >&5
 inform "connection refused: ${connCount}"
-inform "no space on device: ${lostCount}"
+echo "\"connection refused:\"${DEL}${connCount}" >&5
+inform "no space on device: ${spaceCount}"
+echo "\"no space on device:\"${DEL}${spaceCount}" >&5
 inform "read only device:   ${roCount}"
+echo "\"read only device:\"${DEL}${roCount}" >&5
 inform "backup failure:     ${bckupCount}"
+echo "\"backup failure:\"${DEL}${bckupCount}" >&5
 inform "other:              ${otherCount}"
-
+echo "\"other:\"${DEL}${otherCount}" >&5

@@ -124,7 +124,7 @@ MIN_ROOT_AVAIL=10240
 
 ################################################################################
 # DEBUG enable DEBUG messages if set to TRUE
-LOG_DEBUG="TRUE"
+LOG_DEBUG= # "TRUE"
 DEBUG_FUNCTS="main setupBootCfg_bb clean bbg_setup"
 
 ################################################################################
