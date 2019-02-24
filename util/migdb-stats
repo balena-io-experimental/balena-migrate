@@ -6,6 +6,13 @@ set -o errexit -o pipefail
 DEBUG_FUNCTS="process"
 LOG_DEBUG=FALSE
 
+ST_DONE="DONE"
+ST_LOST="LOST"
+ST_BCKUP="BCKUP"
+ST_SPACE="NO_SPACE"
+ST_RO="READ_ONLY"
+ST_CONN="NO_CONN"
+ST_OTHER="OTHER"
 
 MIG_DB_DIR=${MIG_DB_DIR="."}
 
@@ -16,6 +23,14 @@ doneDir="${MIG_DB_DIR}/db/done"
 
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
+COLOR=ON
+
+# DEL=$'\t'
+# RPL=' '
+
+DEL=';'
+RPL=','
+
 
 if [ -f "${SCRIPT_PATH}/migdb-common" ] ; then
   #shellcheck source=./migdb-common
@@ -27,6 +42,8 @@ fi
 
 MIG_LOG_TO="stderr"
 logTo "$MIG_LOG_TO"
+
+declare -A UNITS
 
 function printHelp {
   cat << EOI >&2
@@ -41,6 +58,22 @@ function printHelp {
 
 EOI
 return 0
+}
+
+function epoch2IsoTs {
+  date -d "@$1" -u +"%Y-%m-%dT%H:%M:%SZ"
+} 
+
+
+function cleanse {
+    local cleansed=
+    cleansed=$(echo "$1" | tr "$DEL" "$RPL")
+    echo "$cleansed"
+}
+
+function saveVars {
+    cFailMsg=$(cleanse "$uFailMsg")
+    echo "${uState}${DEL}${uAttempts}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${cFailMsg}"
 }
 
 
@@ -95,27 +128,43 @@ function getCmdArgs {
 }
 
 function process {
-  local file fail ok modified id duplicate
-  file=$1
+  local file id tmp
+  file=$(readlink -e "$1")
 
   debug process "processing file ${file}"
-  if [[ ! $file =~ .*/db/(done/unit|fail/fail)-(.+)-.{3}$ ]] ; then
+  if [[ ! $file =~ .*/db/(fail/fail|done/unit)-(.+)-.{3}$ ]] ; then
     debug process "file rejected ${file}"
     return 1
   fi
 
   id="${BASH_REMATCH[2]}"
 
-  modified=$(stat --format=%y "${file}")
-  STATUS=
-	DEVICE_ID=
-	FAIL_MSG=
   
+
+  STATUS=  
+  STATUS_TS=
+  CREATE_TS=
+  # CREATE_ISOTS=
+  # MIGRATED_ISOTS=
+  # DONE_ISOTS=
+  DEVICE_ID=
+	FAIL_MSG=
+  UNIT_ID=
+  MIG_CONN_RETRIES=0
+  UNIT_OUTPUT_LOG=
+  # TRANSFER_FAIL_MSG=
+
 	tmpFile=$(mktemp)
+  # make sure all strings are quoted
   sed 's/\([^=]\+=\)\([^"].*[^"]\)$/\1\"\2\"/g' "${file}" > "${tmpFile}"
 
   # shellcheck disable=SC1090		 
   source "${tmpFile}" || fail "failed to source $file"
+  rm "${tmpFile}"
+
+  if [ -z "$STATUS_TS" ] ; then 
+    STATUS_TS=$(stat --format=%Y "${file}")
+  fi 
 
   debug process "<${UNIT_ID}> == <${id}>"
 
@@ -124,56 +173,77 @@ function process {
     return 1
 	fi
 
-  if [[ ${UNIT_IDS[@]} =~ ${id} ]] ; then 
-    duplicate=1
-  else
-    duplicate=0
-    UNIT_IDS+=(${id})
-  fi
+  tmp=${UNITS["$id"]}
+  if [ -n "$tmp" ] ; then     
+    IFS=$DEL read -r uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg uComment <<< "$tmp"
+    warn "${UNIT_ID}, found duplicate unit file"
+    warn "${UNIT_ID}, last state ${uState}@$(epoch2IsoTs $uStatusTs) in ${uFile} "
+    warn "${UNIT_ID}, this state ${STATUS}@$(epoch2IsoTs $STATUS_TS) in ${file}"
 
-  if [ "${BASH_REMATCH[1]}" == "fail" ] ; then 
-    fail=1
-    ok=0    
-  else   
-    fail=0
-    ok=1
-  fi
+    uMigAtmpt=$((uMigAtmpt+1))
 
-  # cat "$tmpFile" >&2
-  rm "${tmpFile}"
+    if [[ $uCreateTs -gt $CREATE_TS ]] ;then 
+      UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
+      return 0
+    else
+      if [[ "${uState}" == "${ST_DONE}" ]] ; then       
+        uComment="further migrate attempt found on unit in state ${ST_DONE}"
+        UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
+        return 0
+      fi  
+    fi  
+  else 
+    debug process "${UNIT_ID}, adding unit"
+  fi  
 
-  local migDur=0
-  if [ -n "$CREATE_TS" ] && [ -n "$STATUS_TS" ] ; then 
-    migDur=$((STATUS_TS-CREATE_TS))    
-  fi
-  
-	notReached=0
-	migrateErr=0
-	migrateExec=0
-	noShow=0
-	other=0
-
-  if [ "$fail" == "1" ] ; then 
-    if [[ $FAIL_MSG =~ failed\ [0-9]+\ attempts\ to\ transmit\ configuration.* ]] ; then 
-      notReached=1
-          else  
-      if [[ $FAIL_MSG =~ cannot\ find\ success\ message.* ]] ; then
-        migrateErr=1
-      else 
-        if [[ $FAIL_MSG =~ .*Device\ has\ not\ shown\ up\ in\ balena-cloud.* ]] ; then 
-          noShow=1
-        else
-          if [[ $FAIL_MSG =~ failed\ to\ execute\ migrate\ script.* ]] ; then
-            migrateExec=1
-          else     	
-            other=1
-          fi	
-        fi	    
-      fi		  
+  while true ;
+  do
+    if [[ "$STATUS" == "DONE" ]] ; then 
+      uState="$ST_DONE"
+      break;
+    fi    
+    
+    if [ ! -f "${UNIT_OUTPUT_LOG}" ] ; then 
+      if [[ ${UNIT_OUTPUT_LOG} =~ .*(/db/log/log-.*)$ ]] ; then 
+        UNIT_OUTPUT_LOG="${MIG_DB_DIR}${BASH_REMATCH[1]}"
+      fi
+      if [ ! -f "${UNIT_OUTPUT_LOG}" ] ; then 
+        fail "unit file not found ${UNIT_OUTPUT_LOG}"
+      fi
     fi
-  fi
 
-  echo "\"${UNIT_ID}\";$migDur;${CREATE_ISOTS};${MIGRATED_ISOTS};${DONE_ISOTS};${modified};$ok;$fail;${notReached};${migrateErr};${migrateExec};${noShow};${other};\"${STATUS}\";\"${DEVICE_ID}\";\"${FAIL_MSG}\";${MIG_CONN_RETRIES};\"${TRANSFER_FAIL_MSG}\";${duplicate}" >&5
+    if grep "migration successful" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then
+      uState="$ST_LOST"
+      break;
+    fi
+
+    if grep -E "ERROR:.*backup script" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then
+      uState="$ST_BCKUP"
+      break;
+    fi
+
+    if grep "Read-only file system" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then 
+    	uState="$ST_RO"
+      break
+    fi
+
+    if grep -E "No space left on device" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then 
+    	uState="$ST_SPACE"
+      break
+    fi
+
+    if grep -E "ssh:.*Connection refused" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then 
+    	uState="$ST_CONN"
+      break
+    fi
+
+    uState="$ST_OTHER"
+    break;
+  done
+
+  FAIL_MSG=$(cleanse "$FAIL_MSG") 
+
+  UNITS["$id"]="${uState}${DEL}1${DEL}${MIG_CONN_RETRIES}${DEL}${CREATE_TS}${DEL}${STATUS_TS}${DEL}${DEVICE_ID}${DEL}${file}${DEL}${FAIL_MSG}${DEL}"
 }
 
 
@@ -185,7 +255,11 @@ getCmdArgs "$@"
 
 setLogFile
 
-UNIT_IDS=()
+if [ -n "$COLOR" ] ; then
+  color "$COLOR"
+else
+  color OFF
+fi
 
 case "$MIG_OUTPUT" in 
 	stdout|"")
@@ -202,7 +276,15 @@ case "$MIG_OUTPUT" in
 		;;
 esac
 
-echo "id;dur;created;migrated;done;modified;ok;fail;not reached;no success;migrate err;no show;other;last-status;dev-id;failmsg;retries;txFailMsg;duplicate" >&5
+
+echo "id;stat dur;fail dur;created;migrated;done;modified;ok;fail;not reached;no success;migrate err;no show;other;last-status;dev-id;failmsg;retries;txFailMsg;duplicate" >&5
+
+inform "scanning ${doneDir}" 
+
+for  entry in "${doneDir}/"*
+do
+  process "$entry" || true
+done
 
 inform "scanning ${failDir}" 
 
@@ -211,10 +293,65 @@ do
   process "$entry" || true
 done
 
-inform "scanning ${doneDir}" 
+doneCount=0
+lostCount=0
+bckupCount=0
+spaceCount=0
+roCount=0
+connCount=0
+otherCount=0
 
-for  entry in "${doneDir}/"*
-do
-  process "$entry" || true
+echo "\"id\"${DEL}\"state\"${DEL}\"mig.att.\"${DEL}\"conn.att.\"${DEL}\"created\"${DEL}\"last\"${DEL}\"duration\"${DEL}\"balena id\"${DEL}\"fail Msg\"${DEL}\"comment\"" > "state.csv" 
+for id in "${!UNITS[@]}" 
+do 
+  IFS=$DEL read -r  uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg <<< "${UNITS[${id}]}" 
+  case "${uState}" in 
+    "$ST_DONE")
+      doneCount=$((doneCount+1))
+      ;;
+    "$ST_LOST")
+      lostCount=$((lostCount+1))
+      ;;
+    "$ST_BCKUP")
+      bckupCount=$((bckupCount+1))
+      ;;
+    "$ST_SPACE")
+      spaceCount=$((spaceCount+1))
+      ;;
+    "$ST_RO")
+      roCount=$((roCount+1))
+      ;;
+    "$ST_CONN")
+      connCount=$((connCount+1))
+      ;;
+    *)
+      otherCount=$((otherCount+1))
+      ;;
+  esac
+  
+  uConnAtmpt=$((uConnAtmpt+1))
+  outStr="${id}${DEL}${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}"
+  tsCreate=
+  if [ -n "$uCreateTs" ] ; then 
+    tsCreate=$(date -d @${uCreateTs} -u --rfc-3339=seconds)  || true
+  fi
+
+  if [ -n "$uCreateTs" ] ; then 
+    tsStatus=$(date -d @${uStatusTs} -u --rfc-3339=seconds) || true
+    dur=$((uStatusTs-uCreateTs))
+  fi  
+  
+  outStr="${outStr}${tsCreate}${DEL}${tsStatus}${DEL}${dur}${DEL}\"${uDeviceId}\"${DEL}\"${uFailMsg}\"${DEL}\"${uComment}\""
+
+  echo "$outStr" >> state.csv 
 done
+
+inform "counts: "
+inform "done:               ${doneCount}"
+inform "lost:               ${lostCount}"
+inform "connection refused: ${connCount}"
+inform "no space on device: ${lostCount}"
+inform "read only device:   ${roCount}"
+inform "backup failure:     ${bckupCount}"
+inform "other:              ${otherCount}"
 
