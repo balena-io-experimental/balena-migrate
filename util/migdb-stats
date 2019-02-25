@@ -12,6 +12,7 @@ ST_BCKUP="BCKUP"
 ST_SPACE="NO_SPACE"
 ST_RO="READ_ONLY"
 ST_CONN="NO_CONN"
+ST_TIMEOUT="TIMEOUT"
 ST_OTHER="OTHER"
 
 MIG_DB_DIR=${MIG_DB_DIR="."}
@@ -24,9 +25,6 @@ doneDir="${MIG_DB_DIR}/db/done"
 SCRIPT_NAME=$(basename "${0}")
 SCRIPT_PATH=$(dirname "${0}")
 COLOR=ON
-
-# DEL=$'\t'
-# RPL=' '
 
 DEL=';'
 RPL=','
@@ -60,11 +58,6 @@ EOI
 return 0
 }
 
-function epoch2IsoTs {
-  date -d "@$1" -u +"%Y-%m-%dT%H:%M:%SZ"
-} 
-
-
 function cleanse {
     local cleansed=    
     cleansed=$(echo "$1" | tr "$DEL" "$RPL")
@@ -74,10 +67,9 @@ function cleanse {
     echo "$cleansed"
 }
 
-function saveVars {
-    cFailMsg=$(cleanse "$uFailMsg")
-    echo "${uState}${DEL}${uAttempts}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${cFailMsg}"
-}
+function epoch2IsoTs {
+  date -d "@$1" -u +"%Y-%m-%dT%H:%M:%SZ"
+} 
 
 
 function getCmdArgs {
@@ -142,20 +134,14 @@ function process {
 
   id="${BASH_REMATCH[2]}"
 
-  
-
   STATUS=  
   STATUS_TS=
   CREATE_TS=
-  # CREATE_ISOTS=
-  # MIGRATED_ISOTS=
-  # DONE_ISOTS=
   DEVICE_ID=
 	FAIL_MSG=
   UNIT_ID=
   MIG_CONN_RETRIES=0
   UNIT_OUTPUT_LOG=
-  # TRANSFER_FAIL_MSG=
 
 	tmpFile=$(mktemp)
   # make sure all strings are quoted
@@ -178,7 +164,7 @@ function process {
 
   tmp=${UNITS["$id"]}
   if [ -n "$tmp" ] ; then     
-    IFS=$DEL read -r uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg uComment <<< "$tmp"
+    IFS=$DEL read -r uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uMigTs uDeviceId uFile uFailMsg uComment <<< "$tmp"
     warn "${UNIT_ID}, found duplicate unit file"
     warn "${UNIT_ID}, last state ${uState}@$(epoch2IsoTs $uStatusTs) in ${uFile} "
     warn "${UNIT_ID}, this state ${STATUS}@$(epoch2IsoTs $STATUS_TS) in ${file}"
@@ -186,12 +172,12 @@ function process {
     uMigAtmpt=$((uMigAtmpt+1))
 
     if [[ $uCreateTs -gt $CREATE_TS ]] ;then 
-      UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
+      UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uMigTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
       return 0
     else
       if [[ "${uState}" == "${ST_DONE}" ]] ; then       
         uComment="further migrate attempt found on unit in state ${ST_DONE}"
-        UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
+        UNITS["$id"]="${uState}${DEL}${uMigAtmpt}${DEL}${uConnAtmpt}${DEL}${uCreateTs}${DEL}${uStatusTs}${DEL}${uMigTs}${DEL}${uDeviceId}${DEL}${file}${DEL}${cFailMsg}${DEL}${uComment}"
         return 0
       fi  
     fi  
@@ -201,11 +187,6 @@ function process {
 
   while true ;
   do
-    if [[ "$STATUS" == "DONE" ]] ; then 
-      uState="$ST_DONE"
-      break;
-    fi    
-    
     if [ ! -f "${UNIT_OUTPUT_LOG}" ] ; then 
       if [[ ${UNIT_OUTPUT_LOG} =~ .*(/db/log/log-.*)$ ]] ; then 
         UNIT_OUTPUT_LOG="${MIG_DB_DIR}${BASH_REMATCH[1]}"
@@ -214,6 +195,18 @@ function process {
         fail "unit file not found ${UNIT_OUTPUT_LOG}"
       fi
     fi
+
+    migTsStr=$(grep " ---- calling migrate" "${UNIT_OUTPUT_LOG}") || true
+    if  [[ $migTsStr =~ ^\[([^\]]+)\] ]]; then 
+      uMigTs=$(date -d "${BASH_REMATCH[1]}" -u +%s)
+    else 
+      uMigTs=0
+    fi
+
+    if [[ "$STATUS" == "DONE" ]] ; then 
+      uState="$ST_DONE"
+      break;
+    fi    
 
     if grep "migration successful" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then
       uState="$ST_LOST"
@@ -235,6 +228,11 @@ function process {
       break
     fi
 
+    if grep -E "^./migdb-common: line [0-9]+: [0-9]+ Killed" "${UNIT_OUTPUT_LOG}}" >/dev/null 2>&1 ; then
+        uState="$ST_TIMEOUT"
+        break
+    fi
+
     if grep -E "ssh:.*Connection refused" "${UNIT_OUTPUT_LOG}" >/dev/null 2>&1 ; then 
     	uState="$ST_CONN"
       break
@@ -246,7 +244,7 @@ function process {
 
   FAIL_MSG=$(cleanse "$FAIL_MSG") 
 
-  UNITS["$id"]="${uState}${DEL}1${DEL}${MIG_CONN_RETRIES}${DEL}${CREATE_TS}${DEL}${STATUS_TS}${DEL}${DEVICE_ID}${DEL}${file}${DEL}${FAIL_MSG}${DEL}"
+  UNITS["$id"]="${uState}${DEL}1${DEL}${MIG_CONN_RETRIES}${DEL}${CREATE_TS}${DEL}${STATUS_TS}${DEL}${uMigTs}${DEL}${DEVICE_ID}${DEL}${file}${DEL}${FAIL_MSG}${DEL}"
 }
 
 
@@ -299,12 +297,13 @@ bckupCount=0
 spaceCount=0
 roCount=0
 connCount=0
+tmoutCount=0
 otherCount=0
 
-echo "\"id\"${DEL}\"state\"${DEL}\"mig.att.\"${DEL}\"conn.att.\"${DEL}\"created\"${DEL}\"last\"${DEL}\"duration\"${DEL}\"balena id\"${DEL}\"fail Msg\"${DEL}\"comment\"" >&5
+echo "\"id\"${DEL}\"state\"${DEL}\"mig.att.\"${DEL}\"conn.att.\"${DEL}\"created\"${DEL}\"last\"${DEL}\"mig.offs.\"${DEL}\"duration\"${DEL}\"balena id\"${DEL}\"fail Msg\"${DEL}\"comment\"" >&5
 for id in "${!UNITS[@]}" 
 do 
-  IFS=$DEL read -r  uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uDeviceId uFile uFailMsg uComment <<< "${UNITS[${id}]}" 
+  IFS=$DEL read -r  uState uMigAtmpt uConnAtmpt uCreateTs uStatusTs uMigTs uDeviceId uFile uFailMsg uComment <<< "${UNITS[${id}]}" 
 
   case "${uState}" in 
     "$ST_DONE")
@@ -325,6 +324,10 @@ do
     "$ST_CONN")
       connCount=$((connCount+1))
       ;;
+    "$ST_TIMEOUT")
+      tmoutCount=$((connCount+1))
+      ;;
+
     *)
       otherCount=$((otherCount+1))
       ;;
@@ -341,8 +344,14 @@ do
     tsStatus=$(date -d @${uStatusTs} -u --rfc-3339=seconds) || true
     dur=$((uStatusTs-uCreateTs))
   fi  
-  
-  outStr="${outStr}${tsCreate}${DEL}${tsStatus}${DEL}${dur}${DEL}\"${uDeviceId}\"${DEL}\"${uFailMsg}\"${DEL}\"${uComment}\""
+
+  if [ -n "$uMigTs" ] && [ "$uMigTs" -ne 0 ] ; then 
+    txDur=$((uMigTs-uCreateTs))
+  else
+    txDur="\"-\""
+  fi  
+
+  outStr="${outStr}${tsCreate}${DEL}${tsStatus}${DEL}${txDur}${DEL}${dur}${DEL}\"${uDeviceId}\"${DEL}\"${uFailMsg}\"${DEL}\"${uComment}\""
 
   echo "$outStr" >&5
 done
@@ -361,5 +370,7 @@ inform "read only device:   ${roCount}"
 echo "\"read only device:\"${DEL}${roCount}" >&5
 inform "backup failure:     ${bckupCount}"
 echo "\"backup failure:\"${DEL}${bckupCount}" >&5
+inform "transmit timeout:   ${tmoutCount}"
+echo "\"transmit timeout:\"${DEL}${tmoutCount}" >&5
 inform "other:              ${otherCount}"
 echo "\"other:\"${DEL}${otherCount}" >&5
