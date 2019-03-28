@@ -26,13 +26,12 @@ LOG_FS_TYPE=ext4
 
 ################################################################################
 # where everything is
-# TODO: establish & use an absolute path to a set home directory that is not
-#       necessarily PWD
 HOME_DIR=./
 
 ################################################################################
-# reboot automatically after script has finished by setting to "TRUE"
-DO_REBOOT= # "TRUE"
+# reboot automatically after script has finished by setting to number of seconds 
+# before rebboot
+DO_REBOOT= # 10
 
 ################################################################################
 # name of the balenaOS image to flash (expected in $HOMEDIR)
@@ -978,7 +977,6 @@ function setupInitramfs_x86 {
       fail "grub configuration not found"
   fi
 
-  # TODO guess based on OS Version
   if [ "$GRUB_INSTALL" == "TRUE" ] ; then
     if [ -n "$GRUB_BOOT_IMG" ] && [ -n "$GRUB_CORE_IMG" ] ; then
       # attempt to flash boot images
@@ -1140,7 +1138,6 @@ fi
 if [ -n "$PARAM_HOME_DIR" ] ; then
   HOME_DIR=$PARAM_HOME_DIR
 fi
-inform "using home dir:     $HOME_DIR"
 
 if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
@@ -1255,9 +1252,6 @@ RESTORE_BOOT_CFG_STAGE2=
 
 inform "establishing required programs"
 
-# TODO: Check / install tools needed for initramfs too
-#       possible candidates: parted (on debian, beaglebone) blkid
-
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm date"
 REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl md5sum"
 
@@ -1368,11 +1362,8 @@ if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
     inform "gzipping uncompressed image file $TMP_IMG.."
     gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
-    # TMP_IMG=$(basename "${TMP_IMG}")#
-    if [[ ${TMP_IMG} =~ .*/([^/]+/[^/]+)$ ]] ; then
-      IMAGE_NAME="${BASH_REMATCH[1]}.gz"
-    fi
-
+    IMAGE_NAME="${TMP_IMG}.gz"
+    
     if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
       inform "working with image $IMAGE_NAME"
     else
@@ -1398,8 +1389,6 @@ if ! listContains "$SUPPORTED_ARCHS" "$ARCH" ; then
   fail "not a supported architecture: $ARCH"
 fi
 
-# TODO: this does not make a lot of sense. Either do it properly by scanning the image 
-#       or just accept the image as is
 case $ARCH in
   armv*)
     checkArmDevs
@@ -1518,8 +1507,7 @@ esac
 
 NETWORK_CONFIGS=
 
-if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then
-  # TODO: use jq instead ?
+if [ -n "$BALENA_CONFIG" ] && [ -f "${HOME_DIR}/${BALENA_CONFIG}" ] && [ "$BALENA_WIFI" == "TRUE" ] ; then  
   jqPath="$(whereis -b jq | awk '{ print $2}')"
   if [ -z "$jqPath" ] ; then
     fail "program jq is required to extract wifi config from balena config, please install the program or set BALENA_WIFI to FALSE"
