@@ -325,7 +325,7 @@ function checkPgms {
       local pgmPath
       pgmPath="$(whereis -b "$pgm" | awk '{ print $2}')"
       if [ -z "$pgmPath" ] || [ ! -f "$pgmPath" ] ; then
-        fail "cannot find required program: $pgm as $pgmPath"
+        fail "cannot find required program: $pgm"
      fi
   done
 }
@@ -373,7 +373,7 @@ function checkDisk {
 
   diskSize=$(blockdev --getsize64 $devPath)
 
-  imgSize=$(gzip -l "${HOME_DIR}/${IMAGE_NAME}" | sed -n '2p')
+  imgSize=$(gzip -l "${IMAGE_FILE}" | sed -n '2p')
   if [ -n "$imgSize" ] && [[ $imgSize =~ [0-9]+[[:space:]]+([0-9]+)[[:space:]]+ ]] ; then 
     imgSize=${BASH_REMATCH[1]}
   else
@@ -1123,7 +1123,9 @@ fi
 SCRIPT_NAME=$(basename "${0}")
 
 CONFIG_FILE=balena-migrate.conf
-HOME_DIR=./
+HOME_DIR=.
+
+# inform "HOME_DIR=$HOME_DIR"
 
 color ON
 
@@ -1136,8 +1138,23 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 if [ -n "$PARAM_HOME_DIR" ] ; then
+  # cmd line params take precedence over config file
   HOME_DIR=$PARAM_HOME_DIR
 fi
+
+if [[ ! $HOME_DIR =~ ^/.* ]] ; then
+  CURR_DIR="$(pwd)"
+  cd "$HOME_DIR" || fail "invalid/non existant HOME_DIR: $HOME_DIR"
+  HOME_DIR=$(pwd)
+  # shellcheck disable=SC2164
+  cd "$CURR_DIR"
+fi
+
+if [ ! -d "$HOME_DIR" ] ; then
+  fail "homedir does not exist: $HOME_DIR"
+fi
+
+inform "using home dir:     $HOME_DIR"
 
 if [ -n "$PARAM_CONFIG_FILE" ] ; then
   CONFIG_FILE=$PARAM_CONFIG_FILE
@@ -1150,12 +1167,6 @@ fi
 if [ -n "$PARAM_MIN_WRITE_SPEED" ] ; then
   MIN_WRITE_SPEED=$PARAM_MIN_WRITE_SPEED
 fi
-
-if [ -n "$PARAM_HOME_DIR" ] ; then
-  # cmd line params take precedence over config file
-  HOME_DIR=$PARAM_HOME_DIR
-fi
-inform "using home dir:     $HOME_DIR"
 
 if [[ $HAS_WIFI_CFG =~ ^[0-9]+$ ]] ; then
   NEXT_WIFI_IDX=$((HAS_WIFI_CFG + 1))
@@ -1196,6 +1207,8 @@ else
     fi
   fi
 fi
+
+
 
 if [ -n "$PARAM_BALENA_CONFIG" ] ; then
   # cmd line params take precedence over config file
@@ -1253,7 +1266,15 @@ RESTORE_BOOT_CFG_STAGE2=
 inform "establishing required programs"
 
 INITRAM_REQUIRED_PGMS="cat cp dd df dirname echo expr grep gzip ls lsblk mkdir mv parted partprobe shutdown sleep stat sync touch udevadm date"
-REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl md5sum"
+REQUIRED_PGMS="awk file findmnt lsblk mkinitramfs parted readlink sed openssl"
+
+if [[ $IMAGE_NAME =~ \.zip$ ]] ; then 
+  REQUIRED_PGMS="${REQUIRED_PGMS} unzip"
+fi
+
+if [ -f "./checksums.md5" ] ; then
+  REQUIRED_PGMS="${REQUIRED_PGMS} md5sum"
+fi
 
 if [ -n "$BALENA_API_HOST" ] || [ -n "$BALENA_VPN_HOST" ] ;  then 
   REQUIRED_PGMS="$REQUIRED_PGMS nc"
@@ -1289,19 +1310,6 @@ inform "found ${rootAvail}KB of space on / "
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
 inform "checking required files"
-if [[ ! $HOME_DIR =~ ^/.* ]] ; then
-  CURR_DIR="$(pwd)"
-  cd "$HOME_DIR" || fail "invalid/non existant HOME_DIR: $HOME_DIR"
-  HOME_DIR=$(pwd)
-  # shellcheck disable=SC2164
-  cd "$CURR_DIR"
-fi
-
-if [ ! -d "$HOME_DIR" ] ; then
-  fail "homedir does not exist: $HOME_DIR"
-fi
-
-inform "HOME_DIR=$HOME_DIR"
 
 if [ -n "$BALENA_API_HOST" ] ; then 
   inform "checking connectivity for ${BALENA_API_HOST}:${BALENA_API_PORT}"
@@ -1346,36 +1354,39 @@ if [ -z "$IMAGE_NAME" ] || [ ! -f "${HOME_DIR}/$IMAGE_NAME" ] ; then
   fail "missing image file: $IMAGE_NAME"
 fi
 
-TMP_IMG="${HOME_DIR}/${IMAGE_NAME}"
-FTYPE=$(file -b "${TMP_IMG}")
+IMAGE_FILE="${HOME_DIR}/${IMAGE_NAME}"
+
+FTYPE=$(file -b "${IMAGE_FILE}")
 
 if [[ ! $FTYPE =~ ^gzip\ compressed\ data.* ]] ; then
   if [[ $FTYPE =~ ^Zip\ archive\ data.* ]]  ; then
     inform "image file appears to be a zip archive, unzipping and repacking in gzip format.."
     TMP_DIR=$(mktemp -d -p "${HOME_DIR}")
-    unzip "${TMP_IMG}" -d "$TMP_DIR" || fail "failed to unzip ${TMP_IMG}"
-    TMP_IMG="${TMP_DIR}/$(ls "$TMP_DIR")"
-    inform "got ${TMP_IMG}"
-    FTYPE=$(file -b "$TMP_IMG")
+    unzip "${IMAGE_FILE}" -d "$TMP_DIR" || fail "failed to unzip ${IMAGE_FILE}"
+    TMP_FILE="${TMP_DIR}/$(ls "$TMP_DIR")"
+    inform "got ${IMAGE_FILE}"
+    rm "${IMAGE_FILE}"
+    IMAGE_FILE="${TMP_FILE}"
+    FTYPE=$(file -b "$IMAGE_FILE")
   fi
 
-  if [[ $FTYPE =~ ^DOS/MBR\ boot\ sector.* ]]  ; then
-    inform "gzipping uncompressed image file $TMP_IMG.."
-    gzip "$TMP_IMG" || fail "failed to gzip $TMP_IMG"
-    IMAGE_NAME="${TMP_IMG}.gz"
-    
-    if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
-      inform "working with image $IMAGE_NAME"
+  if [[ $FTYPE =~ ^(DOS/MBR|x86)\ boot\ sector.* ]]  ; then
+    inform "gzipping uncompressed image file $IMAGE_FILE .."
+    gzip "$IMAGE_FILE" || fail "failed to gzip $IMAGE_FILE"
+
+    IMAGE_FILE="${IMAGE_FILE}.gz"   
+    if [ -f "${IMAGE_FILE}" ] ; then
+      inform "working with image ${IMAGE_FILE}"
     else
-      fail "compressed image ${HOME_DIR}/${IMAGE_NAME} does not exist"
+      fail "compressed image ${IMAGE_FILE} does not exist"
     fi
   else
-    fail "cannot make sense of unzipped image file $TMP_IMG - expecting an image file, got $FTYPE"
+    fail "cannot make sense of unzipped image file $IMAGE_FILE - expecting an image file, got '$FTYPE'"
   fi
 else
-  FTYPE=$(file -bz "${HOME_DIR}/${IMAGE_NAME}")
+  FTYPE=$(file -bz "${IMAGE_FILE}")
   if [[ ! $FTYPE =~ ^[^\ ]+\ boot\ sector.* ]]  ; then
-    fail "cannot make sense of image file $TMP_IMG - expecting a gzipped image file, got $FTYPE"
+    fail "cannot make sense of image file $IMAGE_FILE - expecting a gzipped image file, got $FTYPE"
   fi
 fi
 
@@ -1548,6 +1559,7 @@ fi
 
 if [ -z "$NETWORK_CONFIGS" ] ; then
   if [ "$REQUIRE_NMGR_FILE" == "TRUE" ] ; then 
+    # TODO: check if connected via ethernet, allow for standard ethernet connection
     fail "no network manager configurations found"
   else 
     warn "no network manager configurations found, device might not be able to come online"
@@ -1582,7 +1594,7 @@ ORIG_ROOT_PART=${ROOT_FS}
 ORIG_BOOT_FS_TYPE=${BOOT_FS_TYPE}
 
 HOME_DIR=${HOME_DIR}
-IMAGE_FILE=${IMAGE_NAME}
+IMAGE_FILE=${IMAGE_FILE}
 BACKUP_FILE=${BACKUP_FILE}
 
 MIGRATE_TMP=/balena-migrate
@@ -1680,8 +1692,8 @@ if [[ $totMem =~ ^[^:]+:\ +([0-9]+)\ .* ]] ; then
   inform "total memory:  ${totMem} kB"
   leftMem=$totMem
 
-  if [ -f "${HOME_DIR}/${IMAGE_NAME}" ] ; then
-    tmp=$(stat -c %s "${HOME_DIR}/${IMAGE_NAME}")
+  if [ -f "${IMAGE_FILE}" ] ; then
+    tmp=$(stat -c %s "${IMAGE_FILE}")
     tmp=$((tmp / 1024))
     inform "image file size: ${tmp} kB "
     leftMem=$((leftMem - tmp))

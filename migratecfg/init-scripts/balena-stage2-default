@@ -106,9 +106,11 @@ if [ ! -d ${MIGRATE_TMP} ] ; then
      fail  "could not find migrate dir: ${MIGRATE_TMP}"
 fi
 
-log "copying image from ${rootmnt}${HOME_DIR}/${IMAGE_FILE} to ${MIGRATE_TMP}/"
-cp "${rootmnt}${HOME_DIR}/${IMAGE_FILE}" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1 || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
+log "copying image from ${rootmnt}${IMAGE_FILE} to ${MIGRATE_TMP}/"
+cp "${rootmnt}${IMAGE_FILE}" "${MIGRATE_TMP}/" >>"$LOG_TO" 2>&1 || fail  "failed to copy ${rootmnt}${HOME_DIR}/${IMAGE_FILE}  to ${MIGRATE_TMP}/"
 log "..done"
+IMAGE_FILE="$(basename ${IMAGE_FILE})"
+
 
 if [ -f "${rootmnt}${HOME_DIR}/${BACKUP_FILE}" ] ; then
 	log "copying backup from ${rootmnt}${HOME_DIR}/${BACKUP_FILE} to ${MIGRATE_TMP}/"
