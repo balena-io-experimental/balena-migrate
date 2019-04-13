@@ -1303,13 +1303,13 @@ inform "found all required programs"
 inform "checking disk space"
 rootAvail=$(df / --output=avail | sed -n 2p)
 if [ "$rootAvail" -lt "$MIN_ROOT_AVAIL" ] ; then 
-  fail "not enough disk space available for migration, found ${rootAvail}KB, require  ${MIN_ROOT_AVAIL}KB"
+  fail "not enough disk space available for migration on /, found ${rootAvail}KB, require  ${MIN_ROOT_AVAIL}KB"
 fi
 inform "found ${rootAvail}KB of space on / "
 
 inform "LOG_DEBUG=${LOG_DEBUG}, DEBUG_FUNCTS=${DEBUG_FUNCTS}"
 
-inform "checking required files"
+inform "checking connectivity to balena backend"
 
 if [ -n "$BALENA_API_HOST" ] ; then 
   inform "checking connectivity for ${BALENA_API_HOST}:${BALENA_API_PORT}"
