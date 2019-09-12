@@ -1,5 +1,11 @@
 # BalenaOS Migration
 
+**Please Note:** This Repository contains code that successfully migrated RPI and X86 devices to balena but as of April 2019 
+it is not being actively maintained any more. 
+
+If you would like to migrate devices to balena please contact support on https://forums.balena.io/ . The balena 
+team will be happy to provide a migration config and instructions for your devices.    
+ 
 This project attempts to provide a generic solution to migrate a range of different device types running linux operating
 systems to balenaOS.
 
