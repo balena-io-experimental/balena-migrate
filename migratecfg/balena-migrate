@@ -775,7 +775,7 @@ function setupInitramfs_rpi {
   CMDLINE_TXT="/boot/cmdline.txt"
 
 
-  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} cp cat rm sleep"
+  INITRAM_REQUIRED_PGMS="${INITRAM_REQUIRED_PGMS} cp cat rm sleep basename sync"
 
   # make sure BUSYBOX is NOT used
   inform "checking initramfs-tools config"
